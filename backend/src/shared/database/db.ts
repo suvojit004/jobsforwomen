@@ -1,6 +1,6 @@
-import "../config/env"
-import { PrismaClient } from "@prisma/client"
+    import "../config/env"
+    import { PrismaClient } from "@prisma/client"
 
-export const prisma = new PrismaClient()
+    export const prisma = new PrismaClient()
 
-export default prisma
+    export default prisma
