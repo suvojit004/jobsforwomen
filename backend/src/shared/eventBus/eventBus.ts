@@ -4,6 +4,7 @@ export type EventHandler<T = any> = (data: T) => void | Promise<void>
 
 export class EventBus {
   private static listeners: Map<string, Set<EventHandler>> = new Map()
+  private static activePromises: Set<Promise<any>> = new Set()
 
   /**
    * Subscribes a handler to a specific domain event.
@@ -29,7 +30,7 @@ export class EventBus {
 
   /**
    * Publishes an event to all subscribed listeners.
-   * If a listener returns a Promise, handles any unhandled rejections gracefully.
+   * Tracks in-flight promises to enable proper teardown coordination.
    */
   static publish(event: string, data: any): void {
     const handlers = this.listeners.get(event)
@@ -39,8 +40,12 @@ export class EventBus {
         try {
           const result = handler(data)
           if (result instanceof Promise) {
-            result.catch((err) => {
+            const wrappedPromise = Promise.resolve(result)
+            this.activePromises.add(wrappedPromise)
+            wrappedPromise.catch((err) => {
               logger.error(`[EventBus] Async handler error for event '${event}': ${err.message}`, { error: err })
+            }).finally(() => {
+              this.activePromises.delete(wrappedPromise)
             })
           }
         } catch (err: any) {
@@ -53,11 +58,21 @@ export class EventBus {
   }
 
   /**
-   * Clears all listeners (mostly used for testing isolation).
+   * Awaits all currently in-flight background handlers to settle.
+   */
+  static async allSettled(): Promise<void> {
+    while (this.activePromises.size > 0) {
+      await Promise.allSettled(Array.from(this.activePromises))
+    }
+  }
+
+  /**
+   * Clears all listeners and in-flight promises tracking.
    */
   static clearAll(): void {
     this.listeners.clear()
-    logger.debug("[EventBus] Cleared all listeners")
+    this.activePromises.clear()
+    logger.debug("[EventBus] Cleared all listeners and active promises")
   }
 }
 

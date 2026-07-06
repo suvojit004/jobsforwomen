@@ -89,7 +89,7 @@ export class PermissionCacheManager {
     if (!redis) return
     try {
       const keys = await redis.keys(`${CACHE_PREFIX}*`)
-      if (keys.length > 0) {
+      if (keys && keys.length > 0) {
         await redis.del(...keys)
         logger.info(`[PermissionCache] Invalidated all users permission caches (${keys.length} entries).`)
       }

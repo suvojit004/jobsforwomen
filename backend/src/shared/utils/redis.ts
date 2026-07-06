@@ -7,7 +7,11 @@ let redisClient: Redis | null = null
 try {
   // Gracefully fallback or suppress connection errors in test mode
   const options = env.NODE_ENV === "test" 
-    ? { maxRetriesPerRequest: 1, enableOfflineQueue: false } 
+    ? { 
+        maxRetriesPerRequest: null, 
+        enableOfflineQueue: false, 
+        retryStrategy: () => null 
+      } 
     : { maxRetriesPerRequest: 3 }
 
   redisClient = new Redis(env.REDIS_URL, options)
