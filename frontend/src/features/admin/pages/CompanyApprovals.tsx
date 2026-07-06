@@ -16,7 +16,7 @@ import { DashboardCard } from "@/components/shared/DashboardCard"
 import { AdminService } from "@/services/admin.service"
 import type { AdminCompany } from "@/services/admin.service"
 
-export function CompanyVerification() {
+export function CompanyApprovals() {
   const [companies, setCompanies] = useState<AdminCompany[]>([])
   const [searchQuery, setSearchQuery] = useState("")
   const [filterMode, setFilterMode] = useState<"all" | "pending" | "approved" | "info_requested" | "rejected">("all")
@@ -233,10 +233,10 @@ export function CompanyVerification() {
       {/* Header Banner */}
       <div>
         <h1 className="text-2xl font-black tracking-normal text-slate-950 dark:text-white">
-          Company Perks & Badges Verification
+          Company Approvals Portal
         </h1>
         <p className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">
-          Verify employers claiming the Menstrual Leave Champion Badge or return-to-work mentorship certifications.
+          Approve or audit corporate status claims for Menstrual Leave Champion and return-to-work certifications.
         </p>
       </div>
 
@@ -375,4 +375,4 @@ export function CompanyVerification() {
     </div>
   )
 }
-export default CompanyVerification
+export default CompanyApprovals

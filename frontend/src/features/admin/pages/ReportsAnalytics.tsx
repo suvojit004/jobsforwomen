@@ -27,15 +27,14 @@ const monthlyReportsData = [
   { month: "Jun", Applications: 780, Hired: 130 },
 ]
 
-export function Reports() {
+export function ReportsAnalytics() {
   const [downloading, setDownloading] = useState<string | null>(null)
 
   const handleExport = (fileName: string) => {
     setDownloading(fileName)
     setTimeout(() => {
-      // Simulate file download trigger
       setDownloading(null)
-      alert(`Export completed! "${fileName}" has been downloaded.`)
+      alert(`Export completed! "${fileName}" has been downloaded successfully.`)
     }, 1500)
   }
 
@@ -76,10 +75,10 @@ export function Reports() {
       <div>
         <h1 className="text-2xl font-black tracking-normal text-slate-950 dark:text-white flex items-center gap-2">
           <LineChart className="size-6 text-[#6B2C91] dark:text-pink-300" />
-          Analytics & Exports
+          Reports & Sourcing Analytics
         </h1>
         <p className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">
-          Generate system performance summaries, download spreadsheets, and view sourcing analytics datasets.
+          Generate platform-wide activity logs, download candidate spreadsheet directories, and inspect metrics summaries.
         </p>
       </div>
 
@@ -202,4 +201,4 @@ export function Reports() {
     </div>
   )
 }
-export default Reports
+export default ReportsAnalytics

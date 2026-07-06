@@ -9,6 +9,9 @@ import {
   BarChart,
   Network,
   CloudLightning,
+  Bell,
+  Lock,
+  ShieldCheck,
 } from "lucide-react"
 import { DashboardCard } from "@/components/shared/DashboardCard"
 import { Button } from "@/components/ui/button"
@@ -24,7 +27,7 @@ interface FeatureItem {
 }
 
 interface FeatureGroup {
-  category: "Communication" | "Platform Settings" | "Experimental Features"
+  category: "Communication" | "Platform" | "Notifications" | "Analytics" | "Experimental" | "Security"
   items: FeatureItem[]
 }
 
@@ -39,6 +42,9 @@ export function FeatureConfigs() {
     AI_RESUME_PARSER: isFeatureEnabled("AI_RESUME_PARSER"),
     SMS_NOTIFICATIONS: isFeatureEnabled("SMS_NOTIFICATIONS"),
     ENTERPRISE_GREENHOUSE: isFeatureEnabled("ENTERPRISE_GREENHOUSE"),
+    MFA_ENFORCEMENT: isFeatureEnabled("MFA_ENFORCEMENT"),
+    SESSION_TIMEOUT_LOGS: isFeatureEnabled("SESSION_TIMEOUT_LOGS"),
+    PUSH_NOTIFICATION_ALERTS: isFeatureEnabled("PUSH_NOTIFICATION_ALERTS"),
   })
 
   const [saving, setSaving] = useState(false)
@@ -68,7 +74,7 @@ export function FeatureConfigs() {
       ],
     },
     {
-      category: "Platform Settings",
+      category: "Platform",
       items: [
         {
           key: "ADMIN_MODERATION",
@@ -82,6 +88,28 @@ export function FeatureConfigs() {
           desc: "Highlights and categorizes job postings configured with women returning-to-work program support.",
           icon: CloudLightning,
         },
+      ],
+    },
+    {
+      category: "Notifications",
+      items: [
+        {
+          key: "PUSH_NOTIFICATION_ALERTS",
+          name: "Push Notification Alerts",
+          desc: "Triggers browser notifications for instant candidate updates.",
+          icon: Bell,
+        },
+        {
+          key: "WEB_SOCKETS",
+          name: "Live WebSockets Syncing",
+          desc: "Utilizes bidirectional WebSocket feeds for micro-animations notifications pushes.",
+          icon: Network,
+        },
+      ],
+    },
+    {
+      category: "Analytics",
+      items: [
         {
           key: "ANALYTICS_EXPORT",
           name: "Analytics CSV exports",
@@ -91,14 +119,8 @@ export function FeatureConfigs() {
       ],
     },
     {
-      category: "Experimental Features",
+      category: "Experimental",
       items: [
-        {
-          key: "WEB_SOCKETS",
-          name: "Live WebSockets Syncing",
-          desc: "Utilizes bidirectional WebSocket feeds for micro-animations notifications pushes.",
-          icon: Network,
-        },
         {
           key: "AI_RESUME_PARSER",
           name: "AI-Powered Resume parsing",
@@ -113,10 +135,26 @@ export function FeatureConfigs() {
         },
       ],
     },
+    {
+      category: "Security",
+      items: [
+        {
+          key: "MFA_ENFORCEMENT",
+          name: "Enforce Multi-Factor Auth (MFA)",
+          desc: "Requires security authorization codes when moderators change system configurations.",
+          icon: Lock,
+        },
+        {
+          key: "SESSION_TIMEOUT_LOGS",
+          name: "Audit Inactivity Timeout Logs",
+          desc: "Tracks and alerts operator records when background sessions expire due to idling.",
+          icon: ShieldCheck,
+        },
+      ],
+    },
   ]
 
   const handleToggle = (key: FeatureKey) => {
-    // Admin moderation must remain true to access this page
     if (key === "ADMIN_MODERATION" && flags.ADMIN_MODERATION) {
       alert("Security constraint: Admin control center flag must remain enabled to access this control room.")
       return
@@ -126,7 +164,6 @@ export function FeatureConfigs() {
     setFlags((prev) => ({ ...prev, [key]: nextVal }))
     setFeatureFlag(key, nextVal)
 
-    // Log administrative action
     AdminService.addAuditLog(
       "Feature Flags",
       `Modified system flag "${key}" status to ${nextVal ? "Enabled" : "Disabled"}`

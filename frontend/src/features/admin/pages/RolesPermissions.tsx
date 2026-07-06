@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { Shield, ShieldCheck, Save, RefreshCw } from "lucide-react"
+import { Shield, Save, RefreshCw, Check, X, Info } from "lucide-react"
 import { DashboardCard } from "@/components/shared/DashboardCard"
 import { Button } from "@/components/ui/button"
 
@@ -158,6 +158,33 @@ export function RolesPermissions() {
     }
   }
 
+  const renderIndicator = (row: PermissionRow, role: "candidate" | "recruiter" | "admin" | "superAdmin") => {
+    if (role === "superAdmin") {
+      return (
+        <div className="flex justify-center" title="Super Admin retains absolute system entitlements.">
+          <Check className="size-4 text-emerald-500 stroke-[3]" />
+        </div>
+      )
+    }
+
+    const val = row[role]
+    const isCriticalAdmin = role === "admin" && (row.key === "suspend_users" || row.key === "edit_features")
+
+    return (
+      <div
+        className={`flex justify-center cursor-pointer p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors w-max mx-auto ${isCriticalAdmin ? "opacity-50 cursor-not-allowed" : ""}`}
+        onClick={() => !isCriticalAdmin && handleToggle(row.key, role)}
+        title={isCriticalAdmin ? "Critical security entitlements: cannot disable" : `Toggle entitlement: ${row.name} for ${role}`}
+      >
+        {val ? (
+          <Check className="size-4 text-emerald-500 stroke-[3]" />
+        ) : (
+          <X className="size-4 text-slate-300 dark:text-slate-700 stroke-[2]" />
+        )}
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-6 select-none animate-fadeIn">
       {/* Header Banner */}
@@ -220,6 +247,9 @@ export function RolesPermissions() {
                 <th className="p-3 text-xs font-black text-slate-550 uppercase tracking-widest text-center dark:text-slate-400 w-24">
                   Administrator
                 </th>
+                <th className="p-3 text-xs font-black text-slate-550 uppercase tracking-widest text-center dark:text-slate-400 w-28">
+                  Future Super Admin
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-850">
@@ -227,7 +257,7 @@ export function RolesPermissions() {
                 <tr key={row.key} className="hover:bg-slate-50/30 dark:hover:bg-slate-900/10">
                   <td className="p-3.5 space-y-0.5">
                     <p className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
-                      <ShieldCheck className="size-3.5 text-[#6B2C91] dark:text-pink-300" />
+                      <Info className="size-3.5 text-slate-400 dark:text-slate-500" />
                       {row.name}
                     </p>
                     <p className="text-[10px] font-semibold text-slate-450 dark:text-slate-500 leading-normal max-w-xl">
@@ -235,31 +265,16 @@ export function RolesPermissions() {
                     </p>
                   </td>
                   <td className="p-3.5 text-center">
-                    <input
-                      type="checkbox"
-                      checked={row.candidate}
-                      onChange={() => handleToggle(row.key, "candidate")}
-                      className="size-4 rounded accent-[#6B2C91] dark:accent-pink-500 cursor-pointer"
-                      aria-label={`Candidate permission for ${row.name}`}
-                    />
+                    {renderIndicator(row, "candidate")}
                   </td>
                   <td className="p-3.5 text-center">
-                    <input
-                      type="checkbox"
-                      checked={row.recruiter}
-                      onChange={() => handleToggle(row.key, "recruiter")}
-                      className="size-4 rounded accent-[#6B2C91] dark:accent-pink-500 cursor-pointer"
-                      aria-label={`Recruiter permission for ${row.name}`}
-                    />
+                    {renderIndicator(row, "recruiter")}
                   </td>
                   <td className="p-3.5 text-center">
-                    <input
-                      type="checkbox"
-                      checked={row.admin}
-                      onChange={() => handleToggle(row.key, "admin")}
-                      className="size-4 rounded accent-[#6B2C91] dark:accent-pink-500 cursor-pointer"
-                      aria-label={`Admin permission for ${row.name}`}
-                    />
+                    {renderIndicator(row, "admin")}
+                  </td>
+                  <td className="p-3.5 text-center">
+                    {renderIndicator(row, "superAdmin")}
                   </td>
                 </tr>
               ))}

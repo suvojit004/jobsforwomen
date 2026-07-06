@@ -8,6 +8,9 @@ const DEFAULT_FLAGS = {
   AI_RESUME_PARSER: false,
   SMS_NOTIFICATIONS: false,
   ENTERPRISE_GREENHOUSE: false,
+  MFA_ENFORCEMENT: false,
+  SESSION_TIMEOUT_LOGS: true,
+  PUSH_NOTIFICATION_ALERTS: false,
 }
 
 export type FeatureKey = keyof typeof DEFAULT_FLAGS

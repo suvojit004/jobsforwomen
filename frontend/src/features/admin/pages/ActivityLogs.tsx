@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button"
 import { AdminService } from "@/services/admin.service"
 import type { AdminAuditLog } from "@/services/admin.service"
 
-export function AuditLogs() {
+export function ActivityLogs() {
   const [logs, setLogs] = useState<AdminAuditLog[]>([])
   const [searchQuery, setSearchQuery] = useState("")
   const [activeCategory, setActiveCategory] = useState<string>("All")
@@ -117,10 +117,10 @@ export function AuditLogs() {
       <div>
         <h1 className="text-2xl font-black tracking-normal text-slate-950 dark:text-white flex items-center gap-2">
           <FileText className="size-6 text-[#6B2C91] dark:text-pink-300" />
-          System Audit Trails
+          Platform Activity Logs
         </h1>
         <p className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">
-          Traceable, immutable records of moderator decisions, user blocklogs, corporate verifications, and settings changes.
+          Traceable, audit logs of moderator operations, user blocks, corporate certifications, and flags changes.
         </p>
       </div>
 
@@ -157,18 +157,18 @@ export function AuditLogs() {
           <div className="py-12 flex flex-col justify-center items-center gap-2">
             <span className="size-6 border-2 border-slate-350 border-t-[#6B2C91] rounded-full animate-spin dark:border-slate-800 dark:border-t-pink-300" />
             <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">
-              Fetching audit indices...
+              Fetching activity logs...
             </p>
           </div>
         ) : (
           <DataTable
             columns={columns}
             data={filteredLogs}
-            emptyMessage="No matching system audit records found."
+            emptyMessage="No matching activity log records found."
           />
         )}
       </DashboardCard>
     </div>
   )
 }
-export default AuditLogs
+export default ActivityLogs

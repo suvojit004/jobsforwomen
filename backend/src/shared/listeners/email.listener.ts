@@ -1,0 +1,196 @@
+import EventBus from "../eventBus/eventBus"
+import prisma from "../database/db"
+import { logger } from "../utils/logger"
+import { addJob } from "../queue/queue"
+
+/**
+ * Checks if email type notifications are enabled in user's preferences JSON.
+ */
+async function shouldSendEmail(userId: string, preferenceKey: string): Promise<boolean> {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { preferences: true },
+    })
+    if (!user) return false
+    const prefs = (user.preferences as any) || {}
+    // If the preference key is not defined, default to true
+    return prefs[preferenceKey] !== false
+  } catch (err) {
+    return true
+  }
+}
+
+export function initEmailListener() {
+  // 1. Verify Email & Welcome Email triggers (always send, transactional)
+  EventBus.subscribe("UserRegistered", async (payload: any) => {
+    logger.info(`[EmailListener] Enqueueing Welcome & Verification email to: ${payload.email}`)
+    await addJob("email", "sendWelcome", {
+      to: payload.email,
+      token: payload.verificationToken,
+    })
+  })
+
+  // 2. Company Approved trigger
+  EventBus.subscribe("CompanyApproved", async (payload: any) => {
+    try {
+      const company = await prisma.company.findUnique({
+        where: { id: payload.companyId },
+        include: { recruiters: { include: { user: true } } },
+      })
+      if (company) {
+        const recruiter = company.recruiters?.[0]
+        const recruiterUserId = recruiter?.userId
+        const toEmail = recruiter?.user?.email || "recruiter@jobsforwomen.info"
+        const isEnabled = recruiterUserId ? await shouldSendEmail(recruiterUserId, "applicationUpdates") : true
+
+        if (isEnabled && toEmail) {
+          logger.info(`[EmailListener] Enqueueing Company Approved email to: ${toEmail}`)
+          await addJob("email", "sendCompanyVerification", {
+            to: toEmail,
+            companyName: company.name,
+            status: "Approved",
+          })
+        }
+      }
+    } catch (err: any) {
+      logger.error(`[EmailListener] CompanyApproved trigger failed: ${err.message}`)
+    }
+  })
+
+  // 3. Company Rejected trigger
+  EventBus.subscribe("CompanyRejected", async (payload: any) => {
+    try {
+      const company = await prisma.company.findUnique({
+        where: { id: payload.companyId },
+        include: { recruiters: { include: { user: true } } },
+      })
+      if (company) {
+        const recruiter = company.recruiters?.[0]
+        const recruiterUserId = recruiter?.userId
+        const toEmail = recruiter?.user?.email || "recruiter@jobsforwomen.info"
+        const isEnabled = recruiterUserId ? await shouldSendEmail(recruiterUserId, "applicationUpdates") : true
+
+        if (isEnabled && toEmail) {
+          logger.info(`[EmailListener] Enqueueing Company Rejected email to: ${toEmail}`)
+          await addJob("email", "sendCompanyVerification", {
+            to: toEmail,
+            companyName: company.name,
+            status: "Rejected",
+            notes: payload.notes || "Documents failed verification criteria.",
+          })
+        }
+      }
+    } catch (err: any) {
+      logger.error(`[EmailListener] CompanyRejected trigger failed: ${err.message}`)
+    }
+  })
+
+  // 4. Job Approved trigger
+  EventBus.subscribe("JobApproved", async (payload: any) => {
+    try {
+      const job = await prisma.job.findUnique({
+        where: { id: payload.jobId },
+        include: { recruiter: { include: { user: true } } },
+      })
+      if (job) {
+        const recruiter = job.recruiter
+        const recruiterUserId = recruiter?.userId
+        const toEmail = recruiter?.user?.email || "recruiter@jobsforwomen.info"
+        const isEnabled = recruiterUserId ? await shouldSendEmail(recruiterUserId, "newJobAlerts") : true
+
+        if (isEnabled && toEmail) {
+          logger.info(`[EmailListener] Enqueueing Job Approved email to: ${toEmail}`)
+          await addJob("email", "sendJobModeration", {
+            to: toEmail,
+            jobTitle: job.title,
+            status: "approved",
+          })
+        }
+      }
+    } catch (err: any) {
+      logger.error(`[EmailListener] JobApproved trigger failed: ${err.message}`)
+    }
+  })
+
+  // 5. Job Rejected trigger
+  EventBus.subscribe("JobUpdated", async (payload: any) => {
+    if (payload.status === "flagged") {
+      try {
+        const job = await prisma.job.findUnique({
+          where: { id: payload.jobId },
+          include: { recruiter: { include: { user: true } } },
+        })
+        if (job) {
+          const recruiter = job.recruiter
+          const recruiterUserId = recruiter?.userId
+          const toEmail = recruiter?.user?.email || "recruiter@jobsforwomen.info"
+          const isEnabled = recruiterUserId ? await shouldSendEmail(recruiterUserId, "newJobAlerts") : true
+
+          if (isEnabled && toEmail) {
+            logger.info(`[EmailListener] Enqueueing Job Rejected email to: ${toEmail}`)
+            await addJob("email", "sendJobModeration", {
+              to: toEmail,
+              jobTitle: job.title,
+              status: "rejected",
+              notes: payload.notes || "Does not comply with job posting criteria.",
+            })
+          }
+        }
+      } catch (err: any) {
+        logger.error(`[EmailListener] JobRejected trigger failed: ${err.message}`)
+      }
+    }
+  })
+
+  // 6. Employee Onboarding Invitation (always send, transactional)
+  EventBus.subscribe("EmployeeInvited", async (payload: any) => {
+    logger.info(`[EmailListener] Enqueueing Employee Invitation email to: ${payload.email}`)
+    await addJob("email", "sendEmployeeInvitation", {
+      to: payload.email,
+      token: payload.token,
+      roleName: payload.roleName || "Staff Member",
+    })
+  })
+
+  // 7. Password Reset Token Dispatch (always send, transactional)
+  EventBus.subscribe("PasswordResetRequested", async (payload: any) => {
+    logger.info(`[EmailListener] Enqueueing Password Reset email to: ${payload.email}`)
+    await addJob("email", "sendPasswordReset", {
+      to: payload.email,
+      token: payload.token,
+    })
+  })
+
+  // 8. Interview Scheduled trigger
+  EventBus.subscribe("InterviewScheduled", async (payload: any) => {
+    try {
+      const isEnabled = await shouldSendEmail(payload.candidateUserId, "applicationUpdates")
+      if (isEnabled) {
+        const user = await prisma.user.findUnique({ where: { id: payload.candidateUserId } })
+        if (user && user.email) {
+          logger.info(`[EmailListener] [Placeholder] Enqueueing Interview Scheduled email to: ${user.email}`)
+        }
+      }
+    } catch (err: any) {
+      logger.error(`[EmailListener] InterviewScheduled trigger failed: ${err.message}`)
+    }
+  })
+
+  // 9. Offer Released trigger
+  EventBus.subscribe("OfferReleased", async (payload: any) => {
+    try {
+      const isEnabled = await shouldSendEmail(payload.candidateUserId, "applicationUpdates")
+      if (isEnabled) {
+        const user = await prisma.user.findUnique({ where: { id: payload.candidateUserId } })
+        if (user && user.email) {
+          logger.info(`[EmailListener] [Placeholder] Enqueueing Offer Released email to: ${user.email}`)
+        }
+      }
+    } catch (err: any) {
+      logger.error(`[EmailListener] OfferReleased trigger failed: ${err.message}`)
+    }
+  })
+}
+
+export default initEmailListener

@@ -17,32 +17,34 @@ import {
   Building,
   FileText,
   LineChart,
-  Activity,
   ShieldAlert,
-  Sparkles,
   Settings,
   LogOut,
+  UserCheck,
+  Bell,
+  CircleHelp,
 } from "lucide-react"
 
 const adminMenuItems = [
   { label: "Dashboard", icon: Home, href: "/admin/dashboard" },
-  { label: "Manage Users", icon: Users, href: "/admin/users" },
-  { label: "Moderate Jobs", icon: BriefcaseBusiness, href: "/admin/jobs" },
-  { label: "Verify Companies", icon: Building, href: "/admin/companies" },
-  { label: "Audit Logs", icon: FileText, href: "/admin/audit-logs" },
-  { label: "Reports", icon: LineChart, href: "/admin/reports" },
-  { label: "System Health", icon: Activity, href: "/admin/health" },
-  { label: "Permissions Matrix", icon: ShieldAlert, href: "/admin/permissions" },
-  { label: "Feature Configs", icon: Sparkles, href: "/admin/features" },
+  { label: "Company Approvals", icon: Building, href: "/admin/company-approvals" },
+  { label: "Candidate Management", icon: UserCheck, href: "/admin/candidate-management" },
+  { label: "Company Details", icon: BriefcaseBusiness, href: "/admin/company-details" },
+  { label: "Job Moderation", icon: ShieldAlert, href: "/admin/job-moderation" },
+  { label: "Users", icon: Users, href: "/admin/users" },
+  { label: "Reports & Analytics", icon: LineChart, href: "/admin/reports-analytics" },
+  { label: "Notifications", icon: Bell, href: "/admin/notifications", badge: "2" },
   { label: "Settings", icon: Settings, href: "/admin/settings" },
+  { label: "Activity Logs", icon: FileText, href: "/admin/activity-logs" },
+  { label: "Help & Support", icon: CircleHelp, href: "/admin/help-support" },
   { label: "Logout", icon: LogOut, href: "/admin/logout" },
 ]
 
 const adminMobileItems = [
   { label: "Dashboard", href: "/admin/dashboard", icon: Home },
   { label: "Users", href: "/admin/users", icon: Users },
-  { label: "Jobs", href: "/admin/jobs", icon: BriefcaseBusiness },
-  { label: "Health", href: "/admin/health", icon: Activity },
+  { label: "Jobs", href: "/admin/job-moderation", icon: ShieldAlert },
+  { label: "Notifications", href: "/admin/notifications", icon: Bell },
   { label: "Settings", href: "/admin/settings", icon: Settings },
 ]
 
@@ -55,8 +57,8 @@ export function AdminLayout() {
         <aside className="fixed inset-y-0 left-0 z-40 hidden w-20 xl:w-[264px] lg:block">
           <Sidebar
             menuItems={adminMenuItems}
-            bannerTitle="Platform Operations"
-            bannerSubtitle="Monitor platform audits, settings, and health metrics."
+            bannerTitle="Empowering Women"
+            bannerSubtitle="Building a better future program."
             bannerButtonText="System Health"
             bannerButtonHref="/admin/health"
           />
@@ -77,8 +79,8 @@ export function AdminLayout() {
             <Sidebar
               onNavigate={() => setIsNavigationOpen(false)}
               menuItems={adminMenuItems}
-              bannerTitle="Platform Operations"
-              bannerSubtitle="Monitor platform audits, settings, and health metrics."
+              bannerTitle="Empowering Women"
+              bannerSubtitle="Building a better future program."
               bannerButtonText="System Health"
               bannerButtonHref="/admin/health"
             />
@@ -88,9 +90,9 @@ export function AdminLayout() {
         <div className="min-w-0 flex-1 lg:pl-20 xl:pl-[264px]">
           <Navbar
             onMenuClick={() => setIsNavigationOpen(true)}
-            userName="SysAdmin Control"
-            userRole="Principal Platform Admin"
-            accountTypeLabel="Administrator Account"
+            userName="Admin User"
+            userRole="Super Admin"
+            accountTypeLabel="Super Admin Account"
             switchRoleLabel="Switch to Candidate"
             switchRoleHref="/dashboard"
           />

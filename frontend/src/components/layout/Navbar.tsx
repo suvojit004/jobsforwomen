@@ -70,10 +70,13 @@ export function Navbar({
           <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
           <Input
             type="search"
-            placeholder="Search by job title, company or skill..."
-            className="h-10 rounded-xl border-slate-200 bg-white pl-10 text-sm shadow-sm focus-visible:ring-[#6B2C91]/30 dark:border-slate-800 dark:bg-slate-900"
-            aria-label="Search jobs"
+            placeholder="Search companies, candidates, jobs, users..."
+            className="h-10 rounded-xl border-slate-200 bg-white pl-10 pr-16 text-sm shadow-sm focus-visible:ring-[#6B2C91]/30 dark:border-slate-800 dark:bg-slate-900"
+            aria-label="Search platform"
           />
+          <kbd className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 select-none rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-mono text-[10px] font-medium text-slate-450 dark:border-slate-700 dark:bg-slate-800">
+            Ctrl + K
+          </kbd>
         </div>
 
         <div className="ml-auto flex items-center gap-3 sm:gap-4">
@@ -85,7 +88,9 @@ export function Navbar({
           aria-label="View notifications"
         >
           <Bell className="size-5" />
-          <span className="absolute right-1.5 top-1.5 size-2 rounded-full bg-pink-500 ring-2 ring-white motion-safe:animate-pulse dark:ring-slate-900" />
+          <span className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-black text-white ring-2 ring-white dark:ring-slate-900">
+            9+
+          </span>
         </Button>
 
         <Button
