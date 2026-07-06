@@ -25,10 +25,20 @@ if (process.env.NODE_ENV !== "test") {
   }, 1000)
 }
 
+const allowedOrigins = [
+  "http://localhost:5173",
+  "http://localhost:3000",
+  "https://jobs-for-women-ob43-nl39b4npa.vercel.app",
+]
+
+if (env.CLIENT_URL) {
+  allowedOrigins.push(env.CLIENT_URL)
+}
+
 export function initSocket(server: HttpServer) {
   io = new Server(server, {
     cors: {
-      origin: "*",
+      origin: allowedOrigins,
       methods: ["GET", "POST"],
       credentials: true,
     },

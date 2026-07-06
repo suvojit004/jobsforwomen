@@ -8,6 +8,7 @@ import { errorHandler } from "./shared/middleware/errorHandler"
 import { logger } from "./shared/utils/logger"
 import { sendSuccess } from "./shared/utils/response"
 import prisma from "./shared/database/db"
+import env from "./shared/config/env"
 
 // Import EventBus Listeners
 import { initAuditListener } from "./shared/listeners/audit.listener"
@@ -26,9 +27,25 @@ import { rateLimitMiddleware } from "./shared/middleware/rateLimit.middleware"
 // Safety Headers & CORS Policy
 app.use(helmet())
 app.use(rateLimitMiddleware)
+
+const allowedOrigins = [
+  "http://localhost:5173",
+  "http://localhost:3000",
+  "https://jobs-for-women-ob43-nl39b4npa.vercel.app",
+]
+
+if (env.CLIENT_URL) {
+  allowedOrigins.push(env.CLIENT_URL)
+}
+
 app.use(
   cors({
-    origin: true,
+    origin: (origin, callback) => {
+      if (!origin || allowedOrigins.includes(origin)) {
+        return callback(null, true)
+      }
+      return callback(new Error(`Origin ${origin} not allowed by CORS`))
+    },
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization", "x-request-id"],

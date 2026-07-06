@@ -20,6 +20,9 @@ const envSchema = z.object({
   JWT_REFRESH_EXPIRY: z.string().default("7d"),
 
   REDIS_URL: z.string().min(1),
+  CLIENT_URL: z.string().url().optional(),
+  UPSTASH_REDIS_REST_URL: z.string().optional(),
+  UPSTASH_REDIS_REST_TOKEN: z.string().optional(),
 
   CLOUDINARY_CLOUD_NAME: z.string().min(1),
   CLOUDINARY_API_KEY: z.string().min(1),
