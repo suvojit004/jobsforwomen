@@ -51,7 +51,9 @@ export const apiClient = {
       const response = await fetch(url, {
         method: config.method,
         headers: config.headers,
-        body: config.body ? JSON.stringify(config.body) : undefined,
+        body: (config.method !== "GET" && config.method !== "DELETE" && config.body) 
+          ? JSON.stringify(config.body) 
+          : undefined,
         credentials: "include",
       })
 

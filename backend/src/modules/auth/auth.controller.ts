@@ -66,6 +66,7 @@ export class AuthController {
     res.cookie("jid", result.refreshToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
+      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
       path: "/api/v1/auth/refresh",
       maxAge: 7 * 24 * 60 * 60 * 1000,
     })
@@ -98,6 +99,7 @@ export class AuthController {
     res.cookie("jid", result.refreshToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
+      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
       path: "/api/v1/auth/refresh",
       maxAge: 7 * 24 * 60 * 60 * 1000,
     })
@@ -126,6 +128,7 @@ export class AuthController {
     res.cookie("jid", result.refreshToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
+      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
       path: "/api/v1/auth/refresh",
       maxAge: 7 * 24 * 60 * 60 * 1000,
     })
@@ -148,6 +151,8 @@ export class AuthController {
 
     res.clearCookie("jid", {
       path: "/api/v1/auth/refresh",
+      secure: process.env.NODE_ENV === "production",
+      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
     })
 
     return sendSuccess(res, null, "Logged out successfully.")
@@ -258,6 +263,7 @@ export class AuthController {
       res.cookie("jid", result.refreshToken, {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
+        sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
         path: "/api/v1/auth/refresh",
         maxAge: 7 * 24 * 60 * 60 * 1000,
       })
