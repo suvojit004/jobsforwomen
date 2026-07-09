@@ -88,14 +88,7 @@ export function AdminLayout() {
         </Sheet>
 
         <div className="min-w-0 flex-1 lg:pl-20 xl:pl-[264px]">
-          <Navbar
-            onMenuClick={() => setIsNavigationOpen(true)}
-            userName="Admin User"
-            userRole="Super Admin"
-            accountTypeLabel="Super Admin Account"
-            switchRoleLabel="Switch to Candidate"
-            switchRoleHref="/dashboard"
-          />
+          <Navbar onMenuClick={() => setIsNavigationOpen(true)} />
           <main className="mx-auto w-full max-w-[1540px] px-4 pb-24 pt-5 sm:px-5 lg:px-6 lg:pb-8">
             <Outlet />
           </main>

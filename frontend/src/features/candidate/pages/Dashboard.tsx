@@ -6,14 +6,18 @@ import { ProfileStrengthCard } from "@/components/dashboard/ProfileStrengthCard"
 import { QuickFilters } from "@/components/dashboard/QuickFilters"
 import { RecommendedJobs } from "@/components/dashboard/RecommendedJobs"
 import { ResumeCard } from "@/components/dashboard/ResumeCard"
+import { useAuth } from "@/hooks/useAuth"
 import { candidate } from "@/data/candidate"
 
 export function Dashboard() {
+  const { user } = useAuth()
+  const name = user?.fullName?.split(" ")[0] || "Candidate"
+
   return (
     <div className="space-y-5">
       <div>
         <h1 className="text-2xl font-black tracking-normal text-slate-950 dark:text-white">
-          Welcome back, Priya 👋
+          Welcome back, {name} 👋
         </h1>
         <p className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">
           Let's find your next opportunity today.

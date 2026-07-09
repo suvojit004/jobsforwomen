@@ -48,11 +48,11 @@ export const apiClient = {
     const url = `${this.defaults.baseURL}${endpoint}`
     
     try {
-      // Mock network response resolving
       const response = await fetch(url, {
         method: config.method,
         headers: config.headers,
         body: config.body ? JSON.stringify(config.body) : undefined,
+        credentials: "include",
       })
 
       if (!response.ok) {

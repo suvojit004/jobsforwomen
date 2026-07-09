@@ -1,12 +1,23 @@
 import { Route, Routes, Navigate } from "react-router-dom"
+import { Login } from "@/features/auth/pages/Login"
+import { CandidateRegister } from "@/features/auth/pages/CandidateRegister"
+import { RecruiterRegister } from "@/features/auth/pages/RecruiterRegister"
+import { VerifyEmail } from "@/features/auth/pages/VerifyEmail"
+import { ForgotPassword } from "@/features/auth/pages/ForgotPassword"
+import { ResetPassword } from "@/features/auth/pages/ResetPassword"
 
 export function AuthRoutes() {
   return (
     <Routes>
-      <Route index element={<div className="p-6 text-xs font-black text-slate-800 dark:text-white uppercase tracking-wider">Authentication Portal - Placeholder</div>} />
-      <Route path="login" element={<div className="p-6 text-xs font-black text-slate-800 dark:text-white uppercase tracking-wider">Login Screen - Placeholder</div>} />
+      <Route path="login" element={<Login />} />
+      <Route path="register/candidate" element={<CandidateRegister />} />
+      <Route path="register/recruiter" element={<RecruiterRegister />} />
+      <Route path="verify-email" element={<VerifyEmail />} />
+      <Route path="forgot-password" element={<ForgotPassword />} />
+      <Route path="reset-password" element={<ResetPassword />} />
       <Route path="*" element={<Navigate to="login" replace />} />
     </Routes>
   )
 }
+
 export default AuthRoutes

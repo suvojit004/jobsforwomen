@@ -10,6 +10,36 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet"
+import {
+  Home,
+  UserRound,
+  BriefcaseBusiness,
+  Bookmark,
+  Bell,
+  MessageSquare,
+  Settings,
+  CircleHelp,
+} from "lucide-react"
+
+const candidateMenuItems = [
+  { label: "Dashboard", icon: Home, href: "/candidate/dashboard" },
+  { label: "Profile", icon: UserRound, href: "/candidate/profile" },
+  { label: "Browse Jobs", icon: BriefcaseBusiness, href: "/candidate/jobs" },
+  { label: "My Applications", icon: Bookmark, href: "/candidate/applications" },
+  { label: "Saved Jobs", icon: Bookmark, href: "/candidate/saved-jobs" },
+  { label: "Notifications", icon: Bell, href: "/candidate/notifications" },
+  { label: "Messages", icon: MessageSquare, href: "/candidate/messages" },
+  { label: "Settings", icon: Settings, href: "/candidate/settings" },
+  { label: "Help", icon: CircleHelp, href: "/candidate/help" },
+]
+
+const candidateMobileItems = [
+  { label: "Home", href: "/candidate/dashboard", icon: Home },
+  { label: "Jobs", href: "/candidate/jobs", icon: BriefcaseBusiness },
+  { label: "Applications", href: "/candidate/applications", icon: Bookmark },
+  { label: "Messages", href: "/candidate/messages", icon: MessageSquare },
+  { label: "Profile", href: "/candidate/profile", icon: UserRound },
+]
 
 export function CandidateLayout() {
   const [isNavigationOpen, setIsNavigationOpen] = useState(false)
@@ -18,7 +48,13 @@ export function CandidateLayout() {
     <div className="min-h-screen bg-[#F8FAFC] text-slate-950 dark:bg-[#0F172A] dark:text-slate-50">
       <div className="flex min-h-screen">
         <aside className="fixed inset-y-0 left-0 z-40 hidden w-20 xl:w-[264px] lg:block">
-          <Sidebar />
+          <Sidebar 
+            menuItems={candidateMenuItems}
+            bannerTitle="Empowering Women"
+            bannerSubtitle="Explore diverse returnships and flexible roles."
+            bannerButtonText="Browse Jobs"
+            bannerButtonHref="/candidate/jobs"
+          />
         </aside>
 
         <Sheet open={isNavigationOpen} onOpenChange={setIsNavigationOpen}>
@@ -33,7 +69,14 @@ export function CandidateLayout() {
                 Main navigation for the candidate dashboard.
               </SheetDescription>
             </SheetHeader>
-            <Sidebar onNavigate={() => setIsNavigationOpen(false)} />
+            <Sidebar 
+              onNavigate={() => setIsNavigationOpen(false)} 
+              menuItems={candidateMenuItems}
+              bannerTitle="Empowering Women"
+              bannerSubtitle="Explore diverse returnships and flexible roles."
+              bannerButtonText="Browse Jobs"
+              bannerButtonHref="/candidate/jobs"
+            />
           </SheetContent>
         </Sheet>
 
@@ -44,7 +87,8 @@ export function CandidateLayout() {
           </main>
         </div>
       </div>
-      <MobileBottomNav />
+      <MobileBottomNav menuItems={candidateMobileItems} />
     </div>
   )
 }
+export default CandidateLayout
