@@ -13,6 +13,10 @@ export const openApiSpec = {
       description: "Development Server",
     },
     {
+      url: "https://jobsforwomen.onrender.com/api/v1",
+      description: "Render Production Server",
+    },
+    {
       url: "https://api.jobsforwomen.info/api/v1",
       description: "Production Server",
     },

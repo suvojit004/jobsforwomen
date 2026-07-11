@@ -51,13 +51,15 @@ export class EmailService {
   }
 
   static async sendWelcomeEmail(to: string, verificationToken: string): Promise<boolean> {
-    const link = `${env.SMTP_FROM.includes("resend") ? "http://localhost:3000" : "https://jobsforwomen.info"}/verify-email?token=${verificationToken}`
+    const baseUrl = process.env.FRONTEND_URL || env.CLIENT_URL || (env.SMTP_FROM.includes("resend") ? "http://localhost:3000" : "https://jobsforwomen.info")
+    const link = `${baseUrl}/verify-email?token=${verificationToken}`
     const html = EmailTemplates.welcome({ email: to, verificationLink: link })
     return this.sendMail(to, "Welcome to JobsForWomen - Verify Email", html)
   }
 
   static async sendEmployeeInvitation(to: string, invitationToken: string, roleName: string): Promise<boolean> {
-    const link = `${env.SMTP_FROM.includes("resend") ? "http://localhost:3000" : "https://jobsforwomen.info"}/accept-invitation?token=${invitationToken}`
+    const baseUrl = process.env.FRONTEND_URL || env.CLIENT_URL || (env.SMTP_FROM.includes("resend") ? "http://localhost:3000" : "https://jobsforwomen.info")
+    const link = `${baseUrl}/accept-invitation?token=${invitationToken}`
     const html = EmailTemplates.invitation({ email: to, invitationLink: link, roleName })
     return this.sendMail(to, "JobsForWomen Staff Invitation", html)
   }
@@ -73,7 +75,8 @@ export class EmailService {
   }
 
   static async sendPasswordResetEmail(to: string, resetToken: string): Promise<boolean> {
-    const link = `${env.SMTP_FROM.includes("resend") ? "http://localhost:3000" : "https://jobsforwomen.info"}/reset-password?token=${resetToken}`
+    const baseUrl = process.env.FRONTEND_URL || env.CLIENT_URL || (env.SMTP_FROM.includes("resend") ? "http://localhost:3000" : "https://jobsforwomen.info")
+    const link = `${baseUrl}/reset-password?token=${resetToken}`
     const html = EmailTemplates.passwordReset({ email: to, resetLink: link })
     return this.sendMail(to, "JobsForWomen Password Reset Request", html)
   }

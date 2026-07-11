@@ -2,6 +2,7 @@ import type { Request, Response } from "express"
 import { AuthService } from "./auth.service"
 import { sendSuccess, sendError } from "../../shared/utils/response"
 import { getGoogleAuthUrl, getGoogleUser } from "../../shared/utils/googleOAuth"
+import env from "../../shared/config/env"
 import {
   registerCandidateSchema,
   registerRecruiterSchema,
@@ -270,7 +271,7 @@ export class AuthController {
 
       res.clearCookie("oauth_state")
 
-      const frontendUrl = process.env.FRONTEND_URL || "http://localhost:3000"
+      const frontendUrl = process.env.FRONTEND_URL || env.CLIENT_URL || "http://localhost:3000"
       return res.redirect(`${frontendUrl}/oauth/callback?token=${result.accessToken}`)
     } catch (err: any) {
       next(err)

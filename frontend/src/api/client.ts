@@ -12,6 +12,10 @@ const responseInterceptors: Array<{
   onError?: (error: any) => any
 }> = []
 
+if (import.meta.env.PROD && !import.meta.env.VITE_API_URL) {
+  console.error("❌ CRITICAL: The VITE_API_URL environment variable is missing from the production build configuration. Please specify the Render API endpoint.");
+}
+
 // Configure client instance
 export const apiClient = {
   // Pre-configured BASE URL placeholder
@@ -35,7 +39,7 @@ export const apiClient = {
   // Send request pipeline
   async request<T = any>(endpoint: string, options: RequestConfig = {}): Promise<T> {
     let config: RequestConfig = {
-      method: "GET",
+      method: options.method || "GET",
       headers: { ...this.defaults.headers, ...options.headers },
       body: options.body,
     }
