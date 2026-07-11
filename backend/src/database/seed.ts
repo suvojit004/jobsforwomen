@@ -275,10 +275,13 @@ async function main() {
     
     await prisma.user.upsert({
       where: { email: cData.recruiter.email },
-      update: {},
+      update: {
+        status: UserStatus.Active,
+      },
       create: {
         email: cData.recruiter.email,
         passwordHash: recPasswordHash,
+        status: UserStatus.Active,
         roles: {
           create: {
             roleId: recruiterRole.id,
