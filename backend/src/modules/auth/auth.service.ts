@@ -21,7 +21,7 @@ export class AuthService {
       email,
       passwordHash,
       fullName,
-      UserStatus.PendingVerification
+      process.env.BYPASS_EMAIL_VERIFICATION === "true" ? UserStatus.Active : UserStatus.PendingVerification
     )
 
     const verificationToken = crypto.randomBytes(32).toString("hex")
@@ -67,7 +67,7 @@ export class AuthService {
       website,
       location,
       industry,
-      UserStatus.PendingVerification
+      process.env.BYPASS_EMAIL_VERIFICATION === "true" ? UserStatus.Active : UserStatus.PendingVerification
     )
 
     const verificationToken = crypto.randomBytes(32).toString("hex")
@@ -128,7 +128,12 @@ export class AuthService {
     }
 
     if (user.status === UserStatus.PendingVerification) {
-      throw new Error("Please verify your email address first")
+      if (process.env.BYPASS_EMAIL_VERIFICATION === "true") {
+        user.status = UserStatus.Active
+        await this.authRepository.updateUserStatus(user.id, UserStatus.Active)
+      } else {
+        throw new Error("Please verify your email address first")
+      }
     }
 
     if (user.status === UserStatus.Blocked) {
