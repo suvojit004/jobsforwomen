@@ -28,29 +28,54 @@ import { rateLimitMiddleware } from "./shared/middleware/rateLimit.middleware"
 app.use(helmet())
 app.use(rateLimitMiddleware)
 
-const allowedOrigins = [
-  "http://localhost:5173",
-  "http://localhost:3000",
-  "https://jobs-for-women-ob43-nl39b4npa.vercel.app",
-]
+const allowedOrigins = new Set(
+  [
+    "http://localhost:5173",
+    "http://localhost:3000",
+    "https://jobs-for-women-ob43.vercel.app",
+    env.CLIENT_URL,
+    env.FRONTEND_URL,
+  ].filter((origin): origin is string => Boolean(origin))
+)
 
-if (env.CLIENT_URL) {
-  allowedOrigins.push(env.CLIENT_URL)
+const corsOptions: cors.CorsOptions = {
+  origin: (origin, callback) => {
+    // Allow requests without an Origin header:
+    // Postman, curl, health checks, server-to-server requests
+    if (!origin) {
+      return callback(null, true)
+    }
+
+    if (allowedOrigins.has(origin)) {
+      return callback(null, true)
+    }
+
+    logger.warn(`[CORS] Blocked origin: ${origin}`)
+    return callback(null, false)
+  },
+
+  credentials: true,
+
+  methods: [
+    "GET",
+    "HEAD",
+    "POST",
+    "PUT",
+    "PATCH",
+    "DELETE",
+    "OPTIONS",
+  ],
+
+  allowedHeaders: [
+    "Content-Type",
+    "Authorization",
+    "x-request-id",
+  ],
+
+  optionsSuccessStatus: 204,
 }
 
-app.use(
-  cors({
-    origin: (origin, callback) => {
-      if (!origin || allowedOrigins.includes(origin)) {
-        return callback(null, true)
-      }
-      return callback(new Error(`Origin ${origin} not allowed by CORS`))
-    },
-    credentials: true,
-    methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization", "x-request-id"],
-  })
-)
+app.use(cors(corsOptions))
 
 // Request Trace & Logging
 app.use(requestId)
