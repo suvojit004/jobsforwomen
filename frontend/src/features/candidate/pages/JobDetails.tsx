@@ -1,7 +1,9 @@
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { useParams, useNavigate } from "react-router-dom"
 import { motion } from "framer-motion"
-import { mockJobs } from "../mock/jobsMock"
+import { toast } from "sonner"
+import { CandidateJobsApi } from "../services/jobsApi"
+import type { ExtendedJob } from "@/types/job"
 import { JobDetailContent } from "../components/Jobs/JobDetailContent"
 import { EmptyState } from "@/components/shared/EmptyState"
 
@@ -9,27 +11,44 @@ export function JobDetails() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
 
-  // Sync state with local storage
-  const [savedJobs, setSavedJobs] = useState<string[]>(() => {
-    const saved = localStorage.getItem("savedJobs")
-    return saved ? JSON.parse(saved) : []
-  })
+  const [job, setJob] = useState<ExtendedJob | null | undefined>(undefined)
+  const [related, setRelated] = useState<ExtendedJob[]>([])
+  const [savedJobs, setSavedJobs] = useState<string[]>([])
+  const [appliedJobs, setAppliedJobs] = useState<string[]>([])
 
-  const [appliedJobs, setAppliedJobs] = useState<string[]>(() => {
-    const applied = localStorage.getItem("appliedJobs")
-    return applied ? JSON.parse(applied) : []
-  })
+  const loadJob = useCallback(async () => {
+    if (!id) return
+    try {
+      const [found, savedList, applications, allJobs] = await Promise.all([
+        CandidateJobsApi.getJobById(id),
+        CandidateJobsApi.getSavedJobs(),
+        CandidateJobsApi.getApplications(),
+        CandidateJobsApi.getJobs({}, 1, 50),
+      ])
 
-  // Re-read local storage on ID change to stay in sync
-  useEffect(() => {
-    const saved = localStorage.getItem("savedJobs")
-    if (saved) setSavedJobs(JSON.parse(saved))
-    
-    const applied = localStorage.getItem("appliedJobs")
-    if (applied) setAppliedJobs(JSON.parse(applied))
+      setJob(found || null)
+      setSavedJobs(savedList.map((j) => j.id))
+      setAppliedJobs(applications.map((a: any) => a.jobId))
+
+      if (found) {
+        const others = allJobs.jobs.filter((j) => j.id !== found.id)
+        const sameCompany = others.filter((j) => j.company === found.company)
+        const rest = others.filter((j) => j.company !== found.company)
+        setRelated([...sameCompany, ...rest].slice(0, 2))
+      }
+    } catch (err) {
+      console.error("Failed to load job details", err)
+      setJob(null)
+    }
   }, [id])
 
-  const job = mockJobs.find((j) => j.id === id)
+  useEffect(() => {
+    loadJob()
+  }, [loadJob])
+
+  if (job === undefined) {
+    return null
+  }
 
   if (!job) {
     return (
@@ -55,54 +74,29 @@ export function JobDetails() {
     )
   }
 
-  // Related jobs: jobs in the same company or similar titles (excluding current job)
-  let related = mockJobs.filter(
-    (j) => j.id !== job.id && (j.company === job.company || j.title.split(" ")[0] === job.title.split(" ")[0])
-  )
-  if (related.length < 2) {
-    // Fallback: grab any other jobs to populate the sidebar
-    related = [...related, ...mockJobs.filter((j) => j.id !== job.id && !related.some((r) => r.id === j.id))].slice(0, 2)
-  } else {
-    related = related.slice(0, 2)
-  }
-
-  const handleSaveToggle = (jobId: string) => {
-    let updated: string[]
-    if (savedJobs.includes(jobId)) {
-      updated = savedJobs.filter((sId) => sId !== jobId)
-    } else {
-      updated = [...savedJobs, jobId]
-    }
-    setSavedJobs(updated)
-    localStorage.setItem("savedJobs", JSON.stringify(updated))
-  }
-
-  const handleApply = (jobId: string) => {
-    if (!appliedJobs.includes(jobId)) {
-      const updated = [...appliedJobs, jobId]
-      setAppliedJobs(updated)
-      localStorage.setItem("appliedJobs", JSON.stringify(updated))
-
-      // Also record in applications schema to show up on My Applications page
-      const storedApps = localStorage.getItem("customApplications")
-      const apps = storedApps ? JSON.parse(storedApps) : []
-      const jobDetails = mockJobs.find((j) => j.id === jobId)
-      if (jobDetails && !apps.some((a: { id: string }) => a.id === jobId)) {
-        const newApp = {
-          id: jobDetails.id,
-          company: jobDetails.company,
-          companyCode: jobDetails.companyCode,
-          job: jobDetails.title,
-          appliedDate: new Date().toLocaleDateString("en-GB", {
-            day: "2-digit",
-            month: "short",
-            year: "numeric",
-          }),
-          status: "Applied",
-          recruiter: "Anjali Rao",
-        }
-        localStorage.setItem("customApplications", JSON.stringify([newApp, ...apps]))
+  const handleSaveToggle = async (jobId: string) => {
+    const wasSaved = savedJobs.includes(jobId)
+    setSavedJobs((prev) => (wasSaved ? prev.filter((sId) => sId !== jobId) : [...prev, jobId]))
+    try {
+      if (wasSaved) {
+        await CandidateJobsApi.unsaveJob(jobId)
+      } else {
+        await CandidateJobsApi.saveJob(jobId)
       }
+    } catch {
+      setSavedJobs((prev) => (wasSaved ? [...prev, jobId] : prev.filter((sId) => sId !== jobId)))
+      toast.error("Couldn't update saved jobs. Please try again.")
+    }
+  }
+
+  const handleApply = async (jobId: string) => {
+    if (appliedJobs.includes(jobId)) return
+    try {
+      await CandidateJobsApi.applyToJob(jobId)
+      setAppliedJobs((prev) => [...prev, jobId])
+      toast.success("Application submitted successfully.")
+    } catch (err: any) {
+      toast.error(err?.message || "Couldn't submit your application. Please try again.")
     }
   }
 

@@ -15,9 +15,12 @@ import { MenstrualLeaveChampionBadge } from "@/components/shared/MenstrualLeaveC
 import { StatusBadge } from "@/components/shared/StatusBadge"
 import { DashboardCard } from "@/components/dashboard/DashboardCard"
 import { SectionHeader } from "@/components/dashboard/SectionHeader"
-import { applications } from "@/data/applications"
 
-export function MyApplications() {
+type MyApplicationsProps = {
+  applications?: any[]
+}
+
+export function MyApplications({ applications = [] }: MyApplicationsProps) {
   const tableMeta = useMemo(
     () => ({
       hasInterviewDate: applications.some(
@@ -29,8 +32,17 @@ export function MyApplications() {
         Boolean(application.recruiter)
       ),
     }),
-    []
+    [applications]
   )
+
+  const counts = useMemo(() => {
+    return {
+      all: applications.length,
+      applied: applications.filter(a => a.status === "Applied").length,
+      interviewing: applications.filter(a => a.status === "Interview Scheduled" || a.status === "Under Review").length,
+      closed: applications.filter(a => a.status === "Rejected" || a.status === "Selected").length,
+    }
+  }, [applications])
 
   return (
     <section>
@@ -51,10 +63,10 @@ export function MyApplications() {
         {applications.length > 0 ? (
           <>
             <div className="flex gap-5 border-b border-slate-200 px-4 py-3 text-xs font-extrabold text-slate-500 dark:border-slate-800 dark:text-slate-400">
-              <span className="text-[#6B2C91] dark:text-pink-200">All (6)</span>
-              <span>Applied (4)</span>
-              <span>Interviewing (2)</span>
-              <span>Closed (2)</span>
+              <span className="text-[#6B2C91] dark:text-pink-200">All ({counts.all})</span>
+              <span>Applied ({counts.applied})</span>
+              <span>Interviewing ({counts.interviewing})</span>
+              <span>Closed ({counts.closed})</span>
             </div>
             <Table>
               <TableHeader>
@@ -78,15 +90,7 @@ export function MyApplications() {
                       <div className="flex items-center gap-3">
                         <CompanyLogo
                           code={application.companyCode}
-                          tone={
-                            application.companyCode === "CM"
-                              ? "green"
-                              : application.companyCode === "WA"
-                                ? "blue"
-                                : application.companyCode === "BC"
-                                  ? "pink"
-                                  : "purple"
-                          }
+                          tone="purple"
                           className="size-8"
                         />
                         <span className="text-xs font-extrabold text-slate-950 dark:text-white">

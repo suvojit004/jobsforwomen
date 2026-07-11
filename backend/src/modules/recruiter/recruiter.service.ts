@@ -427,6 +427,34 @@ export class RecruiterService {
     return job
   }
 
+  async getJobs(userId: string) {
+    const profile = await prisma.recruiterProfile.findUnique({ where: { userId } })
+    if (!profile) {
+      throw new Error("Recruiter profile not found")
+    }
+
+    const jobs = await prisma.job.findMany({
+      where: { companyId: profile.companyId },
+      include: {
+        department: true,
+        _count: { select: { applications: true } },
+      },
+      orderBy: { postedOn: "desc" },
+    })
+
+    return jobs.map((job) => ({
+      id: job.id,
+      title: job.title,
+      department: job.department?.name || "General",
+      workMode: job.workMode,
+      type: job.type,
+      location: job.location,
+      applicants: job._count.applications,
+      status: job.status,
+      postedOn: job.postedOn,
+    }))
+  }
+
   async updateJob(jobId: string, userId: string, data: any, context?: ServiceContext) {
     const profile = await prisma.recruiterProfile.findUnique({
       where: { userId },
@@ -664,7 +692,7 @@ export class RecruiterService {
     return prisma.application.findMany({
       where: whereClause,
       include: {
-        candidate: true,
+        candidate: { include: { user: true } },
         job: true,
         history: {
           orderBy: { createdAt: "desc" },

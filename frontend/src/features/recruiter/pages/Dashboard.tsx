@@ -1,5 +1,6 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Link, useNavigate } from "react-router-dom"
+import { RecruiterApi } from "../services/recruiterApi"
 import {
   Briefcase,
   Users,
@@ -51,70 +52,77 @@ interface RecentApplicant {
 export function Dashboard() {
   const navigate = useNavigate()
 
-  // Load company profile dynamically from localStorage
-  const [company, setCompany] = useState(() => {
-    const defaultProfile = {
-      name: "TechNova Solutions",
-      website: "www.technova.com",
-      description: "We build innovative software solutions that empower businesses worldwide.",
-      menstrualLeaveChampion: true,
-      perks: [
-        "Work-from-Home Policy",
-        "Menstrual Leave Support",
-        "Flexible Working Hours",
-        "Learning & Development Schemes",
-      ]
-    }
-    const stored = localStorage.getItem("companyProfile")
-    if (stored) {
-      const parsed = JSON.parse(stored)
-      const activePerks: string[] = []
-      if (parsed.menstrualLeaveChampion) activePerks.push("Menstrual Leave Support")
-      if (parsed.workFromHome) activePerks.push("Work-from-Home Policy")
-      if (parsed.flexibleHours) activePerks.push("Flexible Working Hours")
-      if (parsed.learningBudget) activePerks.push("Learning & Development Schemes")
-      if (parsed.childcareSupport) activePerks.push("Childcare Allowance Support")
+  const [company, setCompany] = useState<any>(null)
+  const [dashboardData, setDashboardData] = useState<any>(null)
+  const [jobPostings, setJobPostings] = useState<JobPosting[]>([])
+  const [recentApplicants, setRecentApplicants] = useState<RecentApplicant[]>([])
+  const [isLoading, setIsLoading] = useState(true)
 
-      return {
-        name: parsed.name || defaultProfile.name,
-        website: parsed.website || defaultProfile.website,
-        description: parsed.description || defaultProfile.description,
-        menstrualLeaveChampion: parsed.menstrualLeaveChampion ?? defaultProfile.menstrualLeaveChampion,
-        perks: activePerks.length > 0 ? activePerks : defaultProfile.perks
+  useEffect(() => {
+    async function loadDashboard() {
+      try {
+        const [dash, jobsList, appsList] = await Promise.all([
+          RecruiterApi.getDashboard(),
+          RecruiterApi.getJobs(),
+          RecruiterApi.getApplicants(),
+        ])
+
+        setDashboardData(dash)
+
+        setJobPostings((jobsList || []).map((j: any) => ({
+          id: j.id,
+          title: j.title,
+          workMode: j.workMode,
+          applicants: j.applicants || 0,
+          status: j.status === "approved" ? "Active" : j.status === "paused" ? "Paused" : "Closed",
+          postedOn: j.postedOn || "Today"
+        })))
+
+        setRecentApplicants((appsList || []).slice(0, 5).map((a: any) => ({
+          id: a.id,
+          name: a.name,
+          role: a.job,
+          appliedOn: a.appliedDate,
+          avatarLetters: a.name.split(" ").map((n: string) => n[0]).join("").slice(0, 2).toUpperCase()
+        })))
+
+        const comp = dash?.company || dash?.recruiterProfile?.company
+        if (comp) {
+          setCompany({
+            name: comp.name || "My Company",
+            website: comp.website || "www.example.com",
+            description: comp.description || "No description set yet.",
+            menstrualLeaveChampion: !!comp.menstrualLeaveChampion,
+            perks: comp.claimedPerks || ["Work-from-Home Policy", "Flexible Working Hours"]
+          })
+        } else {
+          setCompany({
+            name: "TechNova Solutions",
+            website: "www.technova.com",
+            description: "We build innovative software solutions that empower businesses worldwide.",
+            menstrualLeaveChampion: true,
+            perks: ["Work-from-Home Policy", "Menstrual Leave Support", "Flexible Working Hours"]
+          })
+        }
+      } catch (err) {
+        console.error("Failed to load recruiter dashboard", err)
+      } finally {
+        setIsLoading(false)
       }
     }
-    return defaultProfile
-  })
+    loadDashboard()
+  }, [])
 
-  // Handle live toggle for Menstrual leave
   const handleToggleChampion = () => {
     const nextVal = !company.menstrualLeaveChampion
-    const updatedCompany = { ...company, menstrualLeaveChampion: nextVal }
-    
-    // If menstrual leave is toggled, update perks list
-    const updatedPerks = [...company.perks]
-    if (nextVal && !updatedPerks.includes("Menstrual Leave Support")) {
-      updatedPerks.push("Menstrual Leave Support")
-    } else if (!nextVal) {
-      const idx = updatedPerks.indexOf("Menstrual Leave Support")
-      if (idx > -1) updatedPerks.splice(idx, 1)
-    }
-    updatedCompany.perks = updatedPerks
-    
-    setCompany(updatedCompany)
-
-    // Save back to localStorage
-    const stored = localStorage.getItem("companyProfile")
-    const parsed = stored ? JSON.parse(stored) : {}
-    parsed.menstrualLeaveChampion = nextVal
-    localStorage.setItem("companyProfile", JSON.stringify(parsed))
+    setCompany((prev: any) => ({ ...prev, menstrualLeaveChampion: nextVal }))
+    alert("Champion status toggled! To submit official verification documents, please go to the Company tab.")
   }
 
-  // Mock stats
   const stats = [
     {
       label: "Active Jobs",
-      value: "12",
+      value: String(dashboardData?.jobStatistics?.approved || 0),
       change: "+20%",
       subtext: "from last week",
       icon: Briefcase,
@@ -123,7 +131,7 @@ export function Dashboard() {
     },
     {
       label: "Total Applicants",
-      value: "48",
+      value: String(dashboardData?.applicantStatistics?.total || 0),
       change: "+18%",
       subtext: "from last week",
       icon: Users,
@@ -132,7 +140,7 @@ export function Dashboard() {
     },
     {
       label: "Shortlisted",
-      value: "18",
+      value: String(dashboardData?.applicantStatistics?.shortlisted || 0),
       change: "+12%",
       subtext: "from last week",
       icon: Award,
@@ -141,7 +149,7 @@ export function Dashboard() {
     },
     {
       label: "Interviews",
-      value: "5",
+      value: String(dashboardData?.applicantStatistics?.interviewScheduled || 0),
       change: "+25%",
       subtext: "from last week",
       icon: Calendar,
@@ -150,103 +158,7 @@ export function Dashboard() {
     },
   ]
 
-  // Mock job postings combined with custom local storage jobs
-  const [jobPostings] = useState<JobPosting[]>(() => {
-    const initialJobs: JobPosting[] = [
-      {
-        id: "job-p1",
-        title: "Frontend Developer",
-        workMode: "Remote",
-        applicants: 15,
-        status: "Active",
-        postedOn: "12 May 2025",
-      },
-      {
-        id: "job-p2",
-        title: "UI/UX Designer",
-        workMode: "Hybrid",
-        applicants: 12,
-        status: "Active",
-        postedOn: "11 May 2025",
-      },
-      {
-        id: "job-p3",
-        title: "Product Manager",
-        workMode: "On-site",
-        applicants: 9,
-        status: "Active",
-        postedOn: "08 May 2025",
-      },
-      {
-        id: "job-p4",
-        title: "Content Writer",
-        workMode: "Remote",
-        applicants: 6,
-        status: "Paused",
-        postedOn: "05 May 2025",
-      },
-      {
-        id: "job-p5",
-        title: "Digital Marketing Executive",
-        workMode: "Hybrid",
-        applicants: 6,
-        status: "Active",
-        postedOn: "02 May 2025",
-      },
-    ]
 
-    const storedCustomJobs = localStorage.getItem("recruiterJobs")
-    const customJobs = storedCustomJobs ? JSON.parse(storedCustomJobs) : []
-    const formattedCustomJobs = customJobs.map((job: any) => ({
-      id: job.id,
-      title: job.title,
-      workMode: job.workMode,
-      applicants: job.applicants || 0,
-      status: job.status || "Active",
-      postedOn: job.postedOn,
-    }))
-
-    return [...formattedCustomJobs, ...initialJobs]
-  })
-
-  // Mock recent applicants
-  const recentApplicants: RecentApplicant[] = [
-    {
-      id: "app-1",
-      name: "Priya Sharma",
-      role: "Frontend Developer",
-      appliedOn: "12 May 2025",
-      avatarLetters: "PS",
-    },
-    {
-      id: "app-2",
-      name: "Anjali Verma",
-      role: "UI/UX Designer",
-      appliedOn: "11 May 2025",
-      avatarLetters: "AV",
-    },
-    {
-      id: "app-3",
-      name: "Neha Singh",
-      role: "Frontend Developer",
-      appliedOn: "10 May 2025",
-      avatarLetters: "NS",
-    },
-    {
-      id: "app-4",
-      name: "Riya Patel",
-      role: "Content Writer",
-      appliedOn: "09 May 2025",
-      avatarLetters: "RP",
-    },
-    {
-      id: "app-5",
-      name: "Ayesha Khan",
-      role: "Frontend Developer",
-      appliedOn: "08 May 2025",
-      avatarLetters: "AK",
-    },
-  ]
 
   // Mock Recharts line chart dataset
   const chartData = [
@@ -312,6 +224,10 @@ export function Dashboard() {
 
   const handleRowClick = (row: JobPosting) => {
     navigate(`/recruiter/jobs/${row.id}`)
+  }
+
+  if (isLoading) {
+    return <div className="p-8 text-center text-sm font-bold text-[#6B2C91]">Loading dashboard...</div>
   }
 
   return (
@@ -512,7 +428,7 @@ export function Dashboard() {
               Company Perks & Benefits
             </h3>
             <ul className="space-y-2.5">
-              {company.perks.map((perk, idx) => (
+              {company.perks.map((perk: string, idx: number) => (
                 <li key={idx} className="flex items-center gap-2 text-xs font-semibold text-slate-700 dark:text-slate-300 animate-fadeIn">
                   <CheckCircle className="size-4 text-emerald-500 shrink-0" />
                   {perk}

@@ -12,8 +12,19 @@ import type { ColumnDef } from "@/components/shared/DataTable"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { DashboardCard } from "@/components/shared/DashboardCard"
-import { AdminService } from "@/services/admin.service"
-import type { AdminJob } from "@/services/admin.service"
+import { AdminApi } from "../services/adminApi"
+
+interface AdminJob {
+  id: string
+  title: string
+  company: string
+  location: string
+  salary: string
+  applicantsCount: number
+  status: string
+  reported: boolean
+  visibility: "visible" | "hidden"
+}
 
 export function JobModeration() {
   const [jobs, setJobs] = useState<AdminJob[]>([])
@@ -24,8 +35,18 @@ export function JobModeration() {
   const loadJobs = async () => {
     try {
       setLoading(true)
-      const data = await AdminService.getJobs()
-      setJobs([...data])
+      const data = await AdminApi.getJobs()
+      setJobs((data || []).map((j: any) => ({
+        id: j.id,
+        title: j.title,
+        company: j.company?.name || "TechNova Solutions",
+        location: j.location,
+        salary: j.salaryDisplay || "N/A",
+        applicantsCount: j.applicants || 0,
+        status: j.status,
+        reported: j.status === "reported",
+        visibility: j.status === "hidden" ? "hidden" : "visible"
+      })))
     } catch (err) {
       console.error("Failed to load jobs list:", err)
     } finally {
@@ -38,24 +59,32 @@ export function JobModeration() {
   }, [])
 
   const handleToggleVisibility = async (jobId: string) => {
-    const success = await AdminService.toggleJobVisibility(jobId)
-    if (success) {
+    try {
+      const jobObj = jobs.find((j) => j.id === jobId)
+      const nextAction = jobObj?.visibility === "visible" ? "hide" : "approve"
+      await AdminApi.moderateJob(jobId, nextAction)
       loadJobs()
+    } catch (err) {
+      console.error("Failed to toggle job visibility", err)
     }
   }
 
   const handleApprove = async (jobId: string) => {
-    const success = await AdminService.approveJob(jobId)
-    if (success) {
+    try {
+      await AdminApi.moderateJob(jobId, "approve")
       loadJobs()
+    } catch (err) {
+      console.error("Failed to approve job", err)
     }
   }
 
   const handleDelete = async (jobId: string) => {
     if (confirm("Are you sure you want to permanently delete this job listing?")) {
-      const success = await AdminService.deleteJob(jobId)
-      if (success) {
+      try {
+        await AdminApi.moderateJob(jobId, "reject", "Administrative deletion")
         loadJobs()
+      } catch (err) {
+        console.error("Failed to delete job", err)
       }
     }
   }

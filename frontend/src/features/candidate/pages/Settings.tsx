@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useTheme } from "next-themes"
 import { motion } from "framer-motion"
 import {
@@ -15,7 +15,7 @@ import {
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { DashboardCard } from "@/components/dashboard/DashboardCard"
-import { candidate } from "@/data/candidate"
+import { candidateApi } from "../services/candidateApi"
 import { cn } from "@/lib/utils"
 
 type TabType = "account" | "appearance" | "security" | "notifications" | "privacy"
@@ -24,11 +24,13 @@ export function Settings() {
   const { theme, setTheme } = useTheme()
   const [activeTab, setActiveTab] = useState<TabType>("account")
 
+  const [isLoading, setIsLoading] = useState(true)
+
   // Account states
-  const [fullName, setFullName] = useState(candidate.fullName)
-  const [email, setEmail] = useState(candidate.email)
-  const [phone, setPhone] = useState("+91 98765 43210")
-  const [bio, setBio] = useState("Passionate Frontend Developer focused on creating accessible and premium user interfaces.")
+  const [fullName, setFullName] = useState("")
+  const [email, setEmail] = useState("")
+  const [phone, setPhone] = useState("")
+  const [bio, setBio] = useState("")
   const [saveSuccess, setSaveSuccess] = useState(false)
 
   // Security states
@@ -51,10 +53,48 @@ export function Settings() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [deleteConfirmText, setDeleteConfirmText] = useState("")
 
-  const handleAccountSubmit = (e: React.FormEvent) => {
+  useEffect(() => {
+    async function loadData() {
+      try {
+        const [prof, setts] = await Promise.all([
+          candidateApi.getProfile(),
+          candidateApi.getSettings()
+        ])
+        if (prof) {
+          setFullName(prof.fullName || "")
+          setEmail(prof.user?.email || "")
+          setPhone(prof.phone || "")
+          setBio(prof.bio || "")
+        }
+        if (setts) {
+          setEmailNewJobs(!!setts.emailNewJobs)
+          setEmailStatusUpdate(!!setts.emailStatusUpdate)
+          setEmailInterviews(!!setts.emailInterviews)
+          setEmailPlatformNews(!!setts.emailPlatformNews)
+          setTwoFactor(!!setts.twoFactorEnabled)
+        }
+      } catch (err) {
+        console.error("Failed to load settings data", err)
+      } finally {
+        setIsLoading(false)
+      }
+    }
+    loadData()
+  }, [])
+
+  const handleAccountSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    setSaveSuccess(true)
-    setTimeout(() => setSaveSuccess(false), 3000)
+    try {
+      await candidateApi.updateProfile({
+        fullName,
+        phone,
+        bio,
+      })
+      setSaveSuccess(true)
+      setTimeout(() => setSaveSuccess(false), 3000)
+    } catch (err) {
+      console.error("Failed to update profile", err)
+    }
   }
 
   const handlePasswordSubmit = (e: React.FormEvent) => {
@@ -67,10 +107,21 @@ export function Settings() {
     setTimeout(() => setPasswordSuccess(false), 3000)
   }
 
-  const handleNotificationsSubmit = (e: React.FormEvent) => {
+  const handleNotificationsSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    setNotifSuccess(true)
-    setTimeout(() => setNotifSuccess(false), 3000)
+    try {
+      await candidateApi.updateSettings({
+        emailNewJobs,
+        emailStatusUpdate,
+        emailInterviews,
+        emailPlatformNews,
+        twoFactorEnabled: twoFactor,
+      })
+      setNotifSuccess(true)
+      setTimeout(() => setNotifSuccess(false), 3000)
+    } catch (err) {
+      console.error("Failed to update settings", err)
+    }
   }
 
   const handleDeleteAccount = () => {
@@ -88,6 +139,10 @@ export function Settings() {
     { id: "notifications", label: "Notifications", icon: Bell },
     { id: "privacy", label: "Privacy", icon: EyeOff },
   ] as const
+
+  if (isLoading) {
+    return <div className="p-8 text-center text-sm font-bold text-[#6B2C91]">Loading settings...</div>
+  }
 
   return (
     <motion.div

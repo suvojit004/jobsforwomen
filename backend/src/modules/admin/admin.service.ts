@@ -105,6 +105,40 @@ export class AdminService {
   // ==========================================
   // RECRUITER / COMPANY VERIFICATION WORKFLOW
   // ==========================================
+  async listCompanies(status?: string) {
+    const where: any = {}
+    if (status && status !== "all") {
+      where.status = status
+    }
+
+    return prisma.company.findMany({
+      where,
+      include: {
+        industry: true,
+        recruiters: { include: { user: true } },
+        benefits: true,
+      },
+      orderBy: { name: "asc" },
+    })
+  }
+
+  async listJobs(status?: string) {
+    const where: any = {}
+    if (status && status !== "all") {
+      where.status = status
+    }
+
+    return prisma.job.findMany({
+      where,
+      include: {
+        company: true,
+        department: true,
+        _count: { select: { applications: true, reports: true } },
+      },
+      orderBy: { postedOn: "desc" },
+    })
+  }
+
   async verifyCompany(
     adminId: string,
     companyId: string,
@@ -341,6 +375,15 @@ export class AdminService {
 
     if (action === "password-reset") {
       const resetToken = crypto.randomBytes(32).toString("hex")
+      const expiresAt = new Date(Date.now() + 60 * 60 * 1000) // 1 hour
+
+      await prisma.passwordReset.updateMany({
+        where: { email: target.email, usedAt: null },
+        data: { usedAt: new Date() },
+      })
+      await prisma.passwordReset.create({
+        data: { email: target.email, token: resetToken, expiresAt },
+      })
 
       EventBus.publish("PasswordResetRequested", {
         email: target.email,
@@ -348,7 +391,17 @@ export class AdminService {
         context,
       })
 
-      return { resetRequested: true, token: resetToken }
+      EventBus.publish("AuditCreated", {
+        ...context,
+        operatorId: adminId,
+        operatorEmail: admin?.email,
+        category: "ADMIN",
+        action: "FORCE_PASSWORD_RESET",
+        entity: "User",
+        entityId: targetUserId,
+      })
+
+      return { resetRequested: true }
     } else if (action === "account-unlock") {
       const updated = await prisma.user.update({
         where: { id: targetUserId },
@@ -853,6 +906,89 @@ export class AdminService {
         applications,
       },
     }
+  }
+
+  // ==========================================
+  // ADDED OPERATIONS FOR FRONTEND WIRING
+  // ==========================================
+  async listUsers(role?: string) {
+    const whereClause: any = {}
+    if (role) {
+      whereClause.roles = {
+        some: {
+          role: {
+            name: { equals: role, mode: "insensitive" }
+          }
+        }
+      }
+    }
+
+    return prisma.user.findMany({
+      where: whereClause,
+      include: {
+        roles: {
+          include: {
+            role: true
+          }
+        },
+        candidateProfile: true,
+        recruiterProfile: {
+          include: {
+            company: true
+          }
+        },
+        adminProfile: true
+      },
+      orderBy: { createdAt: "desc" }
+    })
+  }
+
+  async verifyRecruiter(adminId: string, recruiterProfileId: string, verified: boolean, context?: ServiceContext) {
+    const updated = await prisma.recruiterProfile.update({
+      where: { id: recruiterProfileId },
+      data: { verified },
+      include: { user: true }
+    })
+
+    await prisma.auditLog.create({
+      data: {
+        action: "VERIFY_RECRUITER",
+        category: "RECRUITER",
+        entity: "RecruiterProfile",
+        entityId: recruiterProfileId,
+        newValue: { verified },
+        operatorId: adminId,
+        ipAddress: context?.ipAddress || "127.0.0.1",
+        browser: context?.browser || "Unknown",
+        device: context?.device || "Desktop",
+      }
+    })
+
+    return updated
+  }
+
+  async getAdminSettings(adminId: string) {
+    const user = await prisma.user.findUnique({
+      where: { id: adminId },
+      select: { preferences: true }
+    })
+    return user?.preferences || {}
+  }
+
+  async updateAdminSettings(adminId: string, preferences: any) {
+    const updated = await prisma.user.update({
+      where: { id: adminId },
+      data: { preferences },
+      select: { preferences: true }
+    })
+    return updated.preferences
+  }
+
+  async getAdminNotifications(adminId: string) {
+    return prisma.notification.findMany({
+      where: { recipientId: adminId },
+      orderBy: { createdAt: "desc" }
+    })
   }
 }
 

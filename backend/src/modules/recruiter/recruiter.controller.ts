@@ -1,6 +1,8 @@
 import type { Request, Response } from "express"
 import { RecruiterService, ServiceContext } from "./recruiter.service"
 import { sendSuccess } from "../../shared/utils/response"
+import { NotificationService } from "../../shared/services/notification.service"
+import { ConversationService } from "../../shared/services/conversation.service"
 import {
   onboardCompanySchema,
   createJobSchema,
@@ -36,6 +38,12 @@ export class RecruiterController {
     const userId = req.user?.userId || ""
     const result = await this.service.getAnalytics(userId)
     return sendSuccess(res, result, "Fetched Recruiter Analytics successfully.")
+  }
+
+  getJobs = async (req: Request, res: Response) => {
+    const userId = req.user?.userId || ""
+    const result = await this.service.getJobs(userId)
+    return sendSuccess(res, { jobs: result }, "Fetched job postings successfully.")
   }
 
   onboardCompany = async (req: Request, res: Response) => {
@@ -131,6 +139,59 @@ export class RecruiterController {
     const context = this.getContext(req)
     const settings = await this.service.updateSettings(userId, validated, context)
     return sendSuccess(res, { settings }, "Preferences updated successfully.")
+  }
+
+  getNotifications = async (req: Request, res: Response) => {
+    const userId = req.user?.userId || ""
+    const filters = {
+      search: req.query.search as string,
+      category: req.query.category as string,
+      priority: req.query.priority as string,
+      read: req.query.read,
+    }
+    const pagination = {
+      page: req.query.page,
+      limit: req.query.limit,
+    }
+    const result = await NotificationService.getNotifications(userId, filters, pagination)
+    return sendSuccess(res, result, "Fetched notifications successfully.")
+  }
+
+  markNotificationRead = async (req: Request, res: Response) => {
+    const userId = req.user?.userId || ""
+    await NotificationService.markNotificationRead(req.params.id as string, userId)
+    return sendSuccess(res, null, "Notification marked read successfully.")
+  }
+
+  markAllNotificationsRead = async (req: Request, res: Response) => {
+    const userId = req.user?.userId || ""
+    await NotificationService.markAllNotificationsRead(userId)
+    return sendSuccess(res, null, "All notifications marked read successfully.")
+  }
+
+  deleteNotification = async (req: Request, res: Response) => {
+    const userId = req.user?.userId || ""
+    await NotificationService.deleteNotification(req.params.id as string, userId)
+    return sendSuccess(res, null, "Notification deleted successfully.")
+  }
+
+  getConversations = async (req: Request, res: Response) => {
+    const userId = req.user?.userId || ""
+    const conversations = await ConversationService.getConversations(userId)
+    return sendSuccess(res, { conversations }, "Fetched conversations successfully.")
+  }
+
+  getMessages = async (req: Request, res: Response) => {
+    const userId = req.user?.userId || ""
+    const messages = await ConversationService.getMessages(req.params.id as string, userId)
+    return sendSuccess(res, { messages }, "Fetched messages successfully.")
+  }
+
+  sendMessage = async (req: Request, res: Response) => {
+    const userId = req.user?.userId || ""
+    const { content } = req.body
+    const result = await ConversationService.sendMessage(req.params.id as string, userId, content)
+    return sendSuccess(res, result, "Message sent successfully.")
   }
 }
 

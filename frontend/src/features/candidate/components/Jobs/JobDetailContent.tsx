@@ -5,7 +5,7 @@ import { DashboardCard } from "@/components/dashboard/DashboardCard"
 import { CompanyLogo } from "@/components/shared/CompanyLogo"
 import { MenstrualLeaveChampionBadge } from "@/components/shared/MenstrualLeaveChampionBadge"
 import { JobCard } from "@/components/dashboard/JobCard"
-import type { ExtendedJob } from "../../mock/jobsMock"
+import type { ExtendedJob } from "@/types/job"
 import { cn } from "@/lib/utils"
 
 type JobDetailContentProps = {

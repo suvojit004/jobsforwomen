@@ -20,46 +20,37 @@ import { CompanyLogo } from "@/components/shared/CompanyLogo"
 import { StatusBadge } from "@/components/shared/StatusBadge"
 import { DashboardCard } from "@/components/dashboard/DashboardCard"
 import { ApplicationTimeline } from "../components/Applications/ApplicationTimeline"
-import { applications as defaultApplications } from "@/data/applications"
+import { CandidateJobsApi, mapApiApplication, type DisplayApplication } from "../services/jobsApi"
 import type { Application } from "@/types/dashboard"
 
 export function Applications() {
   const [applications, setApplications] = useState<Application[]>([])
   const [selectedApp, setSelectedApp] = useState<Application | null>(null)
-  
+
   // Mobile/Tablet detail drawer states
   const [isDrawerOpen, setIsDrawerOpen] = useState(false)
   const [mobileShowTimeline, setMobileShowTimeline] = useState(false)
 
   useEffect(() => {
-    // Combine local storage applications (applied jobs) and initial mock apps
-    const storedAppsStr = localStorage.getItem("customApplications")
-    const customApps = storedAppsStr ? JSON.parse(storedAppsStr) : []
-    
-    // Read recruiter overrides
-    const overridesStr = localStorage.getItem("applicationsOverrides")
-    const overrides = overridesStr ? JSON.parse(overridesStr) : []
-    
-    // Combine lists, filtering duplicates by id
-    const combined = [...customApps]
-    defaultApplications.forEach((defApp) => {
-      if (!combined.some((a) => a.id === defApp.id)) {
-        const override = overrides.find((o: any) => o.id === defApp.id)
-        combined.push(override ? { ...defApp, ...override } : defApp)
-      }
-    })
+    let cancelled = false
 
-    // Apply overrides to custom apps too
-    combined.forEach((app, idx) => {
-      const override = overrides.find((o: any) => o.id === app.id)
-      if (override) {
-        combined[idx] = { ...app, ...override }
+    async function load() {
+      try {
+        const rawApplications = await CandidateJobsApi.getApplications()
+        const mapped: DisplayApplication[] = rawApplications.map(mapApiApplication)
+        if (cancelled) return
+        setApplications(mapped)
+        if (mapped.length > 0) {
+          setSelectedApp(mapped[0])
+        }
+      } catch (err) {
+        console.error("Failed to load applications", err)
       }
-    })
+    }
 
-    setApplications(combined)
-    if (combined.length > 0) {
-      setSelectedApp(combined[0])
+    load()
+    return () => {
+      cancelled = true
     }
   }, [])
 

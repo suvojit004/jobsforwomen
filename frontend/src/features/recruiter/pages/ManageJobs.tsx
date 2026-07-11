@@ -1,10 +1,10 @@
-import { useState } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { useNavigate, Link } from "react-router-dom"
+import { toast } from "sonner"
 import {
   Search,
   Plus,
   Play,
-  Pause,
   Trash2,
   Eye,
 } from "lucide-react"
@@ -12,17 +12,13 @@ import { Button } from "@/components/ui/button"
 import { DashboardCard } from "@/components/shared/DashboardCard"
 import { DataTable, type ColumnDef } from "@/components/shared/DataTable"
 import { cn } from "@/lib/utils"
+import { RecruiterApi, type RecruiterJobRow } from "../services/recruiterApi"
 
-interface JobListing {
-  id: string
-  title: string
-  department: string
-  workMode: "Remote" | "Hybrid" | "On-site"
-  type: string
-  location: string
-  applicants: number
-  status: "Active" | "Paused" | "Closed"
-  postedOn: string
+// Backend job statuses map to a simplified display status for this table.
+function toDisplayStatus(status: string): "Active" | "Paused" | "Closed" {
+  if (status === "approved") return "Active"
+  if (status === "paused") return "Paused"
+  return "Closed" // draft, pending_approval, closed, archived, flagged
 }
 
 export function ManageJobs() {
@@ -31,131 +27,48 @@ export function ManageJobs() {
   const [statusFilter, setStatusFilter] = useState<"All" | "Active" | "Paused" | "Closed">("All")
   const [workModeFilter, setWorkModeFilter] = useState<"All" | "Remote" | "Hybrid" | "On-site">("All")
   const [sortBy, setSortBy] = useState<"date" | "title" | "applicants">("date")
+  const [isLoading, setIsLoading] = useState(true)
+  const [jobs, setJobs] = useState<RecruiterJobRow[]>([])
 
-  // Load recruiter job list
-  const [jobs, setJobs] = useState<JobListing[]>(() => {
-    const initialJobs: JobListing[] = [
-      {
-        id: "job-p1",
-        title: "Frontend Developer",
-        department: "Engineering",
-        workMode: "Remote",
-        type: "Full Time",
-        location: "Remote",
-        applicants: 15,
-        status: "Active",
-        postedOn: "12 May 2025",
-      },
-      {
-        id: "job-p2",
-        title: "UI/UX Designer",
-        department: "Design",
-        workMode: "Hybrid",
-        type: "Full Time",
-        location: "Bengaluru",
-        applicants: 12,
-        status: "Active",
-        postedOn: "11 May 2025",
-      },
-      {
-        id: "job-p3",
-        title: "Product Manager",
-        department: "Management",
-        workMode: "On-site",
-        type: "Full Time",
-        location: "Bengaluru",
-        applicants: 9,
-        status: "Active",
-        postedOn: "08 May 2025",
-      },
-      {
-        id: "job-p4",
-        title: "Content Writer",
-        department: "Marketing",
-        workMode: "Remote",
-        type: "Part Time",
-        location: "Remote",
-        applicants: 6,
-        status: "Paused",
-        postedOn: "05 May 2025",
-      },
-      {
-        id: "job-p5",
-        title: "Digital Marketing Executive",
-        department: "Marketing",
-        workMode: "Hybrid",
-        type: "Full Time",
-        location: "Bengaluru",
-        applicants: 6,
-        status: "Active",
-        postedOn: "02 May 2025",
-      },
-    ]
-
-    const storedCustomJobs = localStorage.getItem("recruiterJobs")
-    const customJobs = storedCustomJobs ? JSON.parse(storedCustomJobs) : []
-    const formattedCustomJobs = customJobs.map((job: any) => ({
-      id: job.id,
-      title: job.title,
-      department: job.department || "General",
-      workMode: job.workMode,
-      type: job.type || "Full Time",
-      location: job.location,
-      applicants: job.applicants || 0,
-      status: job.status || "Active",
-      postedOn: job.postedOn,
-    }))
-
-    // Merge custom jobs overrides if any stored in state overrides
-    const storedOverrides = localStorage.getItem("recruiterJobsOverrides")
-    if (storedOverrides) {
-      const overrides = JSON.parse(storedOverrides)
-      // apply overrides to initialJobs
-      const overriddenInitialJobs = initialJobs.map(job => {
-        const match = overrides.find((o: any) => o.id === job.id)
-        return match ? { ...job, ...match } : job
-      })
-      return [...formattedCustomJobs, ...overriddenInitialJobs]
+  const loadJobs = useCallback(async () => {
+    setIsLoading(true)
+    try {
+      const result = await RecruiterApi.getJobs()
+      setJobs(result)
+    } catch (err) {
+      console.error("Failed to load job postings", err)
+      toast.error("Couldn't load your job postings. Please try again.")
+    } finally {
+      setIsLoading(false)
     }
+  }, [])
 
-    return [...formattedCustomJobs, ...initialJobs]
-  })
+  useEffect(() => {
+    loadJobs()
+  }, [loadJobs])
 
-  // Synchronize changes to LocalStorage
-  const saveJobsState = (updatedJobs: JobListing[]) => {
-    setJobs(updatedJobs)
-
-    // Separate custom jobs from default mock jobs
-    const customJobs = updatedJobs.filter((job) => job.id.startsWith("job-custom-"))
-    localStorage.setItem("recruiterJobs", JSON.stringify(customJobs))
-
-    // Store overrides for default mock jobs
-    const mockOverrides = updatedJobs
-      .filter((job) => !job.id.startsWith("job-custom-"))
-      .map((job) => ({
-        id: job.id,
-        status: job.status,
-      }))
-    localStorage.setItem("recruiterJobsOverrides", JSON.stringify(mockOverrides))
-  }
-
-  // Toggle Job Status (Active <-> Paused)
-  const handleToggleStatus = (id: string) => {
-    const updated = jobs.map((job) => {
-      if (job.id === id) {
-        const nextStatus = job.status === "Active" ? "Paused" : "Active"
-        return { ...job, status: nextStatus as "Active" | "Paused" }
-      }
-      return job
-    })
-    saveJobsState(updated)
+  // Toggle Job Status (Active <-> Paused) via lifecycle action
+  const handleToggleStatus = async (job: RecruiterJobRow) => {
+    const displayStatus = toDisplayStatus(job.status)
+    const action = displayStatus === "Active" ? "pause" : "resume"
+    try {
+      await RecruiterApi.setJobLifecycle(job.id, action)
+      toast.success(displayStatus === "Active" ? "Job posting paused." : "Job posting resumed.")
+      loadJobs()
+    } catch (err: any) {
+      toast.error(err?.message || "Couldn't update this job posting.")
+    }
   }
 
   // Delete Job Posting
-  const handleDeleteJob = (id: string) => {
-    if (confirm("Are you sure you want to delete this job posting? This cannot be undone.")) {
-      const updated = jobs.filter((job) => job.id !== id)
-      saveJobsState(updated)
+  const handleDeleteJob = async (id: string) => {
+    if (!confirm("Are you sure you want to delete this job posting? This cannot be undone.")) return
+    try {
+      await RecruiterApi.deleteJob(id)
+      setJobs((prev) => prev.filter((job) => job.id !== id))
+      toast.success("Job posting deleted.")
+    } catch (err: any) {
+      toast.error(err?.message || "Couldn't delete this job posting.")
     }
   }
 
@@ -167,7 +80,7 @@ export function ManageJobs() {
         job.department.toLowerCase().includes(searchTerm.toLowerCase()) ||
         job.location.toLowerCase().includes(searchTerm.toLowerCase())
 
-      const matchesStatus = statusFilter === "All" || job.status === statusFilter
+      const matchesStatus = statusFilter === "All" || toDisplayStatus(job.status) === statusFilter
       const matchesWorkMode = workModeFilter === "All" || job.workMode === workModeFilter
 
       return matchesSearch && matchesStatus && matchesWorkMode
@@ -184,7 +97,7 @@ export function ManageJobs() {
     })
 
   // Table Columns Definition
-  const columns: ColumnDef<JobListing>[] = [
+  const columns: ColumnDef<RecruiterJobRow>[] = [
     {
       header: "Opportunity Details",
       cell: (row) => (
@@ -220,6 +133,7 @@ export function ManageJobs() {
     {
       header: "Status",
       cell: (row) => {
+        const displayStatus = toDisplayStatus(row.status)
         const statusMap = {
           Active: "bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-500/15 dark:text-emerald-300",
           Paused: "bg-amber-50 text-amber-700 ring-amber-200 dark:bg-amber-500/15 dark:text-amber-300",
@@ -229,10 +143,10 @@ export function ManageJobs() {
           <span
             className={cn(
               "inline-flex h-5 items-center rounded-md px-2 text-[10px] font-black ring-1 ring-inset uppercase",
-              statusMap[row.status]
+              statusMap[displayStatus]
             )}
           >
-            {row.status}
+            {row.status === "pending_approval" ? "Pending Approval" : displayStatus}
           </span>
         )
       },
@@ -245,40 +159,45 @@ export function ManageJobs() {
     {
       header: "Actions",
       className: "text-right",
-      cell: (row) => (
-        <div className="flex items-center justify-end gap-1.5">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => navigate(`/recruiter/jobs/${row.id}`)}
-            className="h-8 w-8 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
-            title="View Details"
-          >
-            <Eye className="size-3.5" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => handleToggleStatus(row.id)}
-            className={cn(
-              "h-8 w-8 text-slate-400",
-              row.status === "Active" ? "hover:text-amber-600" : "hover:text-emerald-600"
+      cell: (row) => {
+        const displayStatus = toDisplayStatus(row.status)
+        return (
+          <div className="flex items-center justify-end gap-1.5">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => navigate(`/recruiter/jobs/${row.id}`)}
+              className="h-8 w-8 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
+              title="View Details"
+            >
+              <Eye className="size-3.5" />
+            </Button>
+            {displayStatus !== "Closed" && (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => handleToggleStatus(row)}
+                className={cn(
+                  "h-8 w-8 text-slate-400",
+                  displayStatus === "Active" ? "hover:text-amber-600" : "hover:text-emerald-600"
+                )}
+                title={displayStatus === "Active" ? "Pause Posting" : "Activate Posting"}
+              >
+                {displayStatus === "Active" ? <Play className="size-3.5 rotate-180" /> : <Play className="size-3.5" />}
+              </Button>
             )}
-            title={row.status === "Active" ? "Pause Posting" : "Activate Posting"}
-          >
-            {row.status === "Active" ? <Pause className="size-3.5" /> : <Play className="size-3.5" />}
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => handleDeleteJob(row.id)}
-            className="h-8 w-8 text-slate-400 hover:text-red-600"
-            title="Delete Posting"
-          >
-            <Trash2 className="size-3.5" />
-          </Button>
-        </div>
-      ),
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => handleDeleteJob(row.id)}
+              className="h-8 w-8 text-slate-400 hover:text-red-600"
+              title="Delete Posting"
+            >
+              <Trash2 className="size-3.5" />
+            </Button>
+          </div>
+        )
+      },
     },
   ]
 
@@ -370,7 +289,7 @@ export function ManageJobs() {
         <DataTable
           columns={columns}
           data={filteredJobs}
-          emptyMessage="No job postings match your filters."
+          emptyMessage={isLoading ? "Loading job postings..." : "No job postings match your filters."}
         />
       </DashboardCard>
     </div>

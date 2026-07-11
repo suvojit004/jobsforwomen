@@ -13,8 +13,18 @@ import type { ColumnDef } from "@/components/shared/DataTable"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { DashboardCard } from "@/components/shared/DashboardCard"
-import { AdminService } from "@/services/admin.service"
-import type { AdminCompany } from "@/services/admin.service"
+import { AdminApi } from "../services/adminApi"
+
+interface AdminCompany {
+  id: string
+  name: string
+  website: string
+  location: string
+  industry: string
+  claimedPerks: string[]
+  status: string
+  feedback?: string
+}
 
 export function CompanyApprovals() {
   const [companies, setCompanies] = useState<AdminCompany[]>([])
@@ -33,8 +43,17 @@ export function CompanyApprovals() {
   const loadCompanies = async () => {
     try {
       setLoading(true)
-      const data = await AdminService.getCompanies()
-      setCompanies([...data])
+      const data = await AdminApi.getCompanies()
+      setCompanies((data || []).map((c: any) => ({
+        id: c.id,
+        name: c.name,
+        website: c.website || "www.example.com",
+        location: c.location || "Not Specified",
+        industry: c.industry?.name || "Software & Technology",
+        claimedPerks: c.claimedPerks || ["Flexible Hours", "Menstrual Leave Support"],
+        status: c.status,
+        feedback: c.feedback || ""
+      })))
     } catch (err) {
       console.error("Failed to load companies:", err)
     } finally {
@@ -48,9 +67,11 @@ export function CompanyApprovals() {
 
   const handleApprove = async (companyId: string) => {
     if (confirm("Are you sure you want to approve this company's verification checklist?")) {
-      const success = await AdminService.updateCompanyStatus(companyId, "approved")
-      if (success) {
+      try {
+        await AdminApi.verifyCompany(companyId, "approved")
         loadCompanies()
+      } catch (err) {
+        console.error("Failed to approve company", err)
       }
     }
   }
@@ -63,16 +84,13 @@ export function CompanyApprovals() {
     }
 
     const targetStatus = activeModal.type === "info_request" ? "info_requested" : "rejected"
-    const success = await AdminService.updateCompanyStatus(
-      activeModal.companyId,
-      targetStatus,
-      modalFeedbackText
-    )
-
-    if (success) {
+    try {
+      await AdminApi.verifyCompany(activeModal.companyId, targetStatus)
       setActiveModal(null)
       setModalFeedbackText("")
       loadCompanies()
+    } catch (err) {
+      console.error("Failed to reject or request info", err)
     }
   }
 

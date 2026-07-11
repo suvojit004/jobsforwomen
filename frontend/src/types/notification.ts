@@ -6,3 +6,13 @@ export interface Notification {
   type: "application" | "interview" | "system" | "partner" | "submitted" | "profile" | "resume" | "rejected"
   read: boolean
 }
+
+export interface NotificationItemType {
+  id: string
+  title: string
+  description: string
+  category: "General" | "Jobs" | "Interviews"
+  read: boolean
+  time: string
+  dateGroup: "Today" | "Yesterday" | "Earlier"
+}

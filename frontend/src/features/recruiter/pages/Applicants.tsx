@@ -1,5 +1,6 @@
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { useNavigate, useSearchParams } from "react-router-dom"
+import { toast } from "sonner"
 import {
   Search,
   Download,
@@ -12,15 +13,7 @@ import { Button } from "@/components/ui/button"
 import { DashboardCard } from "@/components/shared/DashboardCard"
 import { DataTable, type ColumnDef } from "@/components/shared/DataTable"
 import { StatusBadge } from "@/components/shared/StatusBadge"
-
-interface ApplicantRow {
-  id: string // represents the application ID or override key
-  name: string
-  email: string
-  job: string
-  appliedDate: string
-  status: "Applied" | "Under Review" | "Interview Scheduled" | "Selected" | "Rejected"
-}
+import { RecruiterApi, type ApplicantRow } from "../services/recruiterApi"
 
 export function Applicants() {
   const navigate = useNavigate()
@@ -32,127 +25,36 @@ export function Applicants() {
   const [jobFilter, setJobFilter] = useState<string>("All")
   const [sortBy, setSortBy] = useState<"date" | "name">("date")
   const [downloadSuccessId, setDownloadSuccessId] = useState<string | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
+  const [applicants, setApplicants] = useState<ApplicantRow[]>([])
 
-  // Map job ID parameter if pre-filtered from JobDetails "View candidates"
-  useEffect(() => {
-    if (jobIdParam) {
-      // Map job ID to Title
-      const jobMap: Record<string, string> = {
-        "job-p1": "Frontend Developer",
-        "job-p2": "UI/UX Designer",
-        "job-p3": "Product Manager",
-        "job-p4": "Content Writer",
-        "job-p5": "Digital Marketing Executive",
-      }
-      const matchingTitle = jobMap[jobIdParam]
-      if (matchingTitle) {
-        setJobFilter(matchingTitle)
-      } else if (jobIdParam.startsWith("job-custom-")) {
-        // Load custom job title from storage
-        const stored = localStorage.getItem("recruiterJobs")
-        const customJobs = stored ? JSON.parse(stored) : []
-        const match = customJobs.find((j: any) => j.id === jobIdParam)
-        if (match) {
-          setJobFilter(match.title)
-        }
-      }
+  const load = useCallback(async () => {
+    setIsLoading(true)
+    try {
+      const rows = await RecruiterApi.getApplicants(jobIdParam || undefined)
+      setApplicants(rows)
+    } catch (err) {
+      console.error("Failed to load applicants", err)
+      toast.error("Couldn't load applicants. Please try again.")
+    } finally {
+      setIsLoading(false)
     }
   }, [jobIdParam])
 
-  // Load applicants (combining default applicant logs and custom applications submitted by Priya)
-  const [applicants, setApplicants] = useState<ApplicantRow[]>(() => {
-    const initialApplicants: ApplicantRow[] = [
-      {
-        id: "application-1",
-        name: "Priya Sharma",
-        email: "priya.sharma@example.com",
-        job: "Frontend Developer",
-        appliedDate: "12 May 2025",
-        status: "Applied",
-      },
-      {
-        id: "app-verma",
-        name: "Anjali Verma",
-        email: "anjali.v@example.com",
-        job: "UI/UX Designer",
-        appliedDate: "11 May 2025",
-        status: "Under Review",
-      },
-      {
-        id: "app-singh",
-        name: "Neha Singh",
-        email: "neha.singh@example.com",
-        job: "Frontend Developer",
-        appliedDate: "10 May 2025",
-        status: "Interview Scheduled",
-      },
-      {
-        id: "app-patel",
-        name: "Riya Patel",
-        email: "riya.patel@example.com",
-        job: "Content Writer",
-        appliedDate: "09 May 2025",
-        status: "Selected",
-      },
-      {
-        id: "app-khan",
-        name: "Ayesha Khan",
-        email: "ayesha.khan@example.com",
-        job: "Frontend Developer",
-        appliedDate: "08 May 2025",
-        status: "Rejected",
-      },
-    ]
-
-    // Read custom candidate applications from localStorage (submitted by candidate Priya Sharma)
-    const storedAppsStr = localStorage.getItem("customApplications")
-    const customApps = storedAppsStr ? JSON.parse(storedAppsStr) : []
-    
-    // Convert to Applicant rows (if the application ID is not already represented by default apps)
-    const customApplicantRows = customApps
-      .filter((app: any) => app.id !== "application-1")
-      .map((app: any) => ({
-        id: app.id,
-        name: "Priya Sharma",
-        email: "priya.sharma@example.com",
-        job: app.job,
-        appliedDate: app.appliedDate,
-        status: app.status || "Applied",
-      }))
-
-    // Load status overrides set by the recruiter
-    const overridesStr = localStorage.getItem("applicationsOverrides")
-    const overrides = overridesStr ? JSON.parse(overridesStr) : []
-
-    const merged = [...customApplicantRows, ...initialApplicants].map((applicant) => {
-      const match = overrides.find((o: any) => o.id === applicant.id)
-      return match ? { ...applicant, status: match.status } : applicant
-    })
-
-    return merged
-  })
+  useEffect(() => {
+    load()
+  }, [load])
 
   // Handle status selector update
-  const handleUpdateStatus = (id: string, newStatus: ApplicantRow["status"]) => {
-    const updated = applicants.map((app) => {
-      if (app.id === id) {
-        return { ...app, status: newStatus }
-      }
-      return app
-    })
-    setApplicants(updated)
-
-    // Save status overrides to LocalStorage to sync back to candidate applications view
-    const overridesStr = localStorage.getItem("applicationsOverrides")
-    const overrides = overridesStr ? JSON.parse(overridesStr) : []
-    const existingIdx = overrides.findIndex((o: any) => o.id === id)
-
-    if (existingIdx > -1) {
-      overrides[existingIdx].status = newStatus
-    } else {
-      overrides.push({ id, status: newStatus })
+  const handleUpdateStatus = async (id: string, newStatus: string) => {
+    const previous = applicants
+    setApplicants((prev) => prev.map((app) => (app.id === id ? { ...app, status: newStatus } : app)))
+    try {
+      await RecruiterApi.updateApplicantStatus(id, newStatus)
+    } catch (err: any) {
+      setApplicants(previous)
+      toast.error(err?.message || "Couldn't update applicant status.")
     }
-    localStorage.setItem("applicationsOverrides", JSON.stringify(overrides))
   }
 
   // Simulated download resume action
@@ -215,7 +117,7 @@ export function Applicants() {
       cell: (row) => (
         <div className="flex items-center gap-2">
           {/* Status Badge preview */}
-          <StatusBadge status={row.status} />
+          <StatusBadge status={row.status as any} />
 
           {/* Interactive drop selector */}
           <select
@@ -352,7 +254,7 @@ export function Applicants() {
         <DataTable
           columns={columns}
           data={filteredApplicants}
-          emptyMessage="No applicants found matching selected criteria."
+          emptyMessage={isLoading ? "Loading applicants..." : "No applicants found matching selected criteria."}
         />
       </DashboardCard>
     </div>

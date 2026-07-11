@@ -5,8 +5,16 @@ import type { ColumnDef } from "@/components/shared/DataTable"
 import { Input } from "@/components/ui/input"
 import { DashboardCard } from "@/components/shared/DashboardCard"
 import { Button } from "@/components/ui/button"
-import { AdminService } from "@/services/admin.service"
-import type { AdminAuditLog } from "@/services/admin.service"
+import { AdminApi } from "../services/adminApi"
+
+interface AdminAuditLog {
+  id: string
+  timestamp: string
+  operator: string
+  category: string
+  action: string
+  ipAddress: string
+}
 
 export function ActivityLogs() {
   const [logs, setLogs] = useState<AdminAuditLog[]>([])
@@ -17,8 +25,18 @@ export function ActivityLogs() {
   const loadLogs = async () => {
     try {
       setLoading(true)
-      const data = await AdminService.getAuditLogs()
-      setLogs([...data])
+      const data = await AdminApi.getAudits()
+      
+      const formattedLogs: AdminAuditLog[] = (data || []).map((a: any) => ({
+        id: a.id,
+        timestamp: a.createdAt ? new Date(a.createdAt).toLocaleString() : "Just now",
+        operator: `Admin (${a.actorId || "System"})`,
+        category: a.category === "RECRUITER" ? "Corporate Perks" : a.category === "JOB" ? "Job Moderation" : "User Management",
+        action: `${a.action.replace(/_/g, " ")} on ${a.entity}`,
+        ipAddress: a.ipAddress || "127.0.0.1"
+      }))
+
+      setLogs(formattedLogs)
     } catch (err) {
       console.error("Failed to fetch audit trails:", err)
     } finally {

@@ -11,8 +11,27 @@ import {
   FileCheck,
 } from "lucide-react"
 import { DashboardCard } from "@/components/shared/DashboardCard"
-import { AdminService } from "@/services/admin.service"
-import type { AdminCompany, AdminJob } from "@/services/admin.service"
+import { AdminApi } from "../services/adminApi"
+
+interface AdminCompany {
+  id: string
+  name: string
+  website: string
+  location: string
+  industry: string
+  claimedPerks: string[]
+  status: string
+}
+
+interface AdminJob {
+  id: string
+  title: string
+  company: string
+  location: string
+  salary: string
+  applicantsCount: number
+  status: string
+}
 
 export function CompanyDetails() {
   const [companies, setCompanies] = useState<AdminCompany[]>([])
@@ -25,13 +44,30 @@ export function CompanyDetails() {
       try {
         setLoading(true)
         const [comps, jobs] = await Promise.all([
-          AdminService.getCompanies(),
-          AdminService.getJobs(),
+          AdminApi.getCompanies(),
+          AdminApi.getJobs(),
         ])
-        setCompanies(comps)
-        setAllJobs(jobs)
-        if (comps.length > 0) {
-          setSelectedCompanyId(comps[0].id)
+        const formattedComps = (comps || []).map((c: any) => ({
+          id: c.id,
+          name: c.name,
+          website: c.website || "www.example.com",
+          location: c.location || "Not Specified",
+          industry: c.industry?.name || "Software & Technology",
+          claimedPerks: c.claimedPerks || ["Flexible Hours", "Menstrual Leave Support"],
+          status: c.status
+        }))
+        setCompanies(formattedComps)
+        setAllJobs((jobs || []).map((j: any) => ({
+          id: j.id,
+          title: j.title,
+          company: j.company?.name || "TechNova Solutions",
+          location: j.location,
+          salary: j.salaryDisplay || "N/A",
+          applicantsCount: j.applicants || 0,
+          status: j.status
+        })))
+        if (formattedComps.length > 0) {
+          setSelectedCompanyId(formattedComps[0].id)
         }
       } catch (err) {
         console.error("Failed to load company details database:", err)

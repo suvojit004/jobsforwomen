@@ -1,11 +1,11 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import * as z from "zod"
 import { Settings as SettingsIcon, ShieldAlert, Save, AlertCircle } from "lucide-react"
 import { DashboardCard } from "@/components/shared/DashboardCard"
 import { Button } from "@/components/ui/button"
-import { AdminService } from "@/services/admin.service"
+import { AdminApi } from "../services/adminApi"
 
 const adminSettingsSchema = z
   .object({
@@ -47,6 +47,7 @@ type AdminSettingsValues = z.infer<typeof adminSettingsSchema>
 export function Settings() {
   const [saving, setSaving] = useState(false)
   const [success, setSuccess] = useState(false)
+  const [isLoading, setIsLoading] = useState(true)
 
   const {
     register,
@@ -56,8 +57,8 @@ export function Settings() {
   } = useForm<AdminSettingsValues>({
     resolver: zodResolver(adminSettingsSchema),
     defaultValues: {
-      name: "SysAdmin Control",
-      email: "admin@jobsforwomen.info",
+      name: "",
+      email: "",
       currentPassword: "",
       newPassword: "",
       confirmNewPassword: "",
@@ -66,12 +67,38 @@ export function Settings() {
     },
   })
 
+  useEffect(() => {
+    async function loadSettings() {
+      try {
+        const setts = await AdminApi.getSettings()
+        reset({
+          name: setts.name || "SysAdmin Control",
+          email: setts.email || "admin@jobsforwomen.info",
+          currentPassword: "",
+          newPassword: "",
+          confirmNewPassword: "",
+          sessionTimeout: setts.sessionTimeout || "30m",
+          twoFactorEnabled: !!setts.twoFactorEnabled,
+        })
+      } catch (err) {
+        console.error("Failed to load settings", err)
+      } finally {
+        setIsLoading(false)
+      }
+    }
+    loadSettings()
+  }, [reset])
+
   const onSubmit = async (values: AdminSettingsValues) => {
     setSaving(true)
     try {
-      await AdminService.updateSettings(values)
+      await AdminApi.updateSettings({
+        name: values.name,
+        email: values.email,
+        sessionTimeout: values.sessionTimeout,
+        twoFactorEnabled: values.twoFactorEnabled,
+      })
       setSuccess(true)
-      // Reset password fields
       reset({
         ...values,
         currentPassword: "",
@@ -84,6 +111,10 @@ export function Settings() {
     } finally {
       setSaving(false)
     }
+  }
+
+  if (isLoading) {
+    return <div className="p-8 text-center text-sm font-bold text-[#6B2C91]">Loading settings...</div>
   }
 
   return (

@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import * as z from "zod"
@@ -15,6 +15,7 @@ import {
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { DashboardCard } from "@/components/shared/DashboardCard"
+import { RecruiterApi } from "../services/recruiterApi"
 
 const settingsSchema = z.object({
   name: z.string().min(2, "Name must be at least 2 characters."),
@@ -30,40 +31,73 @@ type SettingsFormValues = z.infer<typeof settingsSchema>
 
 export function Settings() {
   const [successMsg, setSuccessMsg] = useState(false)
-
-  // Load initial values from localStorage or fallback
-  const initialValues = (() => {
-    const defaultVals: SettingsFormValues = {
-      name: "Anjali Rao",
-      role: "Head of Talent Sourcing",
-      email: "anjali.rao@technova.com",
-      phone: "+91 98765 99999",
-      notifyNewApp: true,
-      notifyInterview: true,
-      notifyWeeklyDigest: false,
-    }
-    const stored = localStorage.getItem("recruiterProfile")
-    return stored ? { ...defaultVals, ...JSON.parse(stored) } : defaultVals
-  })()
+  const [isLoading, setIsLoading] = useState(true)
 
   const {
     register,
     handleSubmit,
+    reset,
     formState: { errors, isSubmitting },
   } = useForm<SettingsFormValues>({
     resolver: zodResolver(settingsSchema),
-    defaultValues: initialValues,
+    defaultValues: {
+      name: "",
+      role: "",
+      email: "",
+      phone: "",
+      notifyNewApp: true,
+      notifyInterview: true,
+      notifyWeeklyDigest: false,
+    },
   })
 
-  const onSubmit = (data: SettingsFormValues) => {
-    localStorage.setItem("recruiterProfile", JSON.stringify(data))
-    setSuccessMsg(true)
-    window.scrollTo({ top: 0, behavior: "smooth" })
-    setTimeout(() => {
-      setSuccessMsg(false)
-      // Force reload to let Layout update immediately
-      window.location.reload()
-    }, 1500)
+  useEffect(() => {
+    async function loadData() {
+      try {
+        const [dash, setts] = await Promise.all([
+          RecruiterApi.getDashboard(),
+          RecruiterApi.getSettings(),
+        ])
+
+        const profile = dash?.recruiterProfile || {}
+        const user = profile?.user || {}
+
+        reset({
+          name: profile.fullName || "Recruiter",
+          role: "Recruiter Manager",
+          email: user.email || "",
+          phone: profile.phone || "",
+          notifyNewApp: !!setts.realTimeNotifications,
+          notifyInterview: !!setts.realTimeNotifications,
+          notifyWeeklyDigest: setts.emailDigestInterval === "Weekly",
+        })
+      } catch (err) {
+        console.error("Failed to load settings", err)
+      } finally {
+        setIsLoading(false)
+      }
+    }
+    loadData()
+  }, [reset])
+
+  const onSubmit = async (data: SettingsFormValues) => {
+    try {
+      await RecruiterApi.updateSettings({
+        realTimeNotifications: data.notifyNewApp,
+        emailDigestInterval: data.notifyWeeklyDigest ? "Weekly" : "Daily"
+      })
+      setSuccessMsg(true)
+      window.scrollTo({ top: 0, behavior: "smooth" })
+      setTimeout(() => {
+        setSuccessMsg(false)
+      }, 1500)
+    } catch (err) {
+      console.error("Failed to update settings", err)
+    }
+  }
+
+  if (isLoading) {
+    return <div className="p-8 text-center text-sm font-bold text-[#6B2C91]">Loading settings...</div>
   }
 
   return (

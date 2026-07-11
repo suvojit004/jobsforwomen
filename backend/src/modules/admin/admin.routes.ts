@@ -24,13 +24,17 @@ router.get("/reports", controller.getReports)
 router.get("/audits", controller.getAuditLogs)
 
 // Recruiter / Company Verification (Admin, Super Admin, Moderator)
+router.get("/companies", controller.listCompanies)
 router.post("/companies/:id/verify", controller.verifyCompany)
 
 // Job listings moderation (Admin, Super Admin, Moderator)
+router.get("/jobs", controller.listJobs)
 router.post("/jobs/:id/moderate", controller.moderateJob)
 
 // User Management (Admin, Super Admin)
+router.get("/users", controller.listUsers)
 router.put("/users/:id/status", controller.updateUserStatus)
+router.put("/recruiters/:id/verify", controller.verifyRecruiter)
 router.post("/users/:id/action/:action", controller.userAdministrativeAction)
 
 // Employee invitations (Admin, Super Admin)
@@ -52,5 +56,10 @@ router.get("/feature-flags", controller.getFeatureFlags)
 router.post("/feature-flags", requireSuperAdmin, controller.createFeatureFlag)
 router.put("/feature-flags/:id", requireSuperAdmin, controller.updateFeatureFlag)
 router.delete("/feature-flags/:id", requireSuperAdmin, controller.deleteFeatureFlag)
+
+// Personal preferences and notifications for Admin
+router.get("/settings", controller.getAdminSettings)
+router.put("/settings", controller.updateAdminSettings)
+router.get("/notifications", controller.getAdminNotifications)
 
 export default router

@@ -3,6 +3,8 @@ import { calculateProfileCompletion } from "../../shared/utils/profileCompletion
 import { logger } from "../../shared/utils/logger"
 import EventBus from "../../shared/eventBus/eventBus"
 import { ApplicationStatus, JobStatus, UserStatus } from "@prisma/client"
+import { NotificationService } from "../../shared/services/notification.service"
+import { ConversationService } from "../../shared/services/conversation.service"
 
 export interface ServiceContext {
   operatorId?: string
@@ -579,70 +581,19 @@ export class CandidateService {
   // NOTIFICATIONS SERVICES
   // ==========================================
   async getNotifications(userId: string, filters: any = {}, pagination: any = {}) {
-    const page = Number(pagination.page) || 1
-    const limit = Number(pagination.limit) || 20
-    const skip = (page - 1) * limit
-
-    const whereClause: any = {
-      recipientId: userId,
-    }
-
-    if (filters.search) {
-      whereClause.OR = [
-        { title: { contains: filters.search, mode: "insensitive" } },
-        { message: { contains: filters.search, mode: "insensitive" } },
-      ]
-    }
-
-    if (filters.category) {
-      whereClause.category = filters.category
-    }
-
-    if (filters.priority) {
-      whereClause.priority = filters.priority
-    }
-
-    if (filters.read !== undefined) {
-      whereClause.read = filters.read === "true" || filters.read === true
-    }
-
-    const [notifications, total] = await prisma.$transaction([
-      prisma.notification.findMany({
-        where: whereClause,
-        orderBy: { createdAt: "desc" },
-        skip,
-        take: limit,
-      }),
-      prisma.notification.count({ where: whereClause }),
-    ])
-
-    return {
-      notifications,
-      total,
-      page,
-      limit,
-      totalPages: Math.ceil(total / limit),
-    }
+    return NotificationService.getNotifications(userId, filters, pagination)
   }
 
   async markNotificationRead(id: string, userId: string) {
-    return prisma.notification.updateMany({
-      where: { id, recipientId: userId },
-      data: { read: true },
-    })
+    return NotificationService.markNotificationRead(id, userId)
   }
 
   async markAllNotificationsRead(userId: string) {
-    return prisma.notification.updateMany({
-      where: { recipientId: userId },
-      data: { read: true },
-    })
+    return NotificationService.markAllNotificationsRead(userId)
   }
 
   async deleteNotification(id: string, userId: string) {
-    return prisma.notification.deleteMany({
-      where: { id, recipientId: userId },
-    })
+    return NotificationService.deleteNotification(id, userId)
   }
 
   // ==========================================
@@ -693,68 +644,15 @@ export class CandidateService {
   // CONVERSATIONS & CHATS
   // ==========================================
   async getConversations(userId: string) {
-    return prisma.conversation.findMany({
-      where: {
-        participants: {
-          some: { userId },
-        },
-      },
-      include: {
-        participants: {
-          include: {
-            user: {
-              select: {
-                id: true,
-                email: true,
-                candidateProfile: { select: { fullName: true, avatarUrl: true } },
-                recruiterProfile: { select: { fullName: true } },
-              },
-            },
-          },
-        },
-        messages: {
-          orderBy: { timestamp: "desc" },
-          take: 1,
-        },
-      },
-    })
+    return ConversationService.getConversations(userId)
   }
 
   async getMessages(conversationId: string, userId: string) {
-    const participant = await prisma.conversationParticipant.findUnique({
-      where: {
-        conversationId_userId: { conversationId, userId },
-      },
-    })
-
-    if (!participant) {
-      throw new Error("Forbidden: You are not a participant in this conversation")
-    }
-
-    return prisma.message.findMany({
-      where: { conversationId },
-      orderBy: { timestamp: "asc" },
-    })
+    return ConversationService.getMessages(conversationId, userId)
   }
 
   async sendMessage(conversationId: string, senderId: string, content: string) {
-    const participant = await prisma.conversationParticipant.findUnique({
-      where: {
-        conversationId_userId: { conversationId, userId: senderId },
-      },
-    })
-
-    if (!participant) {
-      throw new Error("Forbidden: Access denied")
-    }
-
-    return prisma.message.create({
-      data: {
-        conversationId,
-        senderId,
-        content,
-      },
-    })
+    return ConversationService.sendMessage(conversationId, senderId, content)
   }
 
   // ==========================================

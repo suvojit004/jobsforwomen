@@ -1,9 +1,12 @@
 import { Button } from "@/components/ui/button"
 import { DashboardCard } from "@/components/dashboard/DashboardCard"
-import { candidate } from "@/data/candidate"
 
-export function ProfileStrengthCard() {
-  const percentage = candidate.profileCompletion
+type ProfileStrengthCardProps = {
+  completion?: number
+}
+
+export function ProfileStrengthCard({ completion = 0 }: ProfileStrengthCardProps) {
+  const percentage = completion
   const remaining = 100 - percentage
 
   return (

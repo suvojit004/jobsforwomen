@@ -1,9 +1,19 @@
 import { Edit3 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { DashboardCard } from "@/components/dashboard/DashboardCard"
-import { candidate } from "@/data/candidate"
 
-export function CareerBreakCard() {
+type CareerBreakCardProps = {
+  careerBreak?: {
+    hasBreak: boolean
+    reason: string
+    duration: string
+    summary: string
+  }
+}
+
+export function CareerBreakCard({ careerBreak }: CareerBreakCardProps) {
+  if (!careerBreak || !careerBreak.hasBreak) return null
+
   return (
     <DashboardCard className="p-4">
       <div className="mb-3 flex items-center justify-between">
@@ -21,13 +31,13 @@ export function CareerBreakCard() {
         </Button>
       </div>
       <p className="text-sm font-extrabold text-slate-950 dark:text-white">
-        {candidate.careerBreak.duration}
+        {careerBreak.duration}
       </p>
       <p className="mt-1 text-xs font-semibold text-[#6B2C91] dark:text-pink-200">
-        Reason: {candidate.careerBreak.reason}
+        Reason: {careerBreak.reason}
       </p>
       <p className="mt-3 text-sm leading-6 text-slate-600 dark:text-slate-300">
-        {candidate.careerBreak.summary}
+        {careerBreak.summary}
       </p>
     </DashboardCard>
   )

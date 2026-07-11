@@ -1,16 +1,25 @@
 import { Download, FileText, RefreshCw, Upload } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { DashboardCard } from "@/components/dashboard/DashboardCard"
-import { candidate } from "@/data/candidate"
 
-export function ResumeCard() {
+type ResumeCardProps = {
+  resume?: {
+    name: string
+    uploadDate: string
+    verified: boolean
+  }
+}
+
+export function ResumeCard({ resume }: ResumeCardProps) {
+  if (!resume) return null
+
   return (
     <DashboardCard className="p-4">
       <div className="mb-4 flex items-center justify-between">
         <h2 className="text-sm font-extrabold text-slate-950 dark:text-white">
           Resume
         </h2>
-        {candidate.resume.verified && (
+        {resume.verified && (
           <span className="rounded-full bg-emerald-50 px-2 py-1 text-[11px] font-bold text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-200">
             Verified
           </span>
@@ -23,10 +32,10 @@ export function ResumeCard() {
         </div>
         <div className="min-w-0">
           <p className="truncate text-sm font-extrabold text-slate-950 dark:text-white">
-            {candidate.resume.name}
+            {resume.name}
           </p>
           <p className="text-xs text-slate-500 dark:text-slate-400">
-            Uploaded on {candidate.resume.uploadDate}
+            Uploaded on {resume.uploadDate}
           </p>
         </div>
       </div>

@@ -12,14 +12,37 @@ import type { ColumnDef } from "@/components/shared/DataTable"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { DashboardCard } from "@/components/shared/DashboardCard"
-import { AdminService } from "@/services/admin.service"
-import type {
-  CandidateUser,
-  RecruiterUser,
-  AdminUser,
-} from "@/mock/admin/adminMock"
+import { AdminApi } from "../services/adminApi"
 
 type TabType = "candidates" | "recruiters" | "admins"
+
+interface CandidateUser {
+  id: string
+  name: string
+  email: string
+  role: string
+  careerBreak: boolean
+  verified: boolean
+  status: string
+}
+
+interface RecruiterUser {
+  id: string
+  name: string
+  email: string
+  company: string
+  verified: boolean
+  status: string
+}
+
+interface AdminUser {
+  id: string
+  name: string
+  email: string
+  role: string
+  permissions: string[]
+  status: string
+}
 
 export function UserModeration() {
   const [activeTab, setActiveTab] = useState<TabType>("candidates")
@@ -33,14 +56,39 @@ export function UserModeration() {
   const loadUsers = async () => {
     try {
       setLoading(true)
-      const [cands, recs, adms] = await Promise.all([
-        AdminService.getCandidates(),
-        AdminService.getRecruiters(),
-        AdminService.getAdmins(),
+      const [candidatesList, recruitersList, adminsList] = await Promise.all([
+        AdminApi.getUsers("candidate"),
+        AdminApi.getUsers("recruiter"),
+        AdminApi.getUsers("admin"),
       ])
-      setCandidates([...cands])
-      setRecruiters([...recs])
-      setAdmins([...adms])
+
+      setCandidates((candidatesList || []).map((u: any) => ({
+        id: u.id,
+        name: u.fullName || u.email.split("@")[0],
+        email: u.email,
+        role: u.candidateProfile?.title || "Professional",
+        careerBreak: !!u.candidateProfile?.bio,
+        verified: !!u.candidateProfile?.resumeUrl,
+        status: u.status === "Active" ? "Active" : "Inactive"
+      })))
+
+      setRecruiters((recruitersList || []).map((u: any) => ({
+        id: u.id,
+        name: u.fullName || u.email.split("@")[0],
+        email: u.email,
+        company: u.recruiterProfile?.company?.name || "TechNova Solutions",
+        verified: !!u.recruiterProfile?.verified,
+        status: u.status === "Active" ? "Active" : "Inactive"
+      })))
+
+      setAdmins((adminsList || []).map((u: any) => ({
+        id: u.id,
+        name: u.fullName || u.email.split("@")[0],
+        email: u.email,
+        role: "Platform Administrator",
+        permissions: ["All Access"],
+        status: u.status === "Active" ? "Active" : "Inactive"
+      })))
     } catch (err) {
       console.error("Failed to load user databases:", err)
     } finally {
@@ -54,16 +102,29 @@ export function UserModeration() {
 
   // Action handlers
   const handleToggleStatus = async (userId: string, role: "candidate" | "recruiter" | "admin") => {
-    const success = await AdminService.toggleUserStatus(userId, role)
-    if (success) {
+    try {
+      const list = role === "candidate" ? candidates : role === "recruiter" ? recruiters : admins
+      const userObj = list.find((u) => u.id === userId)
+      const nextStatus = userObj?.status === "Active" ? "Suspended" : "Active"
+      await AdminApi.updateUserStatus(userId, nextStatus)
       loadUsers()
+    } catch (err) {
+      console.error("Failed to toggle status", err)
     }
   }
 
   const handleToggleVerification = async (userId: string, role: "candidate" | "recruiter") => {
-    const success = await AdminService.toggleUserVerification(userId, role)
-    if (success) {
+    try {
+      if (role === "recruiter") {
+        const recObj = recruiters.find((r) => r.id === userId)
+        const nextVerify = !recObj?.verified
+        await AdminApi.verifyRecruiter(userId, nextVerify)
+      } else {
+        alert("Candidate resume verification is not implemented dynamically on database model level.")
+      }
       loadUsers()
+    } catch (err) {
+      console.error("Failed to toggle verification", err)
     }
   }
 

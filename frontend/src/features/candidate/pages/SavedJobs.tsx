@@ -1,59 +1,60 @@
-import { useState } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { useNavigate } from "react-router-dom"
-import { mockJobs } from "../mock/jobsMock"
+import { toast } from "sonner"
+import { CandidateJobsApi } from "../services/jobsApi"
+import type { ExtendedJob } from "@/types/job"
 import { JobCard } from "@/components/dashboard/JobCard"
 import { EmptyState } from "@/components/shared/EmptyState"
+import { JobCardsSkeleton } from "@/components/dashboard/DashboardSkeletons"
 
 export function SavedJobs() {
   const navigate = useNavigate()
 
-  // Load saved and applied jobs from LocalStorage
-  const [savedJobIds, setSavedJobIds] = useState<string[]>(() => {
-    const saved = localStorage.getItem("savedJobs")
-    return saved ? JSON.parse(saved) : []
-  })
+  const [isLoading, setIsLoading] = useState(true)
+  const [savedJobs, setSavedJobs] = useState<ExtendedJob[]>([])
+  const [appliedJobIds, setAppliedJobIds] = useState<string[]>([])
 
-  const [appliedJobIds, setAppliedJobIds] = useState<string[]>(() => {
-    const applied = localStorage.getItem("appliedJobs")
-    return applied ? JSON.parse(applied) : []
-  })
+  const load = useCallback(async () => {
+    setIsLoading(true)
+    try {
+      const [saved, applications] = await Promise.all([
+        CandidateJobsApi.getSavedJobs(),
+        CandidateJobsApi.getApplications(),
+      ])
+      setSavedJobs(saved)
+      setAppliedJobIds(applications.map((a: any) => a.jobId))
+    } catch (err) {
+      console.error("Failed to load saved jobs", err)
+      toast.error("Couldn't load saved jobs. Please try again.")
+    } finally {
+      setIsLoading(false)
+    }
+  }, [])
 
-  // Get job objects matching saved IDs
-  const savedJobs = mockJobs.filter((job) => savedJobIds.includes(job.id))
+  useEffect(() => {
+    load()
+  }, [load])
 
-  const handleUnsave = (id: string) => {
-    const updated = savedJobIds.filter((jobId) => jobId !== id)
-    setSavedJobIds(updated)
-    localStorage.setItem("savedJobs", JSON.stringify(updated))
+  const handleUnsave = async (id: string) => {
+    const previous = savedJobs
+    setSavedJobs((prev) => prev.filter((job) => job.id !== id))
+    try {
+      await CandidateJobsApi.unsaveJob(id)
+    } catch {
+      setSavedJobs(previous)
+      toast.error("Couldn't remove this job. Please try again.")
+    }
   }
 
-  const handleApply = (id: string) => {
-    if (!appliedJobIds.includes(id)) {
-      const updated = [...appliedJobIds, id]
-      setAppliedJobIds(updated)
-      localStorage.setItem("appliedJobs", JSON.stringify(updated))
-
-      // Sync into applications tracking table in local storage
-      const storedApps = localStorage.getItem("customApplications")
-      const apps = storedApps ? JSON.parse(storedApps) : []
-      const jobDetails = mockJobs.find((j) => j.id === id)
-      if (jobDetails && !apps.some((a: { id: string }) => a.id === id)) {
-        const newApp = {
-          id: jobDetails.id,
-          company: jobDetails.company,
-          companyCode: jobDetails.companyCode,
-          job: jobDetails.title,
-          appliedDate: new Date().toLocaleDateString("en-GB", {
-            day: "2-digit",
-            month: "short",
-            year: "numeric",
-          }),
-          status: "Applied",
-          recruiter: "Anjali Rao",
-        }
-        localStorage.setItem("customApplications", JSON.stringify([newApp, ...apps]))
-      }
+  const handleApply = async (id: string) => {
+    if (appliedJobIds.includes(id)) return
+    try {
+      await CandidateJobsApi.applyToJob(id)
+      setAppliedJobIds((prev) => [...prev, id])
+      toast.success("Application submitted successfully.")
+    } catch (err: any) {
+      toast.error(err?.message || "Couldn't submit your application. Please try again.")
     }
   }
 
@@ -73,7 +74,9 @@ export function SavedJobs() {
         </p>
       </div>
 
-      {savedJobs.length > 0 ? (
+      {isLoading ? (
+        <JobCardsSkeleton />
+      ) : savedJobs.length > 0 ? (
         <motion.div
           layout
           className="grid gap-4 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3"

@@ -1,59 +1,30 @@
 import { useNavigate } from "react-router-dom"
+import { toast } from "sonner"
 import { JobPostingForm } from "../components/JobPostingForm"
+import { RecruiterApi } from "../services/recruiterApi"
 
 export function PostJob() {
   const navigate = useNavigate()
 
-  const handleFormSubmit = (values: any) => {
-    // Generate a unique ID for the new job
-    const newJobId = `job-custom-${Date.now()}`
-
-    // Parse skills from a comma-separated string to an array
-    const skillList = values.skills
-      ? values.skills.split(",").map((s: string) => s.trim()).filter(Boolean)
-      : []
-
-    // Build the Job object
-    const newJob = {
-      id: newJobId,
-      title: values.title,
-      department: values.department,
-      location: values.location,
-      salary: values.salary,
-      experience: values.experience,
-      type: values.type,
-      workMode: values.workMode,
-      skills: skillList,
-      description: values.description,
-      responsibilities: values.responsibilities,
-      requirements: values.requirements,
-      benefits: values.benefits,
-      deadline: values.deadline,
-      menstrualLeaveChampion: values.menstrualLeaveChampion,
-      flexibleHours: values.flexibleHours,
-      workFromHome: values.workFromHome,
-      status: "Active",
-      applicants: 0,
-      postedOn: new Date().toLocaleDateString("en-GB", {
-        day: "2-digit",
-        month: "short",
-        year: "numeric",
-      }),
+  const handleFormSubmit = async (values: any) => {
+    try {
+      await RecruiterApi.createJob(values)
+      toast.success("Job posted successfully. It's now pending admin approval.")
+      setTimeout(() => {
+        navigate("/recruiter/jobs")
+      }, 1200)
+    } catch (err: any) {
+      toast.error(err?.message || "Couldn't post this job. Please check the form and try again.")
     }
-
-    // Save to LocalStorage
-    const storedCustomJobs = localStorage.getItem("recruiterJobs")
-    const customJobs = storedCustomJobs ? JSON.parse(storedCustomJobs) : []
-    localStorage.setItem("recruiterJobs", JSON.stringify([newJob, ...customJobs]))
-
-    // Delayed navigation back to Recruiter Dashboard
-    setTimeout(() => {
-      navigate("/recruiter/dashboard")
-    }, 1500)
   }
 
-  const handleSaveDraft = (values: any) => {
-    localStorage.setItem("jobPostingDraft", JSON.stringify(values))
+  const handleSaveDraft = async (values: any) => {
+    try {
+      await RecruiterApi.saveDraft(values)
+      toast.success("Draft saved.")
+    } catch (err: any) {
+      toast.error(err?.message || "Couldn't save draft. Please try again.")
+    }
   }
 
   return (

@@ -219,11 +219,15 @@ export class AuthController {
 
   forgotPassword = async (req: Request, res: Response) => {
     const validated = forgotPasswordSchema.parse(req.body)
-    return sendSuccess(res, { email: validated.email }, "Password reset email triggered successfully.")
+    await this.authService.forgotPassword(validated.email)
+    // Always return a generic success response so we never reveal whether an
+    // email address is registered.
+    return sendSuccess(res, { email: validated.email }, "If that email is registered, a password reset link has been sent.")
   }
 
   resetPassword = async (req: Request, res: Response) => {
     const validated = resetPasswordSchema.parse(req.body)
+    await this.authService.resetPassword(validated.token, validated.password)
     return sendSuccess(res, null, "Password reset completed successfully.")
   }
 

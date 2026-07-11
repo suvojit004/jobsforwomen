@@ -16,6 +16,7 @@ export function Profile() {
     candidateData,
     isEditing,
     editingData,
+    isLoading,
     startEditing,
     cancelChanges,
     saveChanges,
@@ -36,8 +37,13 @@ export function Profile() {
     removeSocialLink,
   } = useProfile()
 
+  if (isLoading || !candidateData) {
+    return <div className="p-8 text-center text-sm font-bold text-[#6B2C91]">Loading candidate profile...</div>
+  }
+
   // Select data source depending on edit mode
   const currentData = isEditing ? editingData : candidateData
+  if (!currentData) return null
 
   return (
     <motion.div
@@ -112,8 +118,8 @@ export function Profile() {
           />
 
           {/* Reused Dashboard Components */}
-          <CareerBreakCard />
-          <ResumeCard />
+          <CareerBreakCard careerBreak={currentData.careerBreak} />
+          <ResumeCard resume={currentData.resume} />
         </div>
       </div>
     </motion.div>

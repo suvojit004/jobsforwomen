@@ -26,6 +26,7 @@ router.get("/settings", controller.getSettings)
 router.put("/settings", controller.updateSettings)
 
 // Job Management (Requires approved company)
+router.get("/jobs", requireApprovedCompany, controller.getJobs)
 router.post("/jobs", requireApprovedCompany, controller.postJob)
 router.put("/jobs/:id", requireApprovedCompany, requireOwnership("Job"), controller.updateJob)
 router.post("/jobs/:id/duplicate", requireApprovedCompany, requireOwnership("Job"), controller.duplicateJob)
@@ -36,5 +37,16 @@ router.delete("/jobs/:id", requireApprovedCompany, requireOwnership("Job"), cont
 // Applicants Pipeline Management (Requires approved company)
 router.get("/applications", requireApprovedCompany, controller.getCompanyApplications)
 router.put("/applications/:id/status", requireApprovedCompany, requireOwnership("Application"), controller.progressApplicant)
+
+// Notifications
+router.get("/notifications", controller.getNotifications)
+router.put("/notifications/read-all", controller.markAllNotificationsRead)
+router.put("/notifications/:id/read", controller.markNotificationRead)
+router.delete("/notifications/:id", controller.deleteNotification)
+
+// Conversations (Chat)
+router.get("/conversations", controller.getConversations)
+router.get("/conversations/:id/messages", controller.getMessages)
+router.post("/conversations/:id/messages", controller.sendMessage)
 
 export default router

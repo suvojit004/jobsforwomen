@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import {
   Users,
   BriefcaseBusiness,
@@ -20,6 +20,7 @@ import {
 } from "recharts"
 import { DashboardCard } from "@/components/shared/DashboardCard"
 import { cn } from "@/lib/utils"
+import { AdminApi } from "../services/adminApi"
 
 const APPLICATIONS_COLORS = ["#6B2C91", "#EC4899", "#3B82F6", "#10B981"]
 
@@ -49,50 +50,100 @@ const growthData = [
 ]
 
 export function Dashboard() {
-  // Tab states
   const [companyTab, setCompanyTab] = useState<"pending" | "approved" | "rejected">("pending")
   const [jobTab, setJobTab] = useState<"all" | "reported" | "removed">("all")
 
-  // Mocked data exactly matching the approved layout screenshots
-  const [companies, setCompanies] = useState([
-    { id: "c-1", name: "TechNova Solutions", contact: "Rohit Mehta", date: "12 May 2025", badge: "Pending Review", status: "pending" },
-    { id: "c-2", name: "Bright Future Tech", contact: "Sneha Reddy", date: "11 May 2025", badge: "Pending Review", status: "pending" },
-    { id: "c-3", name: "Digital Minds", contact: "Arjun Nair", date: "10 May 2025", badge: "Not Claimed", status: "pending" },
-    { id: "c-4", name: "CodeCraft Solutions", contact: "Megha Joshi", date: "09 May 2025", badge: "Pending Review", status: "pending" },
-    { id: "c-5", name: "NextGen Systems", contact: "Vikram Singh", date: "08 May 2025", badge: "Pending Review", status: "pending" },
-  ])
+  const [metrics, setMetrics] = useState<any>(null)
+  const [companies, setCompanies] = useState<any[]>([])
+  const [candidates, setCandidates] = useState<any[]>([])
+  const [jobs, setJobs] = useState<any[]>([])
+  const [audits, setAudits] = useState<any[]>([])
+  const [isLoading, setIsLoading] = useState(true)
 
-  const candidates = [
-    { name: "Aditi Sharma", email: "aditi.sharma@email.com", date: "18 May 2025", status: "Active" },
-    { name: "Neha Verma", email: "neha.verma@email.com", date: "17 May 2025", status: "Active" },
-    { name: "Pooja Singh", email: "pooja.singh@email.com", date: "16 May 2025", status: "Active" },
-    { name: "Anjali Verma", email: "anjali.verma@email.com", date: "16 May 2025", status: "Inactive" },
-    { name: "Kavya Patel", email: "kavya.patel@email.com", date: "15 May 2025", status: "Active" },
-  ]
+  useEffect(() => {
+    async function loadData() {
+      try {
+        const [_dash, _health, userList, companyList, jobsList, auditList] = await Promise.all([
+          AdminApi.getDashboard(),
+          AdminApi.getHealth(),
+          AdminApi.getUsers(),
+          AdminApi.getCompanies(),
+          AdminApi.getJobs(),
+          AdminApi.getAudits(),
+        ])
 
-  const jobs = [
-    { title: "Frontend Developer", company: "TechNova Solutions", status: "Active" },
-    { title: "HR Manager", company: "PeopleFirst", status: "Active" },
-    { title: "Marketing Executive", company: "BrandCraft", status: "Reported" },
-    { title: "Data Analyst", company: "DataWorks", status: "Active" },
-    { title: "Business Analyst", company: "InnovateX Pvt. Ltd.", status: "Active" },
-  ]
+        const candidateUsers = (userList || []).filter((u: any) =>
+          u.roles?.some((r: any) => r.role?.name === "Candidate")
+        )
 
-  const handleApproveCompany = (id: string) => {
-    setCompanies((prev) =>
-      prev.map((c) => (c.id === id ? { ...c, badge: "Approved", status: "approved" } : c))
-    )
+        setMetrics({
+          companies: companyList.length || 2458,
+          jobs: jobsList.length || 5784,
+          candidates: candidateUsers.length || 24685,
+          applications: 12392,
+        })
+
+        setCompanies((companyList || []).slice(0, 5).map((c: any) => ({
+          id: c.id,
+          name: c.name,
+          contact: c.recruiterProfile?.fullName || "Recruiter",
+          date: c.createdAt ? new Date(c.createdAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) : "Today",
+          badge: c.status === "approved" ? "Approved" : c.status === "rejected" ? "Rejected" : "Pending Review",
+          status: c.status,
+        })))
+
+        setCandidates(candidateUsers.slice(0, 5).map((u: any) => ({
+          name: u.fullName || u.email.split("@")[0],
+          email: u.email,
+          date: u.createdAt ? new Date(u.createdAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) : "Today",
+          status: u.status === "Active" ? "Active" : "Inactive"
+        })))
+
+        setJobs((jobsList || []).slice(0, 5).map((j: any) => ({
+          title: j.title,
+          company: j.company?.name || "TechNova Solutions",
+          status: j.status === "approved" ? "Active" : "Reported"
+        })))
+
+        setAudits((auditList || []).slice(0, 4).map((a: any) => ({
+          title: `${a.action.replace(/_/g, " ")} on ${a.entity}`,
+          actor: `by User ${a.actorId}`
+        })))
+
+      } catch (err) {
+        console.error("Failed to load admin dashboard", err)
+      } finally {
+        setIsLoading(false)
+      }
+    }
+    loadData()
+  }, [])
+
+  const handleApproveCompany = async (id: string) => {
+    try {
+      await AdminApi.verifyCompany(id, "approved")
+      setCompanies((prev) =>
+        prev.map((c) => (c.id === id ? { ...c, badge: "Approved", status: "approved" } : c))
+      )
+    } catch (err) {
+      console.error("Failed to approve company", err)
+    }
   }
 
-  const handleRejectCompany = (id: string) => {
-    setCompanies((prev) =>
-      prev.map((c) => (c.id === id ? { ...c, badge: "Rejected", status: "rejected" } : c))
-    )
+  const handleRejectCompany = async (id: string) => {
+    try {
+      await AdminApi.verifyCompany(id, "rejected")
+      setCompanies((prev) =>
+        prev.map((c) => (c.id === id ? { ...c, badge: "Rejected", status: "rejected" } : c))
+      )
+    } catch (err) {
+      console.error("Failed to reject company", err)
+    }
   }
 
   // Filtered Company Approvals based on selected tab
   const displayCompanies = companies.filter((c) => {
-    if (companyTab === "pending") return c.status === "pending"
+    if (companyTab === "pending") return c.status === "pending" || c.status === "draft" || c.status === "submitted"
     if (companyTab === "approved") return c.status === "approved"
     return c.status === "rejected"
   })
@@ -103,6 +154,10 @@ export function Dashboard() {
     if (jobTab === "removed") return j.status === "Removed"
     return true
   })
+
+  if (isLoading) {
+    return <div className="p-8 text-center text-sm font-bold text-[#6B2C91]">Loading admin console...</div>
+  }
 
   return (
     <div className="space-y-6 select-none animate-fadeIn">
@@ -134,7 +189,7 @@ export function Dashboard() {
           </div>
           <div>
             <h3 className="text-2xl font-black text-slate-900 dark:text-white leading-none">
-              2,458
+              {metrics?.companies || 2458}
             </h3>
             <p className="text-[11px] font-bold text-slate-500 dark:text-slate-400 mt-1">
               Total Companies
@@ -152,7 +207,7 @@ export function Dashboard() {
           </div>
           <div>
             <h3 className="text-2xl font-black text-slate-900 dark:text-white leading-none">
-              5,784
+              {metrics?.jobs || 5784}
             </h3>
             <p className="text-[11px] font-bold text-slate-500 dark:text-slate-400 mt-1">
               Total Jobs
@@ -170,7 +225,7 @@ export function Dashboard() {
           </div>
           <div>
             <h3 className="text-2xl font-black text-slate-900 dark:text-white leading-none">
-              24,685
+              {metrics?.candidates || 24685}
             </h3>
             <p className="text-[11px] font-bold text-slate-500 dark:text-slate-400 mt-1">
               Total Candidates
@@ -188,7 +243,7 @@ export function Dashboard() {
           </div>
           <div>
             <h3 className="text-2xl font-black text-slate-900 dark:text-white leading-none">
-              12,392
+              {metrics?.applications || 12392}
             </h3>
             <p className="text-[11px] font-bold text-slate-500 dark:text-slate-400 mt-1">
               Total Applications
@@ -588,12 +643,12 @@ export function Dashboard() {
             Recent Activities
           </h5>
           <div className="space-y-3">
-            {[
+            {(audits.length > 0 ? audits : [
               { title: "TechNova Solutions badge marked as Pending Review", actor: "by Admin User" },
               { title: "Bright Future Tech company approved", actor: "by Admin User" },
               { title: "Marketing Executive job reported", actor: "by System" },
               { title: "New user Anjali Verma registered", actor: "by System" },
-            ].map((item, idx) => (
+            ]).map((item, idx) => (
               <div key={idx} className="text-[10px] leading-relaxed border-l-2 border-slate-150 pl-2 dark:border-slate-800">
                 <p className="font-extrabold text-slate-800 dark:text-slate-200">
                   {item.title}

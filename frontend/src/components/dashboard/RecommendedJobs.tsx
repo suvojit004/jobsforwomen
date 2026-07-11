@@ -2,9 +2,23 @@ import { Button } from "@/components/ui/button"
 import { JobCard } from "@/components/dashboard/JobCard"
 import { SectionHeader } from "@/components/dashboard/SectionHeader"
 import { NoRecommendedJobsState } from "@/components/shared/EmptyStates"
-import { recommendedJobs } from "@/data/jobs"
+import type { ExtendedJob } from "@/types/job"
 
-export function RecommendedJobs() {
+type RecommendedJobsProps = {
+  jobs?: ExtendedJob[]
+  savedJobs?: string[]
+  appliedJobs?: string[]
+  onSave?: (id: string) => void
+  onApply?: (id: string) => void
+}
+
+export function RecommendedJobs({
+  jobs = [],
+  savedJobs = [],
+  appliedJobs = [],
+  onSave,
+  onApply,
+}: RecommendedJobsProps) {
   return (
     <section>
       <SectionHeader
@@ -20,10 +34,17 @@ export function RecommendedJobs() {
           </Button>
         }
       />
-      {recommendedJobs.length > 0 ? (
+      {jobs.length > 0 ? (
         <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
-          {recommendedJobs.map((job) => (
-            <JobCard key={job.id} job={job} />
+          {jobs.map((job) => (
+            <JobCard
+              key={job.id}
+              job={job}
+              isSaved={savedJobs.includes(job.id)}
+              isApplied={appliedJobs.includes(job.id)}
+              onSave={onSave}
+              onApply={onApply}
+            />
           ))}
         </div>
       ) : (

@@ -1,6 +1,6 @@
 import { Search } from "lucide-react"
 import { useState } from "react"
-import type { Conversation } from "../../mock/messagesMock"
+import type { Conversation } from "@/types/message"
 import { cn } from "@/lib/utils"
 
 type ConversationListProps = {
@@ -19,8 +19,8 @@ export function ConversationList({
   const filtered = conversations.filter((c) => {
     const q = search.toLowerCase()
     return (
-      c.recruiterName.toLowerCase().includes(q) ||
-      c.companyName.toLowerCase().includes(q)
+      (c.recruiterName || "").toLowerCase().includes(q) ||
+      (c.companyName || "").toLowerCase().includes(q)
     );
   })
 

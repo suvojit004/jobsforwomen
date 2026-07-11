@@ -49,6 +49,26 @@ export class AdminController {
     }
   }
 
+  listCompanies = async (req: Request, res: Response, next: any) => {
+    try {
+      const status = req.query.status as string | undefined
+      const result = await this.service.listCompanies(status)
+      return sendSuccess(res, { companies: result }, "Fetched companies successfully.")
+    } catch (err: any) {
+      next(err)
+    }
+  }
+
+  listJobs = async (req: Request, res: Response, next: any) => {
+    try {
+      const status = req.query.status as string | undefined
+      const result = await this.service.listJobs(status)
+      return sendSuccess(res, { jobs: result }, "Fetched jobs successfully.")
+    } catch (err: any) {
+      next(err)
+    }
+  }
+
   verifyCompany = async (req: Request, res: Response, next: any) => {
     try {
       const validated = verifyCompanySchema.parse(req.body)
@@ -323,6 +343,63 @@ export class AdminController {
       const query = req.query.q as string || ""
       const result = await this.service.globalSearch(query)
       return sendSuccess(res, result, "Unified search query executed successfully.")
+    } catch (err: any) {
+      next(err)
+    }
+  }
+
+  listUsers = async (req: Request, res: Response, next: any) => {
+    try {
+      const role = req.query.role as string | undefined
+      const result = await this.service.listUsers(role)
+      return sendSuccess(res, { users: result }, "Fetched users successfully.")
+    } catch (err: any) {
+      next(err)
+    }
+  }
+
+  verifyRecruiter = async (req: Request, res: Response, next: any) => {
+    try {
+      const { verified } = req.body
+      const adminId = req.user?.userId || ""
+      const context = this.getContext(req)
+      const result = await this.service.verifyRecruiter(
+        adminId,
+        req.params.id as string,
+        !!verified,
+        context
+      )
+      return sendSuccess(res, result, "Recruiter verification status updated successfully.")
+    } catch (err: any) {
+      next(err)
+    }
+  }
+
+  getAdminSettings = async (req: Request, res: Response, next: any) => {
+    try {
+      const adminId = req.user?.userId || ""
+      const settings = await this.service.getAdminSettings(adminId)
+      return sendSuccess(res, { settings }, "Fetched admin settings successfully.")
+    } catch (err: any) {
+      next(err)
+    }
+  }
+
+  updateAdminSettings = async (req: Request, res: Response, next: any) => {
+    try {
+      const adminId = req.user?.userId || ""
+      const settings = await this.service.updateAdminSettings(adminId, req.body.preferences)
+      return sendSuccess(res, { settings }, "Admin settings updated successfully.")
+    } catch (err: any) {
+      next(err)
+    }
+  }
+
+  getAdminNotifications = async (req: Request, res: Response, next: any) => {
+    try {
+      const adminId = req.user?.userId || ""
+      const notifications = await this.service.getAdminNotifications(adminId)
+      return sendSuccess(res, { notifications }, "Fetched admin notifications successfully.")
     } catch (err: any) {
       next(err)
     }

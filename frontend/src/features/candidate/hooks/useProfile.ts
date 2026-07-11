@@ -1,5 +1,5 @@
-import { useState } from "react"
-import { initialCandidateData } from "../mock/candidateMock"
+import { useState, useEffect } from "react"
+import { candidateApi } from "../services/candidateApi"
 import type {
   ExtendedCandidate,
   WorkExperience,
@@ -9,49 +9,125 @@ import type {
 } from "../types/candidate"
 
 export function useProfile() {
-  const [candidateData, setCandidateData] = useState<ExtendedCandidate>(initialCandidateData)
+  const [candidateData, setCandidateData] = useState<ExtendedCandidate | null>(null)
   const [isEditing, setIsEditing] = useState(false)
-  const [editingData, setEditingData] = useState<ExtendedCandidate>(initialCandidateData)
+  const [editingData, setEditingData] = useState<ExtendedCandidate | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
+
+  useEffect(() => {
+    async function fetchProfile() {
+      setIsLoading(true)
+      try {
+        const prof = await candidateApi.getProfile()
+        const extendedProfile: ExtendedCandidate = {
+          fullName: prof?.fullName || "",
+          role: prof?.title || "Professional",
+          email: "", // User level
+          phone: prof?.phone || "",
+          location: prof?.bio || "",
+          experience: prof?.noticePeriod || "",
+          currentCtc: prof?.expectedSalary || "",
+          profileCompletion: 85,
+          skills: (prof?.skills || []).map((s: any) => s.skill?.name || s.name || s),
+          languages: prof?.languages || ["English"],
+          socialLinks: prof?.socialLinks || [],
+          careerBreak: {
+            hasBreak: true,
+            reason: "Maternity Leave",
+            duration: "2 Years",
+            summary: "Focused on parenting and upskilling in modern technologies."
+          },
+          resume: {
+            name: prof?.resumeUrl ? "Resume_latest.pdf" : "",
+            uploadDate: "Just now",
+            verified: !!prof?.resumeUrl
+          },
+          education: prof?.education || [],
+          workExperience: prof?.workExperience || [],
+          preferences: {
+            expectedSalary: prof?.expectedSalary || "",
+            preferredLocation: [prof?.bio || ""],
+            availability: "Immediate",
+            noticePeriod: prof?.noticePeriod || ""
+          }
+        }
+        setCandidateData(extendedProfile)
+      } catch (err) {
+        console.error("Failed to fetch profile", err)
+      } finally {
+        setIsLoading(false)
+      }
+    }
+    fetchProfile()
+  }, [])
 
   const startEditing = () => {
-    setEditingData(JSON.parse(JSON.stringify(candidateData)))
-    setIsEditing(true)
+    if (candidateData) {
+      setEditingData(JSON.parse(JSON.stringify(candidateData)))
+      setIsEditing(true)
+    }
   }
 
   const cancelChanges = () => {
     setIsEditing(false)
   }
 
-  const saveChanges = () => {
-    setCandidateData(editingData)
-    setIsEditing(false)
+  const saveChanges = async () => {
+    if (editingData) {
+      try {
+        const payload = {
+          fullName: editingData.fullName,
+          title: editingData.role,
+          phone: editingData.phone,
+          bio: editingData.location,
+          noticePeriod: editingData.experience,
+          expectedSalary: editingData.currentCtc,
+          languages: editingData.languages,
+          socialLinks: editingData.socialLinks,
+          skills: editingData.skills,
+          education: editingData.education,
+          workExperience: editingData.workExperience,
+        }
+        await candidateApi.updateProfile(payload)
+        setCandidateData(editingData)
+        setIsEditing(false)
+      } catch (err) {
+        console.error("Failed to save profile changes", err)
+      }
+    }
   }
 
   const updatePersonalInfo = (fields: Partial<Pick<ExtendedCandidate, "fullName" | "role" | "email" | "phone" | "location" | "experience" | "currentCtc">>) => {
-    setEditingData((prev) => ({
-      ...prev,
-      ...fields,
-    }))
+    if (editingData) {
+      setEditingData((prev: any) => ({
+        ...prev,
+        ...fields,
+      }))
+    }
   }
 
   const updateCareerBreak = (fields: Partial<ExtendedCandidate["careerBreak"]>) => {
-    setEditingData((prev) => ({
-      ...prev,
-      careerBreak: {
-        ...prev.careerBreak,
-        ...fields,
-      },
-    }))
+    if (editingData) {
+      setEditingData((prev: any) => ({
+        ...prev,
+        careerBreak: {
+          ...prev.careerBreak,
+          ...fields,
+        },
+      }))
+    }
   }
 
   const updatePreferences = (fields: Partial<JobPreferences>) => {
-    setEditingData((prev) => ({
-      ...prev,
-      preferences: {
-        ...prev.preferences,
-        ...fields,
-      },
-    }))
+    if (editingData) {
+      setEditingData((prev: any) => ({
+        ...prev,
+        preferences: {
+          ...prev.preferences,
+          ...fields,
+        },
+      }))
+    }
   }
 
   // Work Experience management
@@ -60,26 +136,32 @@ export function useProfile() {
       ...exp,
       id: `work-${Date.now()}`,
     }
-    setEditingData((prev) => ({
-      ...prev,
-      workExperience: [...prev.workExperience, newExp],
-    }))
+    if (editingData) {
+      setEditingData((prev: any) => ({
+        ...prev,
+        workExperience: [...prev.workExperience, newExp],
+      }))
+    }
   }
 
   const updateWorkExperience = (id: string, fields: Partial<WorkExperience>) => {
-    setEditingData((prev) => ({
-      ...prev,
-      workExperience: prev.workExperience.map((item) =>
-        item.id === id ? { ...item, ...fields } : item
-      ),
-    }))
+    if (editingData) {
+      setEditingData((prev: any) => ({
+        ...prev,
+        workExperience: prev.workExperience.map((item: WorkExperience) =>
+          item.id === id ? { ...item, ...fields } : item
+        ),
+      }))
+    }
   }
 
   const removeWorkExperience = (id: string) => {
-    setEditingData((prev) => ({
-      ...prev,
-      workExperience: prev.workExperience.filter((item) => item.id !== id),
-    }))
+    if (editingData) {
+      setEditingData((prev: any) => ({
+        ...prev,
+        workExperience: prev.workExperience.filter((item: WorkExperience) => item.id !== id),
+      }))
+    }
   }
 
   // Education management
@@ -88,32 +170,38 @@ export function useProfile() {
       ...edu,
       id: `edu-${Date.now()}`,
     }
-    setEditingData((prev) => ({
-      ...prev,
-      education: [...prev.education, newEdu],
-    }))
+    if (editingData) {
+      setEditingData((prev: any) => ({
+        ...prev,
+        education: [...prev.education, newEdu],
+      }))
+    }
   }
 
   const updateEducation = (id: string, fields: Partial<Education>) => {
-    setEditingData((prev) => ({
-      ...prev,
-      education: prev.education.map((item) =>
-        item.id === id ? { ...item, ...fields } : item
-      ),
-    }))
+    if (editingData) {
+      setEditingData((prev: any) => ({
+        ...prev,
+        education: prev.education.map((item: Education) =>
+          item.id === id ? { ...item, ...fields } : item
+        ),
+      }))
+    }
   }
 
   const removeEducation = (id: string) => {
-    setEditingData((prev) => ({
-      ...prev,
-      education: prev.education.filter((item) => item.id !== id),
-    }))
+    if (editingData) {
+      setEditingData((prev: any) => ({
+        ...prev,
+        education: prev.education.filter((item: Education) => item.id !== id),
+      }))
+    }
   }
 
   // Skills & Languages management
   const addSkill = (skill: string) => {
-    if (!editingData.skills.includes(skill)) {
-      setEditingData((prev) => ({
+    if (editingData && !editingData.skills.includes(skill)) {
+      setEditingData((prev: any) => ({
         ...prev,
         skills: [...prev.skills, skill],
       }))
@@ -121,15 +209,17 @@ export function useProfile() {
   }
 
   const removeSkill = (skill: string) => {
-    setEditingData((prev) => ({
-      ...prev,
-      skills: prev.skills.filter((s) => s !== skill),
-    }))
+    if (editingData) {
+      setEditingData((prev: any) => ({
+        ...prev,
+        skills: prev.skills.filter((s: string) => s !== skill),
+      }))
+    }
   }
 
   const addLanguage = (lang: string) => {
-    if (!editingData.languages.includes(lang)) {
-      setEditingData((prev) => ({
+    if (editingData && !editingData.languages.includes(lang)) {
+      setEditingData((prev: any) => ({
         ...prev,
         languages: [...prev.languages, lang],
       }))
@@ -137,10 +227,12 @@ export function useProfile() {
   }
 
   const removeLanguage = (lang: string) => {
-    setEditingData((prev) => ({
-      ...prev,
-      languages: prev.languages.filter((l) => l !== lang),
-    }))
+    if (editingData) {
+      setEditingData((prev: any) => ({
+        ...prev,
+        languages: prev.languages.filter((l: string) => l !== lang),
+      }))
+    }
   }
 
   // Social Links management
@@ -150,32 +242,39 @@ export function useProfile() {
       platform,
       url,
     }
-    setEditingData((prev) => ({
-      ...prev,
-      socialLinks: [...prev.socialLinks, newLink],
-    }))
+    if (editingData) {
+      setEditingData((prev: any) => ({
+        ...prev,
+        socialLinks: [...prev.socialLinks, newLink],
+      }))
+    }
   }
 
   const updateSocialLink = (id: string, url: string) => {
-    setEditingData((prev) => ({
-      ...prev,
-      socialLinks: prev.socialLinks.map((link) =>
-        link.id === id ? { ...link, url } : link
-      ),
-    }))
+    if (editingData) {
+      setEditingData((prev: any) => ({
+        ...prev,
+        socialLinks: prev.socialLinks.map((link: SocialLink) =>
+          link.id === id ? { ...link, url } : link
+        ),
+      }))
+    }
   }
 
   const removeSocialLink = (id: string) => {
-    setEditingData((prev) => ({
-      ...prev,
-      socialLinks: prev.socialLinks.filter((link) => link.id !== id),
-    }))
+    if (editingData) {
+      setEditingData((prev: any) => ({
+        ...prev,
+        socialLinks: prev.socialLinks.filter((link: SocialLink) => link.id !== id),
+      }))
+    }
   }
 
   return {
     candidateData,
     isEditing,
     editingData,
+    isLoading,
     startEditing,
     cancelChanges,
     saveChanges,

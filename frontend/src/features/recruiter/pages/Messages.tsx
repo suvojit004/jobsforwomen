@@ -29,195 +29,155 @@ interface RecruiterConversation {
   thread: ChatMessage[]
 }
 
-export function Messages() {
-  const [conversations, setConversations] = useState<RecruiterConversation[]>([
-    {
-      id: "conv-priya",
-      candidateName: "Priya Sharma",
-      candidateRole: "Frontend Developer",
-      avatarLetters: "PS",
-      lastMessageText: "Thank you for the opportunity! I have prepared the coding task.",
-      lastMessageTime: "12:30 PM",
-      unreadCount: 2,
-      online: true,
-      thread: [
-        {
-          id: "m1",
-          sender: "recruiter",
-          text: "Hi Priya, we reviewed your profile and love your experience. How are you preparing for your return to frontend development after the break?",
-          timestamp: "10:15 AM",
-        },
-        {
-          id: "m2",
-          sender: "candidate",
-          text: "Hi Anjali! I kept up to date by taking courses and building a React + TS personal dashboard project. I feel fully prepared to jump back in.",
-          timestamp: "10:20 AM",
-        },
-        {
-          id: "m3",
-          sender: "recruiter",
-          text: "That is fantastic! We would love to schedule a technical round. I will send you a calendar invite shortly.",
-          timestamp: "11:45 AM",
-        },
-        {
-          id: "m4",
-          sender: "candidate",
-          text: "Thank you for the opportunity! I have prepared the coding task and look forward to the meeting.",
-          timestamp: "12:30 PM",
-        },
-      ],
-    },
-    {
-      id: "conv-anjali",
-      candidateName: "Anjali Verma",
-      candidateRole: "UI/UX Designer",
-      avatarLetters: "AV",
-      lastMessageText: "Sure, let me share the Figma link by tomorrow.",
-      lastMessageTime: "Yesterday",
-      unreadCount: 0,
-      online: false,
-      thread: [
-        {
-          id: "m5",
-          sender: "recruiter",
-          text: "Hello Anjali, could you send over a link to your case studies on design tokens?",
-          timestamp: "Yesterday, 3:00 PM",
-        },
-        {
-          id: "m6",
-          sender: "candidate",
-          text: "Sure, let me share the Figma link by tomorrow.",
-          timestamp: "Yesterday, 4:10 PM",
-        },
-      ],
-    },
-    {
-      id: "conv-neha",
-      candidateName: "Neha Singh",
-      candidateRole: "Frontend Developer",
-      avatarLetters: "NS",
-      lastMessageText: "I am available on Tuesday afternoon.",
-      lastMessageTime: "Yesterday",
-      unreadCount: 0,
-      online: false,
-      thread: [
-        {
-          id: "m7",
-          sender: "recruiter",
-          text: "Hi Neha, does next Tuesday work for a quick conversation?",
-          timestamp: "Yesterday, 11:00 AM",
-        },
-        {
-          id: "m8",
-          sender: "candidate",
-          text: "I am available on Tuesday afternoon.",
-          timestamp: "Yesterday, 11:32 AM",
-        },
-      ],
-    },
-  ])
+import { RecruiterApi } from "../services/recruiterApi"
+import { getSocket } from "@/api/socket"
 
-  const [activeId, setActiveId] = useState<string>("conv-priya")
+export function Messages() {
+  const [conversations, setConversations] = useState<RecruiterConversation[]>([])
+  const [activeId, setActiveId] = useState<string>("")
   const [inputText, setInputText] = useState("")
   const [isTyping, setIsTyping] = useState(false)
   const [searchTerm, setSearchTerm] = useState("")
   const [mobileShowChat, setMobileShowChat] = useState(false)
+  const [isLoading, setIsLoading] = useState(true)
 
   const activeConversation = conversations.find((c) => c.id === activeId) || conversations[0]
   const threadEndRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    async function loadConversations() {
+      try {
+        setIsLoading(true)
+        const list = await RecruiterApi.getConversations()
+        const formatted = list.map((c: any) => {
+          const otherParticipant = c.participants.find(
+            (p: any) => p.user?.candidateProfile?.fullName
+          )
+          const name = otherParticipant?.user?.candidateProfile?.fullName || "Candidate Applicant"
+          return {
+            id: c.id,
+            candidateName: name,
+            candidateRole: otherParticipant?.user?.candidateProfile?.title || "Professional",
+            avatarLetters: name.split(" ").map((n: any) => n[0]).join("").slice(0, 2).toUpperCase() || "CN",
+            lastMessageText: c.messages?.[0]?.content || "No messages yet",
+            lastMessageTime: c.messages?.[0]?.timestamp
+              ? new Date(c.messages[0].timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+              : "Today",
+            unreadCount: 0,
+            online: true,
+            thread: [],
+          }
+        })
+        setConversations(formatted)
+        if (formatted.length > 0) {
+          setActiveId(formatted[0].id)
+        }
+      } catch (err) {
+        console.error("Failed to load recruiter conversations", err)
+      } finally {
+        setIsLoading(false)
+      }
+    }
+    loadConversations()
+  }, [])
+
+  useEffect(() => {
+    if (!activeId) return
+    async function loadMessages() {
+      try {
+        const msgs = await RecruiterApi.getMessages(activeId)
+        const formattedMsgs: ChatMessage[] = msgs.map((m: any) => ({
+          id: m.id,
+          sender: m.senderId === localStorage.getItem("user_id") ? "recruiter" : "candidate",
+          text: m.content,
+          timestamp: new Date(m.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        }))
+        setConversations((prev) =>
+          prev.map((c) => (c.id === activeId ? { ...c, thread: formattedMsgs } : c))
+        )
+      } catch (err) {
+        console.error("Failed to load messages", err)
+      }
+    }
+    loadMessages()
+  }, [activeId])
+
+  useEffect(() => {
+    if (!activeId) return
+    const socket = getSocket("recruiter")
+
+    socket.emit("join:conversation", { conversationId: activeId })
+
+    socket.on("typing", (data: { userId: string; isTyping: boolean }) => {
+      setIsTyping(data.isTyping)
+    })
+
+    socket.on("notification", (data: any) => {
+      if (data.type === "message" || data.type === "MESSAGE") {
+        async function reloadMessages() {
+          const msgs = await RecruiterApi.getMessages(activeId)
+          const formattedMsgs: ChatMessage[] = msgs.map((m: any) => ({
+            id: m.id,
+            sender: m.senderId === localStorage.getItem("user_id") ? "recruiter" : "candidate",
+            text: m.content,
+            timestamp: new Date(m.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+          }))
+          setConversations((prev) =>
+            prev.map((c) => (c.id === activeId ? { ...c, thread: formattedMsgs } : c))
+          )
+        }
+        reloadMessages()
+      }
+    })
+
+    return () => {
+      socket.off("typing")
+      socket.off("notification")
+    }
+  }, [activeId])
 
   // Scroll to bottom of message logs
   useEffect(() => {
     threadEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [activeConversation?.thread, isTyping])
 
-  // Clear unread count when opening active conversation
-  useEffect(() => {
-    setConversations((prev) =>
-      prev.map((c) => (c.id === activeId ? { ...c, unreadCount: 0 } : c))
-    )
-  }, [activeId])
-
   const handleSelectConv = (id: string) => {
     setActiveId(id)
     setMobileShowChat(true)
   }
 
-  const handleSend = (e: React.FormEvent) => {
+  const handleSend = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!inputText.trim()) return
 
-    const timeStr = new Date().toLocaleTimeString("en-US", {
-      hour: "2-digit",
-      minute: "2-digit",
-    })
+    try {
+      await RecruiterApi.sendMessage(activeId, inputText)
+      const socket = getSocket("recruiter")
+      socket.emit("typing", { conversationId: activeId, isTyping: false })
 
-    const newMsg: ChatMessage = {
-      id: `msg-r-${Date.now()}`,
-      sender: "recruiter",
-      text: inputText,
-      timestamp: timeStr,
-    }
+      const msgs = await RecruiterApi.getMessages(activeId)
+      const formattedMsgs: ChatMessage[] = msgs.map((m: any) => ({
+        id: m.id,
+        sender: m.senderId === localStorage.getItem("user_id") ? "recruiter" : "candidate",
+        text: m.content,
+        timestamp: new Date(m.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+      }))
 
-    setConversations((prev) =>
-      prev.map((c) => {
-        if (c.id === activeId) {
-          return {
-            ...c,
-            lastMessageText: inputText,
-            lastMessageTime: timeStr,
-            thread: [...c.thread, newMsg],
-          }
-        }
-        return c
-      })
-    )
-
-    const typedText = inputText
-    setInputText("")
-
-    // Simulated candidate reply
-    if (activeConversation.online) {
-      setTimeout(() => {
-        setIsTyping(true)
-
-        setTimeout(() => {
-          setIsTyping(false)
-          const replyTime = new Date().toLocaleTimeString("en-US", {
-            hour: "2-digit",
-            minute: "2-digit",
-          })
-
-          let replyText = `Thanks for the details! I will review the scheduling details and respond soon.`
-          const lower = typedText.toLowerCase()
-          if (lower.includes("meet") || lower.includes("interview") || lower.includes("time")) {
-            replyText = `That slot works perfectly for me. Looking forward to the conversation!`
-          } else if (lower.includes("resume") || lower.includes("break") || lower.includes("experience")) {
-            replyText = `Yes, my career break duration really gave me space to sharpen my skills. I appreciate the focus on returnship entries.`
-          }
-
-          const replyMsg: ChatMessage = {
-            id: `msg-c-${Date.now()}`,
-            sender: "candidate",
-            text: replyText,
-            timestamp: replyTime,
-          }
-
-          setConversations((prev) =>
-            prev.map((c) => {
-              if (c.id === activeId) {
-                return {
-                  ...c,
-                  lastMessageText: replyText,
-                  lastMessageTime: replyTime,
-                  thread: [...c.thread, replyMsg],
-                }
+      setConversations((prev) =>
+        prev.map((c) =>
+          c.id === activeId
+            ? {
+                ...c,
+                lastMessageText: inputText,
+                lastMessageTime: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+                thread: formattedMsgs,
               }
-              return c
-            })
-          )
-        }, 2200)
-      }, 1200)
+            : c
+        )
+      )
+      setInputText("")
+    } catch (err) {
+      console.error("Failed to send message", err)
     }
   }
 
@@ -227,6 +187,10 @@ export function Messages() {
       c.candidateName.toLowerCase().includes(searchTerm.toLowerCase()) ||
       c.candidateRole.toLowerCase().includes(searchTerm.toLowerCase())
   )
+
+  if (isLoading) {
+    return <div className="p-8 text-center text-sm font-bold text-[#6B2C91]">Loading inbox...</div>
+  }
 
   return (
     <motion.div

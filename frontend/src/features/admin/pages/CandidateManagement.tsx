@@ -12,8 +12,17 @@ import type { ColumnDef } from "@/components/shared/DataTable"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { DashboardCard } from "@/components/shared/DashboardCard"
-import { AdminService } from "@/services/admin.service"
-import type { CandidateUser } from "@/mock/admin/adminMock"
+import { AdminApi } from "../services/adminApi"
+
+interface CandidateUser {
+  id: string
+  name: string
+  email: string
+  role: string
+  careerBreak: boolean
+  verified: boolean
+  status: string
+}
 
 export function CandidateManagement() {
   const [candidates, setCandidates] = useState<CandidateUser[]>([])
@@ -24,8 +33,16 @@ export function CandidateManagement() {
   const loadCandidates = async () => {
     try {
       setLoading(true)
-      const data = await AdminService.getCandidates()
-      setCandidates([...data])
+      const data = await AdminApi.getUsers("candidate")
+      setCandidates((data || []).map((u: any) => ({
+        id: u.id,
+        name: u.fullName || u.email.split("@")[0],
+        email: u.email,
+        role: u.candidateProfile?.title || "Professional",
+        careerBreak: !!u.candidateProfile?.bio,
+        verified: !!u.candidateProfile?.resumeUrl,
+        status: u.status === "Active" ? "Active" : "Blocked"
+      })))
     } catch (err) {
       console.error("Failed to load candidates database:", err)
     } finally {
@@ -38,17 +55,18 @@ export function CandidateManagement() {
   }, [])
 
   const handleToggleStatus = async (userId: string) => {
-    const success = await AdminService.toggleUserStatus(userId, "candidate")
-    if (success) {
+    try {
+      const candObj = candidates.find((c) => c.id === userId)
+      const nextStatus = candObj?.status === "Active" ? "Suspended" : "Active"
+      await AdminApi.updateUserStatus(userId, nextStatus)
       loadCandidates()
+    } catch (err) {
+      console.error("Failed to toggle status", err)
     }
   }
 
-  const handleToggleVerification = async (userId: string) => {
-    const success = await AdminService.toggleUserVerification(userId, "candidate")
-    if (success) {
-      loadCandidates()
-    }
+  const handleToggleVerification = async (_userId: string) => {
+    alert("Candidate resume verification is not implemented dynamically on database model level.")
   }
 
   // Filter logic

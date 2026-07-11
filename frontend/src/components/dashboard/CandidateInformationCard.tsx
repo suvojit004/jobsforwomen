@@ -2,17 +2,39 @@ import { Edit3, Mail, MapPin, Phone } from "lucide-react"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { DashboardCard } from "@/components/dashboard/DashboardCard"
-import { candidate } from "@/data/candidate"
 
-const stats = [
-  { label: "Experience", value: candidate.experience },
-  { label: "Current CTC", value: candidate.currentCtc },
-  { label: "Expected CTC", value: candidate.expectedCtc },
-  { label: "Availability", value: candidate.availability },
-  { label: "Notice Period", value: candidate.noticePeriod },
-]
+type CandidateInformationCardProps = {
+  candidate?: {
+    fullName: string
+    role: string
+    location: string
+    email: string
+    phone: string
+    experience: string
+    currentCtc: string
+    expectedCtc: string
+    availability: string
+    noticePeriod: string
+    profileCompletion: number
+    skills: string[]
+  }
+}
 
-export function CandidateInformationCard() {
+export function CandidateInformationCard({ candidate }: CandidateInformationCardProps) {
+  if (!candidate) return null
+
+  const stats = [
+    { label: "Experience", value: candidate.experience },
+    { label: "Current CTC", value: candidate.currentCtc },
+    { label: "Expected CTC", value: candidate.expectedCtc },
+    { label: "Availability", value: candidate.availability },
+    { label: "Notice Period", value: candidate.noticePeriod },
+  ]
+
+  const initials = candidate.fullName
+    ? candidate.fullName.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase()
+    : "JW"
+
   return (
     <DashboardCard className="p-4">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -41,7 +63,7 @@ export function CandidateInformationCard() {
         <div className="flex gap-4">
           <Avatar className="size-20 sm:size-24">
             <AvatarFallback className="bg-gradient-to-br from-pink-100 via-white to-violet-200 text-xl font-bold text-[#6B2C91] dark:from-pink-500/20 dark:via-slate-900 dark:to-violet-500/25 dark:text-pink-100">
-              PS
+              {initials}
             </AvatarFallback>
           </Avatar>
           <div className="min-w-0">
@@ -55,7 +77,6 @@ export function CandidateInformationCard() {
               <MapPin className="size-3.5" />
               {candidate.location}
             </p>
-
             <div className="mt-4 space-y-2 text-xs font-semibold text-slate-600 dark:text-slate-300">
               <p className="flex items-center gap-2">
                 <Mail className="size-3.5 text-pink-500" />

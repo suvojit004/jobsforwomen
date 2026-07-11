@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import {
   Sparkles,
   MessageSquare,
@@ -15,9 +15,9 @@ import {
 } from "lucide-react"
 import { DashboardCard } from "@/components/shared/DashboardCard"
 import { Button } from "@/components/ui/button"
-import { isFeatureEnabled, setFeatureFlag } from "@/config/features"
+import { setFeatureFlag } from "@/config/features"
 import type { FeatureKey } from "@/config/features"
-import { AdminService } from "@/services/admin.service"
+import { AdminApi } from "../services/adminApi"
 
 interface FeatureItem {
   key: FeatureKey
@@ -33,21 +33,42 @@ interface FeatureGroup {
 
 export function FeatureConfigs() {
   const [flags, setFlags] = useState<Record<FeatureKey, boolean>>({
-    CHAT_SYSTEM: isFeatureEnabled("CHAT_SYSTEM"),
-    WEB_SOCKETS: isFeatureEnabled("WEB_SOCKETS"),
-    EMAIL_DIGESTS: isFeatureEnabled("EMAIL_DIGESTS"),
-    ADMIN_MODERATION: isFeatureEnabled("ADMIN_MODERATION"),
-    RETURNSHIP_ALERTS: isFeatureEnabled("RETURNSHIP_ALERTS"),
-    ANALYTICS_EXPORT: isFeatureEnabled("ANALYTICS_EXPORT"),
-    AI_RESUME_PARSER: isFeatureEnabled("AI_RESUME_PARSER"),
-    SMS_NOTIFICATIONS: isFeatureEnabled("SMS_NOTIFICATIONS"),
-    ENTERPRISE_GREENHOUSE: isFeatureEnabled("ENTERPRISE_GREENHOUSE"),
-    MFA_ENFORCEMENT: isFeatureEnabled("MFA_ENFORCEMENT"),
-    SESSION_TIMEOUT_LOGS: isFeatureEnabled("SESSION_TIMEOUT_LOGS"),
-    PUSH_NOTIFICATION_ALERTS: isFeatureEnabled("PUSH_NOTIFICATION_ALERTS"),
+    CHAT_SYSTEM: false,
+    WEB_SOCKETS: false,
+    EMAIL_DIGESTS: false,
+    ADMIN_MODERATION: true,
+    RETURNSHIP_ALERTS: false,
+    ANALYTICS_EXPORT: false,
+    AI_RESUME_PARSER: false,
+    SMS_NOTIFICATIONS: false,
+    ENTERPRISE_GREENHOUSE: false,
+    MFA_ENFORCEMENT: false,
+    SESSION_TIMEOUT_LOGS: false,
+    PUSH_NOTIFICATION_ALERTS: false,
   })
 
   const [saving, setSaving] = useState(false)
+  const [isLoading, setIsLoading] = useState(true)
+
+  useEffect(() => {
+    async function loadFlags() {
+      try {
+        const list = await AdminApi.getFeatureFlags()
+        const mappedFlags = { ...flags }
+        list.forEach((f: any) => {
+          if (f.key in mappedFlags) {
+            mappedFlags[f.key as FeatureKey] = !!f.enabled
+          }
+        })
+        setFlags(mappedFlags)
+      } catch (err) {
+        console.error("Failed to load feature flags", err)
+      } finally {
+        setIsLoading(false)
+      }
+    }
+    loadFlags()
+  }, [])
 
   const featureGroups: FeatureGroup[] = [
     {
@@ -154,7 +175,7 @@ export function FeatureConfigs() {
     },
   ]
 
-  const handleToggle = (key: FeatureKey) => {
+  const handleToggle = async (key: FeatureKey) => {
     if (key === "ADMIN_MODERATION" && flags.ADMIN_MODERATION) {
       alert("Security constraint: Admin control center flag must remain enabled to access this control room.")
       return
@@ -164,10 +185,17 @@ export function FeatureConfigs() {
     setFlags((prev) => ({ ...prev, [key]: nextVal }))
     setFeatureFlag(key, nextVal)
 
-    AdminService.addAuditLog(
-      "Feature Flags",
-      `Modified system flag "${key}" status to ${nextVal ? "Enabled" : "Disabled"}`
-    )
+    try {
+      const list = await AdminApi.getFeatureFlags()
+      const existing = list.find((f: any) => f.key === key)
+      if (existing) {
+        await AdminApi.updateFeatureFlag(existing.id, { enabled: nextVal })
+      } else {
+        await AdminApi.createFeatureFlag({ key, enabled: nextVal, description: `System flag for ${key}` })
+      }
+    } catch (err) {
+      console.error("Failed to update feature flag", err)
+    }
   }
 
   const handleSaveAll = () => {
@@ -176,6 +204,10 @@ export function FeatureConfigs() {
       setSaving(false)
       alert("Feature configurations propagated to API nodes successfully!")
     }, 1000)
+  }
+
+  if (isLoading) {
+    return <div className="p-8 text-center text-sm font-bold text-[#6B2C91]">Loading feature configs...</div>
   }
 
   return (

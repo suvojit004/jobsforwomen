@@ -1,7 +1,7 @@
 import { Bell, Briefcase, Calendar, Check, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { DashboardCard } from "@/components/dashboard/DashboardCard"
-import type { NotificationItemType } from "../../mock/notificationsMock"
+import type { NotificationItemType } from "@/types/notification"
 import { cn } from "@/lib/utils"
 
 type NotificationListProps = {

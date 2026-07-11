@@ -139,6 +139,10 @@ export class AuthService {
       throw new Error("Your account has been suspended")
     }
 
+    if (user.status === UserStatus.Rejected) {
+      throw new Error("Your account application was rejected")
+    }
+
     if (!user.passwordHash) {
       throw new Error("This account is configured for Google login")
     }
@@ -345,6 +349,64 @@ export class AuthService {
     })
 
     return user
+  }
+
+  async forgotPassword(email: string) {
+    const user = await this.authRepository.findUserByEmail(email)
+
+    // Always behave the same way whether or not the account exists, to avoid
+    // leaking which emails are registered.
+    if (!user || !user.passwordHash) {
+      logger.info(`[AuthService] Password reset requested for non-resettable account: ${email}`)
+      return { email }
+    }
+
+    await this.authRepository.invalidatePendingPasswordResets(email)
+
+    const resetToken = crypto.randomBytes(32).toString("hex")
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000) // 1 hour
+    await this.authRepository.createPasswordReset(email, resetToken, expiresAt)
+
+    logger.info(`[AuthService] Password reset token generated for: ${email}`)
+
+    EventBus.publish("PasswordResetRequested", {
+      email,
+      token: resetToken,
+    })
+
+    return { email }
+  }
+
+  async resetPassword(token: string, newPassword: string) {
+    const record = await this.authRepository.findValidPasswordReset(token)
+    if (!record) {
+      throw new Error("Invalid or expired password reset token")
+    }
+
+    if (new Date() > record.expiresAt) {
+      throw new Error("Password reset token has expired")
+    }
+
+    const user = await this.authRepository.findUserByEmail(record.email)
+    if (!user) {
+      throw new Error("User associated with token not found")
+    }
+
+    const passwordHash = await hashPassword(newPassword)
+    await this.authRepository.updateUserPassword(user.id, passwordHash)
+    await this.authRepository.markPasswordResetUsed(record.id)
+
+    // Invalidate all existing sessions so stolen/old credentials can't be used
+    await this.authRepository.deleteOtherSessions("", user.id)
+
+    logger.info(`[AuthService] Password reset completed for: ${record.email}`)
+
+    EventBus.publish("PasswordChanged", {
+      userId: user.id,
+      email: record.email,
+    })
+
+    return { email: record.email }
   }
 
   private detectDeviceType(userAgent: string): string {

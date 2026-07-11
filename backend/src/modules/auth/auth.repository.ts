@@ -171,6 +171,39 @@ export class AuthRepository {
     })
   }
 
+  async createPasswordReset(email: string, token: string, expiresAt: Date) {
+    return prisma.passwordReset.create({
+      data: { email, token, expiresAt },
+    })
+  }
+
+  async findValidPasswordReset(token: string) {
+    return prisma.passwordReset.findFirst({
+      where: { token, usedAt: null },
+    })
+  }
+
+  async markPasswordResetUsed(id: string) {
+    return prisma.passwordReset.update({
+      where: { id },
+      data: { usedAt: new Date() },
+    })
+  }
+
+  async invalidatePendingPasswordResets(email: string) {
+    return prisma.passwordReset.updateMany({
+      where: { email, usedAt: null },
+      data: { usedAt: new Date() },
+    })
+  }
+
+  async updateUserPassword(userId: string, passwordHash: string) {
+    return prisma.user.update({
+      where: { id: userId },
+      data: { passwordHash },
+    })
+  }
+
   async findEmailVerification(token: string) {
     return prisma.emailVerification.findUnique({
       where: { token },

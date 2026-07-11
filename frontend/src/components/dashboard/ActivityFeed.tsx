@@ -10,7 +10,6 @@ import { Button } from "@/components/ui/button"
 import { DashboardCard } from "@/components/dashboard/DashboardCard"
 import { SectionHeader } from "@/components/dashboard/SectionHeader"
 import { NoNotificationsState } from "@/components/shared/EmptyStates"
-import { activityFeed } from "@/data/candidate"
 import type { Activity } from "@/types/dashboard"
 
 const activityStyles: Record<
@@ -43,7 +42,11 @@ const activityStyles: Record<
   },
 }
 
-export function ActivityFeed() {
+type ActivityFeedProps = {
+  activities?: Activity[]
+}
+
+export function ActivityFeed({ activities = [] }: ActivityFeedProps) {
   return (
     <section>
       <SectionHeader
@@ -60,14 +63,14 @@ export function ActivityFeed() {
         }
       />
       <DashboardCard className="p-4">
-        {activityFeed.length > 0 ? (
+        {activities.length > 0 ? (
           <ol className="space-y-4">
-            {activityFeed.map((activity, index) => {
+            {activities.map((activity, index) => {
               const { icon: Icon, className } = activityStyles[activity.type]
 
               return (
                 <li key={activity.id} className="relative flex gap-3">
-                  {index < activityFeed.length - 1 && (
+                  {index < activities.length - 1 && (
                     <span className="absolute left-4 top-8 h-[calc(100%+0.25rem)] w-px bg-slate-200 dark:bg-slate-800" />
                   )}
                   <span

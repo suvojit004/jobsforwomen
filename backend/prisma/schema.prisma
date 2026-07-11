@@ -106,6 +106,17 @@ model EmailVerification {
   verifiedAt DateTime?
 }
 
+model PasswordReset {
+  id        String    @id @default(uuid())
+  email     String
+  token     String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([email])
+}
+
 model Invitation {
   id          String    @id @default(uuid())
   email       String    @unique

@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react"
 import { Send, ArrowLeft } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import type { Conversation } from "../../mock/messagesMock"
+import type { Conversation } from "@/types/message"
 import { cn } from "@/lib/utils"
 
 type ChatWindowProps = {

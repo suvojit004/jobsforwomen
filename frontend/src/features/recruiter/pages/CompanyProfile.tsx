@@ -31,43 +31,91 @@ const companySchema = z.object({
 
 type CompanyFormValues = z.infer<typeof companySchema>
 
+import { useEffect } from "react"
+import { RecruiterApi } from "../services/recruiterApi"
+
 export function CompanyProfile() {
   const [successMsg, setSuccessMsg] = useState(false)
-
-  // Load initial values from localStorage or fallback
-  const initialValues = (() => {
-    const defaultVals: CompanyFormValues = {
-      name: "TechNova Solutions",
-      website: "www.technova.com",
-      description: "We build innovative software solutions that empower businesses worldwide.",
-      employees: "51-200 employees",
-      industry: "Software & Technology",
-      location: "Bengaluru, Karnataka",
-      menstrualLeaveChampion: true,
-      workFromHome: true,
-      flexibleHours: true,
-      learningBudget: true,
-      childcareSupport: false,
-    }
-    const stored = localStorage.getItem("companyProfile")
-    return stored ? { ...defaultVals, ...JSON.parse(stored) } : defaultVals
-  })()
+  const [isLoading, setIsLoading] = useState(true)
 
   const {
     register,
     handleSubmit,
+    reset,
     formState: { errors, isSubmitting },
   } = useForm<CompanyFormValues>({
     resolver: zodResolver(companySchema),
-    defaultValues: initialValues,
+    defaultValues: {
+      name: "",
+      website: "",
+      description: "",
+      employees: "51-200 employees",
+      industry: "",
+      location: "",
+      menstrualLeaveChampion: false,
+      workFromHome: false,
+      flexibleHours: false,
+      learningBudget: false,
+      childcareSupport: false,
+    },
   })
 
-  const onSubmit = (data: CompanyFormValues) => {
-    // Write profile variables back to LocalStorage
-    localStorage.setItem("companyProfile", JSON.stringify(data))
-    setSuccessMsg(true)
-    window.scrollTo({ top: 0, behavior: "smooth" })
-    setTimeout(() => setSuccessMsg(false), 3000)
+  useEffect(() => {
+    async function loadCompany() {
+      try {
+        const dash = await RecruiterApi.getDashboard()
+        const comp = dash?.company || dash?.recruiterProfile?.company
+        if (comp) {
+          const perks = comp.claimedPerks || []
+          reset({
+            name: comp.name || "",
+            website: comp.website || "",
+            description: comp.description || "",
+            employees: "51-200 employees",
+            industry: comp.industry?.name || "Software & Technology",
+            location: comp.location || "",
+            menstrualLeaveChampion: !!comp.menstrualLeaveChampion || perks.includes("Menstrual Leave Support"),
+            workFromHome: perks.includes("Work-from-Home Policy"),
+            flexibleHours: perks.includes("Flexible Working Hours"),
+            learningBudget: perks.includes("Learning & Development Schemes"),
+            childcareSupport: perks.includes("Childcare Allowance Support"),
+          })
+        }
+      } catch (err) {
+        console.error("Failed to load company profile", err)
+      } finally {
+        setIsLoading(false)
+      }
+    }
+    loadCompany()
+  }, [reset])
+
+  const onSubmit = async (data: CompanyFormValues) => {
+    try {
+      const activePerks: string[] = []
+      if (data.menstrualLeaveChampion) activePerks.push("Menstrual Leave Support")
+      if (data.workFromHome) activePerks.push("Work-from-Home Policy")
+      if (data.flexibleHours) activePerks.push("Flexible Working Hours")
+      if (data.learningBudget) activePerks.push("Learning & Development Schemes")
+      if (data.childcareSupport) activePerks.push("Childcare Allowance Support")
+
+      await RecruiterApi.onboardCompany({
+        website: data.website,
+        location: data.location,
+        industryName: data.industry,
+        claimedPerks: activePerks,
+      })
+
+      setSuccessMsg(true)
+      window.scrollTo({ top: 0, behavior: "smooth" })
+      setTimeout(() => setSuccessMsg(false), 3000)
+    } catch (err) {
+      console.error("Failed to save company profile", err)
+    }
+  }
+
+  if (isLoading) {
+    return <div className="p-8 text-center text-sm font-bold text-[#6B2C91]">Loading company profile...</div>
   }
 
   return (

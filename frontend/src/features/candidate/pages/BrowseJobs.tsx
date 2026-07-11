@@ -1,11 +1,13 @@
-import { useState, useEffect, useTransition } from "react"
+import { useState, useEffect, useTransition, useCallback } from "react"
 import { motion, AnimatePresence } from "framer-motion"
+import { toast } from "sonner"
 import { JobFilters, type FilterState } from "../components/Jobs/JobFilters"
 import { Pagination } from "@/components/shared/Pagination"
 import { JobCard } from "@/components/dashboard/JobCard"
 import { JobCardsSkeleton } from "@/components/dashboard/DashboardSkeletons"
 import { EmptyState } from "@/components/shared/EmptyState"
-import { mockJobs } from "../mock/jobsMock"
+import { CandidateJobsApi } from "../services/jobsApi"
+import type { ExtendedJob } from "@/types/job"
 
 const ITEMS_PER_PAGE = 6
 
@@ -22,115 +24,76 @@ const initialFilters: FilterState = {
 export function BrowseJobs() {
   const [filters, setFilters] = useState<FilterState>(initialFilters)
   const [currentPage, setCurrentPage] = useState(1)
-  const [isLoading, setIsLoading] = useState(false)
+  const [isLoading, setIsLoading] = useState(true)
   const [, startTransition] = useTransition()
 
-  // Track saved/applied jobs in LocalStorage to sync across the module
-  const [savedJobs, setSavedJobs] = useState<string[]>(() => {
-    const saved = localStorage.getItem("savedJobs")
-    return saved ? JSON.parse(saved) : []
-  })
+  const [jobs, setJobs] = useState<ExtendedJob[]>([])
+  const [total, setTotal] = useState(0)
+  const [totalPages, setTotalPages] = useState(1)
+  const [savedJobs, setSavedJobs] = useState<string[]>([])
+  const [appliedJobs, setAppliedJobs] = useState<string[]>([])
 
-  const [appliedJobs, setAppliedJobs] = useState<string[]>(() => {
-    const applied = localStorage.getItem("appliedJobs")
-    return applied ? JSON.parse(applied) : []
-  })
-
-  const [jobs] = useState(() => {
-    const storedCustomJobs = localStorage.getItem("recruiterJobs")
-    const customJobs = storedCustomJobs ? JSON.parse(storedCustomJobs) : []
-    const formattedCustomJobs = customJobs.map((job: any) => ({
-      id: job.id,
-      title: job.title,
-      company: "TechNova Solutions",
-      companyCode: "TN",
-      logoTone: "purple" as const,
-      salary: job.salary,
-      location: job.location,
-      experience: job.experience,
-      type: job.type,
-      workMode: job.workMode,
-      postedAt: job.postedOn,
-      womenReturnship: true,
-      menstrualLeaveChampion: job.menstrualLeaveChampion,
-      flexibleHours: job.flexibleHours,
-      workFromHome: job.workFromHome,
-      description: job.description || "",
-      requirements: Array.isArray(job.requirements)
-        ? job.requirements
-        : typeof job.requirements === "string"
-        ? job.requirements.split("\n").map((r: string) => r.trim()).filter(Boolean)
-        : [],
-    }))
-    return [...formattedCustomJobs, ...mockJobs]
-  })
-
-  // Debounce/simulate network loading when filters change
-  useEffect(() => {
+  const loadJobs = useCallback(async () => {
     setIsLoading(true)
-    const timer = setTimeout(() => {
+    try {
+      const result = await CandidateJobsApi.getJobs(
+        {
+          search: filters.search || undefined,
+          location: filters.location !== "All" ? filters.location : undefined,
+          type: filters.jobType !== "All" ? filters.jobType : undefined,
+          menstrualLeaveChampion: filters.menstrualLeaveChampion || undefined,
+        },
+        currentPage,
+        ITEMS_PER_PAGE
+      )
+
+      // Backend doesn't yet support workMode / experience / womenReturnship
+      // filters server-side, so refine the page we got client-side.
+      const refined = result.jobs.filter((job) => {
+        if (filters.workMode !== "All" && job.workMode !== filters.workMode) return false
+        if (filters.experience !== "All" && !job.experience.toLowerCase().includes(filters.experience.toLowerCase())) return false
+        if (filters.womenReturnship && !job.womenReturnship) return false
+        return true
+      })
+
+      setJobs(refined)
+      setTotal(result.total)
+      setTotalPages(result.totalPages)
+    } catch (err) {
+      console.error("Failed to load jobs", err)
+      toast.error("Couldn't load job listings. Please try again.")
+      setJobs([])
+    } finally {
       setIsLoading(false)
-    }, 400) // 400ms visual skeleton loading
-    return () => clearTimeout(timer)
+    }
   }, [filters, currentPage])
 
-  // Filter Logic
-  const filteredJobs = jobs.filter((job) => {
-    // Search keyword match (title, company, description, requirements)
-    if (filters.search) {
-      const query = filters.search.toLowerCase()
-      const matchesTitle = job.title.toLowerCase().includes(query)
-      const matchesCompany = job.company.toLowerCase().includes(query)
-      const matchesDesc = job.description.toLowerCase().includes(query)
-      const matchesReqs = job.requirements.some((r: string) => r.toLowerCase().includes(query))
-      if (!matchesTitle && !matchesCompany && !matchesDesc && !matchesReqs) {
-        return false
-      }
+  const loadSavedJobs = useCallback(async () => {
+    try {
+      const saved = await CandidateJobsApi.getSavedJobs()
+      setSavedJobs(saved.map((j) => j.id))
+    } catch {
+      // Non-fatal - saved state simply won't be pre-populated
     }
+  }, [])
 
-    // Work Mode match
-    if (filters.workMode !== "All" && job.workMode !== filters.workMode) {
-      return false
+  const loadAppliedJobs = useCallback(async () => {
+    try {
+      const applications = await CandidateJobsApi.getApplications()
+      setAppliedJobs(applications.map((a: any) => a.jobId))
+    } catch {
+      // Non-fatal - applied state simply won't be pre-populated
     }
+  }, [])
 
-    // Job Type match
-    if (filters.jobType !== "All" && job.type !== filters.jobType) {
-      return false
-    }
+  useEffect(() => {
+    loadJobs()
+  }, [loadJobs])
 
-    // Experience level match
-    if (filters.experience !== "All") {
-      // Direct match or check if job experience contains query
-      const expQuery = filters.experience.toLowerCase()
-      if (!job.experience.toLowerCase().includes(expQuery)) {
-        return false
-      }
-    }
-
-    // Location match
-    if (filters.location !== "All" && job.location !== filters.location) {
-      return false
-    }
-
-    // Returnship match
-    if (filters.womenReturnship && !job.womenReturnship) {
-      return false
-    }
-
-    // Menstrual leave champion match
-    if (filters.menstrualLeaveChampion && !job.menstrualLeaveChampion) {
-      return false
-    }
-
-    return true
-  })
-
-  // Pagination Logic
-  const totalPages = Math.ceil(filteredJobs.length / ITEMS_PER_PAGE)
-  const paginatedJobs = filteredJobs.slice(
-    (currentPage - 1) * ITEMS_PER_PAGE,
-    currentPage * ITEMS_PER_PAGE
-  )
+  useEffect(() => {
+    loadSavedJobs()
+    loadAppliedJobs()
+  }, [loadSavedJobs, loadAppliedJobs])
 
   const handleFilterChange = (newFilters: Partial<FilterState>) => {
     startTransition(() => {
@@ -144,43 +107,30 @@ export function BrowseJobs() {
     setCurrentPage(1)
   }
 
-  const handleSaveJob = (id: string) => {
-    let updated: string[]
-    if (savedJobs.includes(id)) {
-      updated = savedJobs.filter((savedId) => savedId !== id)
-    } else {
-      updated = [...savedJobs, id]
+  const handleSaveJob = async (id: string) => {
+    const wasSaved = savedJobs.includes(id)
+    setSavedJobs((prev) => (wasSaved ? prev.filter((sId) => sId !== id) : [...prev, id]))
+    try {
+      if (wasSaved) {
+        await CandidateJobsApi.unsaveJob(id)
+      } else {
+        await CandidateJobsApi.saveJob(id)
+      }
+    } catch (err) {
+      // Revert on failure
+      setSavedJobs((prev) => (wasSaved ? [...prev, id] : prev.filter((sId) => sId !== id)))
+      toast.error("Couldn't update saved jobs. Please try again.")
     }
-    setSavedJobs(updated)
-    localStorage.setItem("savedJobs", JSON.stringify(updated))
   }
 
-  const handleApplyJob = (id: string) => {
-    if (!appliedJobs.includes(id)) {
-      const updated = [...appliedJobs, id]
-      setAppliedJobs(updated)
-      localStorage.setItem("appliedJobs", JSON.stringify(updated))
-
-      // Also record in applications schema to show up on My Applications page
-      const storedApps = localStorage.getItem("customApplications")
-      const apps = storedApps ? JSON.parse(storedApps) : []
-      const jobDetails = mockJobs.find((j) => j.id === id)
-      if (jobDetails && !apps.some((a: { id: string }) => a.id === id)) {
-        const newApp = {
-          id: jobDetails.id,
-          company: jobDetails.company,
-          companyCode: jobDetails.companyCode,
-          job: jobDetails.title,
-          appliedDate: new Date().toLocaleDateString("en-GB", {
-            day: "2-digit",
-            month: "short",
-            year: "numeric",
-          }),
-          status: "Applied",
-          recruiter: "Anjali Rao",
-        }
-        localStorage.setItem("customApplications", JSON.stringify([newApp, ...apps]))
-      }
+  const handleApplyJob = async (id: string) => {
+    if (appliedJobs.includes(id)) return
+    try {
+      await CandidateJobsApi.applyToJob(id)
+      setAppliedJobs((prev) => [...prev, id])
+      toast.success("Application submitted successfully.")
+    } catch (err: any) {
+      toast.error(err?.message || "Couldn't submit your application. Please try again.")
     }
   }
 
@@ -208,13 +158,13 @@ export function BrowseJobs() {
           <div className="py-4">
             <JobCardsSkeleton />
           </div>
-        ) : filteredJobs.length > 0 ? (
+        ) : jobs.length > 0 ? (
           <div className="space-y-6">
             <div className="flex items-center justify-between text-xs font-bold text-slate-500 dark:text-slate-400">
               <span>
                 Showing {(currentPage - 1) * ITEMS_PER_PAGE + 1} -{" "}
-                {Math.min(currentPage * ITEMS_PER_PAGE, filteredJobs.length)} of{" "}
-                {filteredJobs.length} opportunities
+                {Math.min(currentPage * ITEMS_PER_PAGE, total)} of{" "}
+                {total} opportunities
               </span>
             </div>
 
@@ -223,7 +173,7 @@ export function BrowseJobs() {
               className="grid gap-4 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3"
             >
               <AnimatePresence mode="popLayout">
-                {paginatedJobs.map((job) => (
+                {jobs.map((job) => (
                   <motion.div
                     key={job.id}
                     layout
