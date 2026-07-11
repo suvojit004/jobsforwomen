@@ -1,4 +1,4 @@
-import { PrismaClient } from "@prisma/client"
+import { PrismaClient, UserStatus } from "@prisma/client"
 import bcrypt from "bcrypt"
 
 const prisma = new PrismaClient()
@@ -163,6 +163,7 @@ async function main() {
     create: {
       email: adminEmail,
       passwordHash,
+      status: UserStatus.Active, // bootstrap admin must skip email verification
       roles: {
         create: {
           roleId: superAdminRole.id,
