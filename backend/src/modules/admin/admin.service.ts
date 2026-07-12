@@ -184,7 +184,19 @@ export class AdminService {
       return { day: key, Users: runningTotal }
     })
 
-    const systemHealth = await this.getSystemHealth()
+    // NOTE: this used to call `await this.getSystemHealth()` here and embed
+    // the result as `systemHealthSummary` below. That method makes real,
+    // uncached network calls on every invocation (SMTP transporter.verify(),
+    // a live Cloudinary ping) with no timeout. If either of those hosts is
+    // slow or unreachable, the awaited call never settles, so this entire
+    // getDashboard() promise never resolves -- the Express response is never
+    // sent, and the frontend's Promise.all() for the dashboard hangs forever
+    // (its `finally` never runs because the awaited promise never settles).
+    // The frontend Dashboard page has never actually read
+    // `systemHealthSummary` from this response (confirmed: no reference to
+    // it anywhere in Dashboard.tsx), and there is now a dedicated real
+    // GET /api/v1/admins/health endpoint + admin System Health page for this
+    // data, so it's removed from the dashboard's critical path entirely.
 
     const recentAudits = await prisma.auditLog.findMany({
       orderBy: { timestamp: "desc" },
@@ -217,7 +229,6 @@ export class AdminService {
         reportedJobsCount,
         verificationBacklogCount: pendingCompanies,
       },
-      systemHealthSummary: systemHealth,
       notificationsSummary: {
         unreadCount: unreadNotificationsCount,
         recent: recentNotifications,

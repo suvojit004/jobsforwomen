@@ -25,6 +25,23 @@ import { AdminApi } from "../services/adminApi"
 
 const APPLICATIONS_COLORS = ["#6B2C91", "#EC4899", "#3B82F6", "#10B981"]
 
+// Defends the dashboard's loading state against any single request that
+// hangs indefinitely (rather than cleanly rejecting). Promise.all/allSettled
+// only resolve once every input promise *settles* -- if one of them never
+// resolves or rejects (e.g. a backend call blocked on a slow/unreachable
+// external service), the whole page is stuck on "Loading..." forever,
+// because `finally` can't run until the awaited Promise.all() itself
+// settles. Racing each call against a timeout guarantees it always settles
+// one way or another within a bounded time.
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)
+    ),
+  ])
+}
+
 export function Dashboard() {
   const navigate = useNavigate()
   const [companyTab, setCompanyTab] = useState<"pending" | "approved" | "rejected">("pending")
@@ -39,17 +56,56 @@ export function Dashboard() {
   const [departmentDistribution, setDepartmentDistribution] = useState<{ name: string; value: number; color: string; max: number }[]>([])
   const [userGrowth, setUserGrowth] = useState<{ day: string; Users: number }[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [loadErrors, setLoadErrors] = useState<string[]>([])
 
   useEffect(() => {
     async function loadData() {
+      // Promise.allSettled + a per-call timeout means: (a) one failing or
+      // hanging widget can never block the rest of the dashboard from
+      // rendering, and (b) `finally` below is guaranteed to run within
+      // ~15s no matter what any individual backend call does.
+      const [dashResult, userResult, companyResult, jobsResult, auditResult] = await Promise.allSettled([
+        withTimeout(AdminApi.getDashboard(), 15000, "Dashboard metrics"),
+        withTimeout(AdminApi.getUsers(), 15000, "User list"),
+        withTimeout(AdminApi.getCompanies(), 15000, "Company list"),
+        withTimeout(AdminApi.getJobs(), 15000, "Job list"),
+        withTimeout(AdminApi.getAudits(), 15000, "Audit log"),
+      ])
+
       try {
-        const [dash, userList, companyList, jobsList, auditList] = await Promise.all([
-          AdminApi.getDashboard(),
-          AdminApi.getUsers(),
-          AdminApi.getCompanies(),
-          AdminApi.getJobs(),
-          AdminApi.getAudits(),
-        ])
+        const failures: string[] = []
+
+        const dash = dashResult.status === "fulfilled" ? dashResult.value : null
+        if (dashResult.status === "rejected") {
+          console.error("Failed to load dashboard metrics", dashResult.reason)
+          failures.push("Dashboard metrics")
+        }
+
+        const userList = userResult.status === "fulfilled" ? (userResult.value || []) : []
+        if (userResult.status === "rejected") {
+          console.error("Failed to load users", userResult.reason)
+          failures.push("Users")
+        }
+
+        const companyList = companyResult.status === "fulfilled" ? (companyResult.value || []) : []
+        if (companyResult.status === "rejected") {
+          console.error("Failed to load companies", companyResult.reason)
+          failures.push("Companies")
+        }
+
+        const jobsList = jobsResult.status === "fulfilled" ? (jobsResult.value || []) : []
+        if (jobsResult.status === "rejected") {
+          console.error("Failed to load jobs", jobsResult.reason)
+          failures.push("Jobs")
+        }
+
+        const auditList = auditResult.status === "fulfilled" ? (auditResult.value || []) : []
+        if (auditResult.status === "rejected") {
+          console.error("Failed to load audit log", auditResult.reason)
+          failures.push("Activity log")
+        }
+
+        setLoadErrors(failures)
 
         const candidateUsers = (userList || []).filter((u: any) =>
           u.roles?.some((r: any) => r.role?.name === "Candidate")
@@ -103,7 +159,7 @@ export function Dashboard() {
         })))
 
       } catch (err) {
-        console.error("Failed to load admin dashboard", err)
+        console.error("Failed to render admin dashboard", err)
       } finally {
         setIsLoading(false)
       }
@@ -153,7 +209,14 @@ export function Dashboard() {
 
   return (
     <div className="space-y-6 select-none animate-fadeIn">
-      
+
+      {loadErrors.length > 0 && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-xs font-bold text-amber-800 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-300">
+          Some dashboard data couldn't be loaded right now ({loadErrors.join(", ")}). The rest of the
+          dashboard below is showing normally -- try refreshing the page to retry the missing sections.
+        </div>
+      )}
+
       {/* Date and Dashboard Overview Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
