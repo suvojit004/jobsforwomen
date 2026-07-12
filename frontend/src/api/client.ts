@@ -115,7 +115,10 @@ export const apiClient = {
       }
 
       if (!response.ok) {
-        throw new Error(`HTTP error! Status: ${response.status}`)
+        const httpError: any = new Error(`HTTP error! Status: ${response.status}`)
+        httpError.status = response.status
+        httpError.endpoint = endpoint
+        throw httpError
       }
 
       const data = await response.json()
@@ -173,10 +176,18 @@ apiClient.interceptRequest((config) => {
 // still seeing a 401, the session is genuinely dead (refresh token expired,
 // revoked, or user was blocked/suspended) -- send them to login instead of
 // leaving the page silently broken.
+//
+// EXCEPTION: AuthContext calls /api/v1/auth/refresh on every app mount --
+// including the public landing page -- just to silently check "is anyone
+// logged in?". A 401 from that call (or from login/register/logout) just
+// means "not logged in", which is completely normal for an anonymous
+// visitor. It must NOT trigger a hard redirect, or every first-time visitor
+// to "/" gets bounced to /auth/login a moment after the page loads.
 apiClient.interceptResponse(
   (res) => res,
   (err) => {
-    if (err.message?.includes("401")) {
+    const isSilentAuthCheck = err?.endpoint && AUTH_ENDPOINTS_NO_RETRY.includes(err.endpoint)
+    if (err.message?.includes("401") && !isSilentAuthCheck) {
       console.warn("Authentication failure detected, redirecting to login...")
       localStorage.removeItem("jwt_token")
       localStorage.removeItem("userRole")
