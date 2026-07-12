@@ -166,11 +166,27 @@ export function initEmailListener() {
   EventBus.subscribe("InterviewScheduled", async (payload: any) => {
     try {
       const isEnabled = await shouldSendEmail(payload.candidateUserId, "applicationUpdates")
-      if (isEnabled) {
-        const user = await prisma.user.findUnique({ where: { id: payload.candidateUserId } })
-        if (user && user.email) {
-          logger.info(`[EmailListener] [Placeholder] Enqueueing Interview Scheduled email to: ${user.email}`)
-        }
+      if (!isEnabled) return
+
+      const user = await prisma.user.findUnique({
+        where: { id: payload.candidateUserId },
+        include: { candidateProfile: true },
+      })
+      const job = payload.jobId
+        ? await prisma.job.findUnique({ where: { id: payload.jobId }, include: { company: true } })
+        : null
+
+      if (user?.email) {
+        await addJob("email", "sendInterviewScheduled", {
+          to: user.email,
+          recipientName: user.candidateProfile?.fullName || "Candidate",
+          jobTitle: job?.title || "your application",
+          companyName: job?.company?.name || "the company",
+          scheduledAt: payload.scheduledAt
+            ? new Date(payload.scheduledAt).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })
+            : "the scheduled time (check your dashboard)",
+          location: payload.location,
+        })
       }
     } catch (err: any) {
       logger.error(`[EmailListener] InterviewScheduled trigger failed: ${err.message}`)
@@ -181,11 +197,24 @@ export function initEmailListener() {
   EventBus.subscribe("OfferReleased", async (payload: any) => {
     try {
       const isEnabled = await shouldSendEmail(payload.candidateUserId, "applicationUpdates")
-      if (isEnabled) {
-        const user = await prisma.user.findUnique({ where: { id: payload.candidateUserId } })
-        if (user && user.email) {
-          logger.info(`[EmailListener] [Placeholder] Enqueueing Offer Released email to: ${user.email}`)
-        }
+      if (!isEnabled) return
+
+      const user = await prisma.user.findUnique({
+        where: { id: payload.candidateUserId },
+        include: { candidateProfile: true },
+      })
+      const job = payload.jobId
+        ? await prisma.job.findUnique({ where: { id: payload.jobId }, include: { company: true } })
+        : null
+
+      if (user?.email) {
+        await addJob("email", "sendOfferReleased", {
+          to: user.email,
+          recipientName: user.candidateProfile?.fullName || "Candidate",
+          jobTitle: job?.title || "your application",
+          companyName: job?.company?.name || "the company",
+          offerDetails: payload.offerDetails || "Please log in to view your offer details.",
+        })
       }
     } catch (err: any) {
       logger.error(`[EmailListener] OfferReleased trigger failed: ${err.message}`)

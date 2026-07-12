@@ -4,6 +4,12 @@ import EventBus from "../../shared/eventBus/eventBus"
 import { PermissionCacheManager } from "../../shared/utils/permissionCache"
 import { CompanyStatus, JobStatus, ApplicationStatus, UserStatus, JobVisibility } from "@prisma/client"
 import crypto from "crypto"
+import redis from "../../shared/utils/redis"
+import { verifyEmailTransport, EmailService } from "../../shared/utils/email"
+import env from "../../shared/config/env"
+import { verifyCloudinaryConnection, runOrphanAssetCleanup } from "../../shared/utils/cloudinary"
+import { io as socketIo } from "../../shared/socket/socket"
+import { createAuditLog } from "../../shared/utils/audit"
 
 export interface ServiceContext {
   operatorId?: string
@@ -26,16 +32,54 @@ export class AdminService {
       dbStatus = "DOWN"
     }
 
+    // Real Redis check: ioredis exposes .status, and ping() confirms the
+    // connection actually round-trips rather than just "was constructed."
+    let redisStatus = "DOWN"
+    try {
+      if (redis && redis.status === "ready") {
+        const pong = await redis.ping()
+        redisStatus = pong === "PONG" ? "UP" : "DOWN"
+      }
+    } catch (err) {
+      redisStatus = "DOWN"
+    }
+
+    // Real SMTP check
+    let emailStatus = "DOWN"
+    try {
+      emailStatus = (await verifyEmailTransport()) ? "UP" : "DOWN"
+    } catch (err) {
+      emailStatus = "DOWN"
+    }
+
+    // Real Cloudinary check
+    let storageStatus = "DOWN"
+    try {
+      storageStatus = (await verifyCloudinaryConnection()) ? "UP" : "DOWN"
+    } catch (err) {
+      storageStatus = "DOWN"
+    }
+
+    // Socket.IO is in-process: "UP" means the server actually initialized the
+    // io instance (initSocket() ran during boot), not just an assumption.
+    const socketStatus = socketIo ? "UP" : "DOWN"
+
     return {
       database: dbStatus,
-      redis: "UP", // Mocked Redis connectivity
-      email: "UP", // Mocked SMTP connection status
-      storage: "UP", // Cloudinary connection mock
-      socketio: "UP", // Real-time notification socket gateway status
+      redis: redisStatus,
+      email: emailStatus,
+      storage: storageStatus,
+      socketio: socketStatus,
       apiUptime: Math.floor(process.uptime()),
       memoryUsage: process.memoryUsage(),
       cpuUsage: process.cpuUsage(),
     }
+  }
+
+  // Read-only orphan storage asset dry run (Cloudinary vs DB cross-reference).
+  // Never deletes anything -- see runOrphanAssetCleanup() for details.
+  async getOrphanAssetReport() {
+    return runOrphanAssetCleanup()
   }
 
   // ==========================================
@@ -63,6 +107,83 @@ export class AdminService {
     const reportedJobsCount = await prisma.jobReport.count()
     const applicationVolume = await prisma.application.count()
 
+    // Real platform-wide application status funnel -- the admin dashboard
+    // widget for this used to be a hardcoded constant array (fixed numbers
+    // like "Applied: 7452") that never reflected any real data at all.
+    const applicationStatusGroups = await prisma.application.groupBy({
+      by: ["status"],
+      _count: { id: true },
+    })
+    const funnelCounts: Record<string, number> = {}
+    applicationStatusGroups.forEach((g) => {
+      funnelCounts[g.status] = g._count.id
+    })
+    const funnelStages = [
+      { name: "Applied", statuses: [ApplicationStatus.Applied] },
+      { name: "Shortlisted", statuses: [ApplicationStatus.Reviewed, ApplicationStatus.Shortlisted] },
+      { name: "Interviewing", statuses: [ApplicationStatus.InterviewScheduled] },
+      { name: "Offered", statuses: [ApplicationStatus.OfferReleased, ApplicationStatus.Hired] },
+    ]
+    const applicationFunnel = funnelStages.map((stage) => {
+      const value = stage.statuses.reduce((sum, s) => sum + (funnelCounts[s] || 0), 0)
+      const percent = applicationVolume > 0 ? `${((value / applicationVolume) * 100).toFixed(1)}%` : "0%"
+      return { name: stage.name, value, percent }
+    })
+
+    // Real department-wise job distribution -- previously a hardcoded
+    // constant array unrelated to any actual job postings.
+    const departmentGroups = await prisma.job.groupBy({
+      by: ["departmentId"],
+      _count: { id: true },
+    })
+    const departments = await prisma.department.findMany({
+      where: { id: { in: departmentGroups.map((g) => g.departmentId) } },
+    })
+    const departmentNameById: Record<string, string> = {}
+    departments.forEach((d) => { departmentNameById[d.id] = d.name })
+    const maxDeptCount = Math.max(1, ...departmentGroups.map((g) => g._count.id))
+    const departmentColors = ["bg-[#6B2C91]", "bg-blue-500", "bg-cyan-500", "bg-emerald-500", "bg-amber-500", "bg-pink-500", "bg-slate-500"]
+    const departmentDistribution = departmentGroups
+      .map((g, idx) => ({
+        name: departmentNameById[g.departmentId] || "Unknown",
+        value: g._count.id,
+        color: departmentColors[idx % departmentColors.length],
+        max: maxDeptCount,
+      }))
+      .sort((a, b) => b.value - a.value)
+
+    // Real 7-day user growth (cumulative signups), replacing a hardcoded
+    // constant line-chart dataset that was never derived from real users.
+    const sevenDaysAgoUsers = new Date()
+    sevenDaysAgoUsers.setHours(0, 0, 0, 0)
+    sevenDaysAgoUsers.setDate(sevenDaysAgoUsers.getDate() - 6)
+    const [usersBeforeWindow, usersInWindow] = await Promise.all([
+      prisma.user.count({ where: { createdAt: { lt: sevenDaysAgoUsers } } }),
+      prisma.user.findMany({
+        where: { createdAt: { gte: sevenDaysAgoUsers } },
+        select: { createdAt: true },
+      }),
+    ])
+    const growthDays: { key: string; date: Date }[] = []
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(sevenDaysAgoUsers)
+      d.setDate(d.getDate() + i)
+      growthDays.push({ key: d.toLocaleDateString("en-GB", { day: "2-digit", month: "short" }), date: d })
+    }
+    const newUsersByDay: Record<string, number> = {}
+    growthDays.forEach(({ key }) => { newUsersByDay[key] = 0 })
+    usersInWindow.forEach((u) => {
+      const d = new Date(u.createdAt)
+      d.setHours(0, 0, 0, 0)
+      const key = d.toLocaleDateString("en-GB", { day: "2-digit", month: "short" })
+      if (newUsersByDay[key] !== undefined) newUsersByDay[key] += 1
+    })
+    let runningTotal = usersBeforeWindow
+    const userGrowth = growthDays.map(({ key }) => {
+      runningTotal += newUsersByDay[key]
+      return { day: key, Users: runningTotal }
+    })
+
     const systemHealth = await this.getSystemHealth()
 
     const recentAudits = await prisma.auditLog.findMany({
@@ -87,6 +208,9 @@ export class AdminService {
         totalCompanies,
         totalJobs,
         applicationVolume,
+        applicationFunnel,
+        departmentDistribution,
+        userGrowth,
       },
       operationalMetrics: {
         pendingCompanyVerifications: pendingCompanies,
@@ -111,7 +235,7 @@ export class AdminService {
       where.status = status
     }
 
-    return prisma.company.findMany({
+    const companies = await prisma.company.findMany({
       where,
       include: {
         industry: true,
@@ -120,6 +244,23 @@ export class AdminService {
       },
       orderBy: { name: "asc" },
     })
+
+    // Real "total hires" per company (previously a hardcoded "14" on the
+    // admin Company Details screen regardless of which company was selected).
+    const hiredApps = await prisma.application.findMany({
+      where: {
+        status: ApplicationStatus.Hired,
+        job: { companyId: { in: companies.map((c) => c.id) } },
+      },
+      select: { job: { select: { companyId: true } } },
+    })
+    const hiredCountByCompany: Record<string, number> = {}
+    hiredApps.forEach((a) => {
+      const cid = a.job.companyId
+      hiredCountByCompany[cid] = (hiredCountByCompany[cid] || 0) + 1
+    })
+
+    return companies.map((c) => ({ ...c, hiredCount: hiredCountByCompany[c.id] || 0 }))
   }
 
   async listJobs(status?: string) {
@@ -829,9 +970,44 @@ export class AdminService {
     return updated
   }
 
+  // Roles the platform's own authorization model depends on -- deleting any
+  // of these would break RBAC checks or the invitation/onboarding flows that
+  // assume they exist. Never deletable through the admin UI.
+  private static readonly SYSTEM_ROLES = ["Candidate", "Recruiter", "Moderator", "Admin", "Super Admin", "Support Executive"]
+
   async deleteRole(adminId: string, roleId: string, context?: ServiceContext) {
+    const role = await prisma.role.findUnique({ where: { id: roleId } })
+    if (!role) {
+      throw new Error("Role not found")
+    }
+
+    if (AdminService.SYSTEM_ROLES.includes(role.name)) {
+      throw new Error(`Cannot delete built-in system role "${role.name}". It is required for the platform's core authorization model.`)
+    }
+
+    // Guard against accidental lockout: refuse to delete a role that is
+    // still actively assigned to users -- force an explicit reassignment first.
+    const assignedCount = await prisma.userRole.count({ where: { roleId } })
+    if (assignedCount > 0) {
+      throw new Error(`Cannot delete role "${role.name}": it is currently assigned to ${assignedCount} user(s). Reassign or remove those role assignments first.`)
+    }
+
+    const admin = await prisma.user.findUnique({ where: { id: adminId } })
+
     await prisma.role.delete({ where: { id: roleId } })
     await PermissionCacheManager.invalidateAll()
+
+    EventBus.publish("AuditCreated", {
+      ...context,
+      operatorId: adminId,
+      operatorEmail: admin?.email,
+      category: "ADMIN",
+      action: "DELETE_ROLE",
+      entity: "Role",
+      entityId: roleId,
+      oldValue: { name: role.name },
+    })
+
     return { success: true }
   }
 
@@ -914,10 +1090,21 @@ export class AdminService {
   async listUsers(role?: string) {
     const whereClause: any = {}
     if (role) {
+      // "admin" is used as a UI category covering every administrative-tier
+      // role, not a literal role name. An exact case-insensitive match on
+      // "Admin" alone would silently exclude "Super Admin", "Moderator", and
+      // "Support Executive" accounts -- including the seeded default admin
+      // account, which is created with the "Super Admin" role. That made the
+      // Admin Moderation tab return zero rows out of the box.
+      const roleNameFilter =
+        role.toLowerCase() === "admin"
+          ? { in: ["Admin", "Super Admin", "Moderator", "Support Executive"] }
+          : { equals: role, mode: "insensitive" as const }
+
       whereClause.roles = {
         some: {
           role: {
-            name: { equals: role, mode: "insensitive" }
+            name: roleNameFilter
           }
         }
       }
@@ -989,6 +1176,60 @@ export class AdminService {
       where: { recipientId: adminId },
       orderBy: { createdAt: "desc" }
     })
+  }
+
+  // ==========================================
+  // SUPPORT TICKET SUBMISSION
+  // ==========================================
+  // Sends a real email to the support inbox via the existing SMTP-backed
+  // EmailService, and logs a real audit entry. Previously the frontend's
+  // "Contact Support" form was a pure setTimeout that always claimed
+  // "Your issue ticket has been filed successfully!" with no backend call
+  // at all -- nothing was ever sent or recorded anywhere.
+  async submitSupportTicket(
+    adminId: string,
+    subject: string,
+    category: string,
+    message: string,
+    context?: ServiceContext
+  ) {
+    const admin = await prisma.user.findUnique({
+      where: { id: adminId },
+      include: { adminProfile: true },
+    })
+    if (!admin) {
+      throw new Error("Admin user not found")
+    }
+
+    const supportInbox = env.SUPPORT_EMAIL || env.SMTP_USER
+    const fromName = admin.adminProfile?.fullName || admin.email
+    const html = `
+      <h2>New Admin Support Ticket</h2>
+      <p><strong>From:</strong> ${fromName} (${admin.email})</p>
+      <p><strong>Category:</strong> ${category}</p>
+      <p><strong>Subject:</strong> ${subject}</p>
+      <p><strong>Message:</strong></p>
+      <p>${message.replace(/\n/g, "<br/>")}</p>
+    `
+    const sent = await EmailService.sendMail(supportInbox, `[Support Ticket] ${category}: ${subject}`, html)
+
+    await createAuditLog({
+      operatorId: adminId,
+      operatorEmail: admin.email,
+      category: "SUPPORT",
+      action: "SUPPORT_TICKET_SUBMITTED",
+      entity: "SupportTicket",
+      newValue: { subject, category, delivered: sent },
+      ipAddress: context?.ipAddress,
+      browser: context?.browser,
+      device: context?.device,
+    })
+
+    if (!sent) {
+      throw new Error("Failed to send support ticket email. Please try again or email support directly.")
+    }
+
+    return { delivered: true }
   }
 }
 

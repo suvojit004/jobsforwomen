@@ -1,5 +1,6 @@
-import { useState } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { useParams, useNavigate, Link } from "react-router-dom"
+import { toast } from "sonner"
 import {
   ArrowLeft,
   Briefcase,
@@ -8,7 +9,6 @@ import {
   DollarSign,
   Award,
   Users,
-  Clock,
   Heart,
   Edit2,
   Trash2,
@@ -21,6 +21,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { DashboardCard } from "@/components/shared/DashboardCard"
 import { JobPostingForm } from "../components/JobPostingForm"
+import { RecruiterApi } from "../services/recruiterApi"
 import { cn } from "@/lib/utils"
 
 interface JobDetail {
@@ -31,7 +32,6 @@ interface JobDetail {
   type: string
   location: string
   salary: string
-  experience: string
   skills: string[]
   description: string
   responsibilities: string
@@ -41,147 +41,61 @@ interface JobDetail {
   menstrualLeaveChampion: boolean
   flexibleHours: boolean
   workFromHome: boolean
-  status: "Active" | "Paused" | "Closed"
+  status: string
   applicants: number
   postedOn: string
+}
+
+// Backend job statuses map to a simplified display status, matching the
+// same convention already used in ManageJobs.tsx.
+function toDisplayStatus(status: string): "Active" | "Paused" | "Closed" {
+  if (status === "approved") return "Active"
+  if (status === "paused") return "Paused"
+  return "Closed" // draft, pending_approval, closed, archived, flagged
 }
 
 export function JobDetails() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const [isEditing, setIsEditing] = useState(false)
+  const [isLoading, setIsLoading] = useState(true)
+  const [job, setJob] = useState<JobDetail | null>(null)
+  const [applicantStats, setApplicantStats] = useState({ interviews: 0, offers: 0, hired: 0 })
 
-  // Load the current job
-  const [job, setJob] = useState<JobDetail | null>(() => {
-    const initialJobs: JobDetail[] = [
-      {
-        id: "job-p1",
-        title: "Frontend Developer",
-        department: "Engineering",
-        workMode: "Remote",
-        type: "Full Time",
-        location: "Remote",
-        salary: "₹8 - 12 LPA",
-        experience: "2+ Years",
-        skills: ["React", "TypeScript", "Tailwind CSS", "REST APIs"],
-        description: "We are looking for a skilled Frontend Developer to build clean, responsive user interfaces. You will work closely with design and product teams to implement premium layouts and dynamic animations.",
-        responsibilities: "- Architect scalable web components\n- Optimize frontend rendering cycles\n- Collaborate with backend engineers on API contracts\n- Author end-to-end tests",
-        requirements: "- Strong proficiency in React and TypeScript\n- Experience building interfaces using Tailwind CSS\n- Understanding of client-side caching and state management\n- Passion for clean typography and aesthetics",
-        benefits: "- Comprehensive healthcare package\n- Flexible work-from-home configurations\n- Paid menstrual leave support (1 day/month)\n- Learning and certification allowances",
-        deadline: "30 June 2025",
-        menstrualLeaveChampion: true,
-        flexibleHours: true,
-        workFromHome: true,
-        status: "Active",
-        applicants: 15,
-        postedOn: "12 May 2025",
-      },
-      {
-        id: "job-p2",
-        title: "UI/UX Designer",
-        department: "Design",
-        workMode: "Hybrid",
-        type: "Full Time",
-        location: "Bengaluru",
-        salary: "₹10 - 15 LPA",
-        experience: "3+ Years",
-        skills: ["Figma", "Design Systems", "Prototyping", "UX Research"],
-        description: "Join us as a UI/UX designer to craft beautiful customer experiences. You will design, test, and iterate product templates and maintain our shared interface design systems.",
-        responsibilities: "- Create wireframes and functional interactive prototypes\n- Perform usability studies and user research sessions\n- Establish unified layout systems\n- Present visual findings directly to stakeholders",
-        requirements: "- Portfolio showcasing state-of-the-art web products\n- Advanced mastery of Figma variables and components\n- Ability to think through complex flow architectures\n- Basic knowledge of frontend margins and layout boxes",
-        benefits: "- Hybrid workspace setup (2 days/week on-site)\n- Paid menstrual leave support\n- Wellness and physical fitness stipends\n- Mentorship and growth track mapping",
-        deadline: "25 June 2025",
-        menstrualLeaveChampion: true,
-        flexibleHours: true,
-        workFromHome: true,
-        status: "Active",
-        applicants: 12,
-        postedOn: "11 May 2025",
-      },
-      {
-        id: "job-p3",
-        title: "Product Manager",
-        department: "Management",
-        workMode: "On-site",
-        type: "Full Time",
-        location: "Bengaluru",
-        salary: "₹15 - 22 LPA",
-        experience: "4+ Years",
-        skills: ["Product Strategy", "Agile Roadmap", "Data Analytics", "Customer Interviews"],
-        description: "We are hiring a Product Manager to direct product roadmaps and prioritize feature releases. You will lead cross-functional engineering, design, and marketing teams to release updates.",
-        responsibilities: "- Author product requirement specifications\n- Monitor product analytics metrics and conversion funnels\n- Gather qualitative customer feedback\n- Establish team scrum sprint planning schedules",
-        requirements: "- Experience launching tech-focused B2C SaaS platforms\n- Strong background in data analytics and telemetry queries\n- Exceptional presentation and writing abilities\n- Empathy-driven mindset for team builders",
-        benefits: "- Flexible working hours\n- Paid menstrual leave champion allowance\n- High-spec equipment budgets\n- Free catered office meals",
-        deadline: "20 June 2025",
-        menstrualLeaveChampion: true,
-        flexibleHours: true,
-        workFromHome: false,
-        status: "Active",
-        applicants: 9,
-        postedOn: "08 May 2025",
-      },
-      {
-        id: "job-p4",
-        title: "Content Writer",
-        department: "Marketing",
-        workMode: "Remote",
-        type: "Part Time",
-        location: "Remote",
-        salary: "₹4 - 6 LPA",
-        experience: "1+ Years",
-        skills: ["Copywriting", "SEO Optimization", "Content Strategy", "Social Media"],
-        description: "We want a Part-Time Content Writer to construct high-quality corporate guides, blog articles, and newsletters targeted at women looking to restart their professional careers.",
-        responsibilities: "- Author bi-weekly community newsletters\n- Create SEO-optimized content checklists\n- Collaborate with graphic designers on landing page taglines\n- Moderate social media discussions",
-        requirements: "- Portfolio of writing content pieces or technical articles\n- Familiarity with SEO and keywords research systems\n- Self-starting calendar management discipline\n- Fluent editorial grammar skills",
-        benefits: "- 100% remote flexible operations\n- Menstrual leave support badge qualification\n- Training and copywriting certifications budget",
-        deadline: "15 June 2025",
-        menstrualLeaveChampion: true,
-        flexibleHours: true,
-        workFromHome: true,
-        status: "Paused",
-        applicants: 6,
-        postedOn: "05 May 2025",
-      },
-      {
-        id: "job-p5",
-        title: "Digital Marketing Executive",
-        department: "Marketing",
-        workMode: "Hybrid",
-        type: "Full Time",
-        location: "Bengaluru",
-        salary: "₹6 - 9 LPA",
-        experience: "2+ Years",
-        skills: ["Google Ads", "Social Media Marketing", "Email Campaigns", "KPI Reports"],
-        description: "Join us as a Digital Marketing Executive to direct advertisement budgets and design outreach newsletters to help women returnship applicants connect with corporate partners.",
-        responsibilities: "- Construct and audit social media advertising budgets\n- Create email workflow sequences\n- Track conversion click metrics\n- Design campaign landing page layouts",
-        requirements: "- Experience launching paid acquisition ads\n- Familiarity with email outreach systems\n- Basic spreadsheet analytics capabilities\n- Strong verbal and graphical communication",
-        benefits: "- Hybrid workspaces (3 days home, 2 office)\n- Paid menstrual leave support\n- Learning allowances",
-        deadline: "10 June 2025",
-        menstrualLeaveChampion: true,
-        flexibleHours: true,
-        workFromHome: true,
-        status: "Active",
-        applicants: 6,
-        postedOn: "02 May 2025",
-      },
-    ]
+  // Real fetch from the backend -- this page previously matched the :id
+  // param against a hardcoded array of 5 sample jobs plus a localStorage
+  // override cache, so every real job (real UUID ids from Postgres) always
+  // rendered "Posting Not Found."
+  const load = useCallback(async () => {
+    if (!id) return
+    setIsLoading(true)
+    try {
+      const result = await RecruiterApi.getJobById(id)
+      setJob(result)
 
-    // Load custom jobs
-    const storedCustomJobs = localStorage.getItem("recruiterJobs")
-    const customJobs = storedCustomJobs ? JSON.parse(storedCustomJobs) : []
+      if (result) {
+        const applicants = await RecruiterApi.getApplicants(id)
+        setApplicantStats({
+          interviews: applicants.filter((a) => a.status === "Interview Scheduled").length,
+          offers: applicants.filter((a) => a.status === "Offer Released").length,
+          hired: applicants.filter((a) => a.status === "Selected").length,
+        })
+      }
+    } catch (err) {
+      console.error("Failed to load job posting", err)
+      setJob(null)
+    } finally {
+      setIsLoading(false)
+    }
+  }, [id])
 
-    // Load overrides
-    const storedOverrides = localStorage.getItem("recruiterJobsOverrides")
-    const overrides = storedOverrides ? JSON.parse(storedOverrides) : []
+  useEffect(() => {
+    load()
+  }, [load])
 
-    const allJobs = [...customJobs, ...initialJobs].map((j: any) => {
-      const match = overrides.find((o: any) => o.id === j.id)
-      return match ? { ...j, ...match } : j
-    })
-
-    const found = allJobs.find((j) => j.id === id)
-    return found ? (found as JobDetail) : null
-  })
+  if (isLoading) {
+    return <div className="p-8 text-center text-sm font-bold text-[#6B2C91]">Loading job posting...</div>
+  }
 
   if (!job) {
     return (
@@ -194,125 +108,43 @@ export function JobDetails() {
     )
   }
 
-  // Handle Editing form submission
-  const handleEditSubmit = (values: any) => {
-    // Convert comma-separated string back to array
-    const skillList = typeof values.skills === "string"
-      ? values.skills.split(",").map((s: string) => s.trim()).filter(Boolean)
-      : values.skills
+  const displayStatus = toDisplayStatus(job.status)
 
-    const updatedJob: JobDetail = {
-      ...job,
-      title: values.title,
-      department: values.department,
-      location: values.location,
-      salary: values.salary,
-      experience: values.experience,
-      type: values.type,
-      workMode: values.workMode,
-      skills: skillList,
-      description: values.description,
-      responsibilities: values.responsibilities,
-      requirements: values.requirements,
-      benefits: values.benefits,
-      deadline: values.deadline,
-      menstrualLeaveChampion: values.menstrualLeaveChampion,
-      flexibleHours: values.flexibleHours,
-      workFromHome: values.workFromHome,
-    }
-
-    setJob(updatedJob)
-
-    // Save changes back to LocalStorage
-    if (job.id.startsWith("job-custom-")) {
-      const storedCustomJobs = localStorage.getItem("recruiterJobs")
-      const customJobs = storedCustomJobs ? JSON.parse(storedCustomJobs) : []
-      const updatedCustom = customJobs.map((j: any) => (j.id === job.id ? updatedJob : j))
-      localStorage.setItem("recruiterJobs", JSON.stringify(updatedCustom))
-    } else {
-      // Save overrides for default jobs
-      const storedOverrides = localStorage.getItem("recruiterJobsOverrides")
-      const overrides = storedOverrides ? JSON.parse(storedOverrides) : []
-      const existingIdx = overrides.findIndex((o: any) => o.id === job.id)
-
-      const payload = {
-        id: job.id,
-        title: values.title,
-        department: values.department,
-        location: values.location,
-        salary: values.salary,
-        experience: values.experience,
-        type: values.type,
-        workMode: values.workMode,
-        skills: skillList,
-        description: values.description,
-        responsibilities: values.responsibilities,
-        requirements: values.requirements,
-        benefits: values.benefits,
-        deadline: values.deadline,
-        menstrualLeaveChampion: values.menstrualLeaveChampion,
-        flexibleHours: values.flexibleHours,
-        workFromHome: values.workFromHome,
-        status: job.status,
-      }
-
-      if (existingIdx > -1) {
-        overrides[existingIdx] = { ...overrides[existingIdx], ...payload }
-      } else {
-        overrides.push(payload)
-      }
-      localStorage.setItem("recruiterJobsOverrides", JSON.stringify(overrides))
-    }
-
-    setTimeout(() => {
+  // Real save -- calls PUT /api/v1/recruiters/jobs/:id and persists to
+  // Postgres, replacing the old handler that only ever wrote to
+  // localStorage and never touched the backend.
+  const handleEditSubmit = async (values: any) => {
+    try {
+      await RecruiterApi.updateJob(job.id, values)
+      toast.success("Job posting updated successfully.")
       setIsEditing(false)
-    }, 1500)
-  }
-
-  // Toggle active/paused state
-  const handleToggleStatus = () => {
-    const nextStatus = job.status === "Active" ? "Paused" : "Active"
-    const updatedJob: JobDetail = { ...job, status: nextStatus as "Active" | "Paused" }
-    setJob(updatedJob)
-
-    if (job.id.startsWith("job-custom-")) {
-      const storedCustomJobs = localStorage.getItem("recruiterJobs")
-      const customJobs = storedCustomJobs ? JSON.parse(storedCustomJobs) : []
-      const updatedCustom = customJobs.map((j: any) => (j.id === job.id ? updatedJob : j))
-      localStorage.setItem("recruiterJobs", JSON.stringify(updatedCustom))
-    } else {
-      const storedOverrides = localStorage.getItem("recruiterJobsOverrides")
-      const overrides = storedOverrides ? JSON.parse(storedOverrides) : []
-      const existingIdx = overrides.findIndex((o: any) => o.id === job.id)
-      if (existingIdx > -1) {
-        overrides[existingIdx].status = nextStatus
-      } else {
-        overrides.push({ id: job.id, status: nextStatus })
-      }
-      localStorage.setItem("recruiterJobsOverrides", JSON.stringify(overrides))
+      load()
+    } catch (err: any) {
+      toast.error(err?.message || "Couldn't update this job posting.")
     }
   }
 
-  // Delete posting
-  const handleDelete = () => {
-    if (confirm("Are you sure you want to delete this job posting? This cannot be undone.")) {
-      if (job.id.startsWith("job-custom-")) {
-        const storedCustomJobs = localStorage.getItem("recruiterJobs")
-        const customJobs = storedCustomJobs ? JSON.parse(storedCustomJobs) : []
-        const filtered = customJobs.filter((j: any) => j.id !== job.id)
-        localStorage.setItem("recruiterJobs", JSON.stringify(filtered))
-      } else {
-        const storedOverrides = localStorage.getItem("recruiterJobsOverrides")
-        const overrides = storedOverrides ? JSON.parse(storedOverrides) : []
-        const existingIdx = overrides.findIndex((o: any) => o.id === job.id)
-        if (existingIdx > -1) {
-          overrides[existingIdx].status = "Closed" // Mark closed/deleted
-        } else {
-          overrides.push({ id: job.id, status: "Closed" })
-        }
-        localStorage.setItem("recruiterJobsOverrides", JSON.stringify(overrides))
-      }
+  // Real toggle via the same lifecycle endpoint ManageJobs.tsx uses.
+  const handleToggleStatus = async () => {
+    const action = displayStatus === "Active" ? "pause" : "resume"
+    try {
+      await RecruiterApi.setJobLifecycle(job.id, action)
+      toast.success(displayStatus === "Active" ? "Job posting paused." : "Job posting resumed.")
+      load()
+    } catch (err: any) {
+      toast.error(err?.message || "Couldn't update this job posting.")
+    }
+  }
+
+  // Real delete via DELETE /api/v1/recruiters/jobs/:id.
+  const handleDelete = async () => {
+    if (!confirm("Are you sure you want to delete this job posting? This cannot be undone.")) return
+    try {
+      await RecruiterApi.deleteJob(job.id)
+      toast.success("Job posting deleted.")
       navigate("/recruiter/manage-jobs")
+    } catch (err: any) {
+      toast.error(err?.message || "Couldn't delete this job posting.")
     }
   }
 
@@ -322,9 +154,9 @@ export function JobDetails() {
     department: job.department,
     location: job.location,
     salary: job.salary,
-    experience: job.experience,
+    experience: "",
     type: job.type as "Full Time" | "Part Time",
-    workMode: job.workMode as "Remote" | "Hybrid" | "On-site",
+    workMode: job.workMode,
     skills: job.skills.join(", "),
     description: job.description,
     responsibilities: job.responsibilities,
@@ -393,12 +225,12 @@ export function JobDetails() {
                   <span
                     className={cn(
                       "inline-flex h-5 items-center rounded-md px-2 text-[10px] font-black uppercase ring-1 ring-inset shrink-0",
-                      job.status === "Active"
+                      displayStatus === "Active"
                         ? "bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-500/15 dark:text-emerald-300"
                         : "bg-amber-50 text-amber-700 ring-amber-200 dark:bg-amber-500/15 dark:text-amber-300"
                     )}
                   >
-                    {job.status}
+                    {displayStatus}
                   </span>
                 </div>
 
@@ -426,7 +258,7 @@ export function JobDetails() {
                   variant="outline"
                   className="h-9 font-bold text-xs gap-1.5 cursor-pointer"
                 >
-                  {job.status === "Active" ? (
+                  {displayStatus === "Active" ? (
                     <>
                       <Pause className="size-4" />
                       Pause Posting
@@ -450,13 +282,15 @@ export function JobDetails() {
             </div>
           </DashboardCard>
 
-          {/* Statistics Grid */}
+          {/* Statistics Grid -- real counts from RecruiterApi.getApplicants(),
+              replacing the previous Math.ceil(applicants * 0.4/0.15/0.05)
+              fabricated percentages. */}
           <div className="grid gap-4 grid-cols-2 md:grid-cols-4">
             {[
               { label: "Total Applicants", value: job.applicants, icon: Users, color: "text-[#6B2C91]" },
-              { label: "Shortlisted", value: Math.ceil(job.applicants * 0.4), icon: Award, color: "text-blue-500" },
-              { label: "Interviews", value: Math.ceil(job.applicants * 0.15), icon: Calendar, color: "text-emerald-500" },
-              { label: "Hired/Offered", value: Math.ceil(job.applicants * 0.05), icon: CheckCircle, color: "text-amber-500" },
+              { label: "Interviews Scheduled", value: applicantStats.interviews, icon: Calendar, color: "text-blue-500" },
+              { label: "Offers Released", value: applicantStats.offers, icon: Award, color: "text-emerald-500" },
+              { label: "Hired", value: applicantStats.hired, icon: CheckCircle, color: "text-amber-500" },
             ].map((stat, idx) => {
               const Icon = stat.icon
               return (
@@ -546,14 +380,6 @@ export function JobDetails() {
                     <div>
                       <p className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500">Salary Package</p>
                       <p className="text-xs font-bold text-slate-800 dark:text-slate-200">{job.salary}</p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-3">
-                    <Clock className="size-4 text-slate-400 shrink-0" />
-                    <div>
-                      <p className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500">Experience Required</p>
-                      <p className="text-xs font-bold text-slate-800 dark:text-slate-200">{job.experience}</p>
                     </div>
                   </div>
 

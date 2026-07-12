@@ -33,4 +33,8 @@ router.get("/sessions", authenticateToken, controller.getSessions)
 router.delete("/sessions/:id", authenticateToken, controller.revokeSession)
 router.delete("/sessions", authenticateToken, controller.revokeOtherSessions)
 
+// Protected Self-Service Account Management (Authentication required)
+router.put("/change-password", authenticateToken, controller.changePassword)
+router.delete("/account", authenticateToken, controller.deleteAccount)
+
 export default router

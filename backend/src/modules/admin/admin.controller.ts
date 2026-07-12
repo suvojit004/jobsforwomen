@@ -1,6 +1,7 @@
 import type { Request, Response } from "express"
 import { AdminService, ServiceContext } from "./admin.service"
 import { sendSuccess, sendError } from "../../shared/utils/response"
+import { NotificationService } from "../../shared/services/notification.service"
 import {
   verifyCompanySchema,
   moderateJobSchema,
@@ -10,6 +11,7 @@ import {
   updateFeatureFlagSchema,
   roleSchema,
   updateRoleSchema,
+  supportTicketSchema,
 } from "./admin.validator"
 import { CompanyStatus, UserStatus } from "@prisma/client"
 
@@ -44,6 +46,16 @@ export class AdminController {
     try {
       const result = await this.service.getSystemHealth()
       return sendSuccess(res, result, "System Health fetched successfully.")
+    } catch (err: any) {
+      next(err)
+    }
+  }
+
+  // Read-only dry run only -- never deletes anything. See runOrphanAssetCleanup().
+  getOrphanAssetReport = async (req: Request, res: Response, next: any) => {
+    try {
+      const result = await this.service.getOrphanAssetReport()
+      return sendSuccess(res, result, "Orphan asset scan (read-only dry run) completed.")
     } catch (err: any) {
       next(err)
     }
@@ -247,6 +259,18 @@ export class AdminController {
     }
   }
 
+  submitSupportTicket = async (req: Request, res: Response, next: any) => {
+    try {
+      const adminId = req.user?.userId || ""
+      const validated = supportTicketSchema.parse(req.body)
+      const context = this.getContext(req)
+      await this.service.submitSupportTicket(adminId, validated.subject, validated.category, validated.message, context)
+      return sendSuccess(res, null, "Your issue ticket has been filed successfully. Support will update you soon.")
+    } catch (err: any) {
+      next(err)
+    }
+  }
+
   getReports = async (req: Request, res: Response, next: any) => {
     try {
       const type = req.query.type as string || "platform"
@@ -400,6 +424,36 @@ export class AdminController {
       const adminId = req.user?.userId || ""
       const notifications = await this.service.getAdminNotifications(adminId)
       return sendSuccess(res, { notifications }, "Fetched admin notifications successfully.")
+    } catch (err: any) {
+      next(err)
+    }
+  }
+
+  markAdminNotificationRead = async (req: Request, res: Response, next: any) => {
+    try {
+      const adminId = req.user?.userId || ""
+      await NotificationService.markNotificationRead(req.params.id as string, adminId)
+      return sendSuccess(res, null, "Notification marked read successfully.")
+    } catch (err: any) {
+      next(err)
+    }
+  }
+
+  markAllAdminNotificationsRead = async (req: Request, res: Response, next: any) => {
+    try {
+      const adminId = req.user?.userId || ""
+      await NotificationService.markAllNotificationsRead(adminId)
+      return sendSuccess(res, null, "All notifications marked read successfully.")
+    } catch (err: any) {
+      next(err)
+    }
+  }
+
+  deleteAdminNotification = async (req: Request, res: Response, next: any) => {
+    try {
+      const adminId = req.user?.userId || ""
+      await NotificationService.deleteNotification(req.params.id as string, adminId)
+      return sendSuccess(res, null, "Notification deleted successfully.")
     } catch (err: any) {
       next(err)
     }

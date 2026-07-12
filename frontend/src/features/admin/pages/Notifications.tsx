@@ -15,63 +15,39 @@ interface AdminNotificationItem {
   time: string
 }
 
-const mockAdminNotifications: AdminNotificationItem[] = [
-  {
-    id: "an-1",
-    title: "New Company Perks Claim",
-    description: "InnoTech Corp submitted paid menstrual leave compliance documentation for review.",
-    category: "Verification",
-    read: false,
-    time: "10 mins ago",
-  },
-  {
-    id: "an-2",
-    title: "High API Latency Alert",
-    description: "Database connection pool reached 85% capacity threshold. Active latency at 180ms.",
-    category: "System",
-    read: false,
-    time: "45 mins ago",
-  },
-  {
-    id: "an-3",
-    title: "Job Listing Flagged",
-    description: "Technical Writer listing at WriteAway reported by 3 candidates for duplicate content.",
-    category: "Moderation",
-    read: true,
-    time: "3 hours ago",
-  },
-  {
-    id: "an-4",
-    title: "Security Config Modified",
-    description: "Administrator enabled Multi-Factor Auth (MFA) requirement for policy matrix updates.",
-    category: "System",
-    read: true,
-    time: "1 day ago",
-  },
-]
+
+import { useNotificationContext } from "@/contexts/NotificationContext"
 
 export function Notifications() {
-  const [notifications, setNotifications] = useState<AdminNotificationItem[]>(mockAdminNotifications)
+  const {
+    notifications: contextNotifications,
+    unreadCount,
+    isLoading,
+    markAsRead: handleMarkRead,
+    markAllAsRead: handleMarkAllRead,
+    deleteNotification: handleDelete,
+  } = useNotificationContext()
+
   const [categoryFilter, setCategoryFilter] = useState<string>("All")
   const [searchQuery, setSearchQuery] = useState<string>("")
   const [unreadOnly, setUnreadOnly] = useState<boolean>(false)
   const [, startTransition] = useTransition()
 
-  const handleMarkRead = (id: string) => {
-    setNotifications((prev) =>
-      prev.map((n) => (n.id === id ? { ...n, read: true } : n))
-    )
-  }
+  const notifications: AdminNotificationItem[] = contextNotifications.map((n) => {
+    let category: "Moderation" | "System" | "Verification" = "System"
+    const cat = n.category.toLowerCase()
+    if (cat.includes("moderation")) category = "Moderation"
+    else if (cat.includes("verification") || cat.includes("approval")) category = "Verification"
 
-  const handleDelete = (id: string) => {
-    setNotifications((prev) => prev.filter((n) => n.id !== id))
-  }
-
-  const handleMarkAllRead = () => {
-    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })))
-  }
-
-  const unreadCount = notifications.filter((n) => !n.read).length
+    return {
+      id: n.id,
+      title: n.title,
+      description: n.description,
+      category,
+      read: n.read,
+      time: n.time
+    }
+  })
 
   const filteredNotifications = notifications.filter((n) => {
     if (searchQuery) {
@@ -88,6 +64,10 @@ export function Notifications() {
     }
     return true
   })
+
+  if (isLoading) {
+    return <div className="p-8 text-center text-sm font-bold text-[#6B2C91]">Loading alerts...</div>
+  }
 
   return (
     <motion.div

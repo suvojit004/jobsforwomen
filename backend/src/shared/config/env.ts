@@ -34,6 +34,9 @@ const envSchema = z.object({
   SMTP_USER: z.string().min(1),
   SMTP_PASS: z.string().min(1),
   SMTP_FROM: z.string().min(1),
+  // Inbox that receives admin "Contact Support" ticket emails. Falls back to
+  // SMTP_USER so this feature works out of the box without a new required env var.
+  SUPPORT_EMAIL: z.string().optional(),
 
   PROFILE_COMPLETION_THRESHOLD: z.coerce.number().default(70),
 

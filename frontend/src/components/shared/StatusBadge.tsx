@@ -8,6 +8,8 @@ const statusClasses: Record<ApplicationStatus, string> = {
     "bg-violet-50 text-violet-700 ring-violet-200 dark:bg-violet-500/15 dark:text-violet-200 dark:ring-violet-400/20",
   "Interview Scheduled":
     "bg-orange-50 text-orange-700 ring-orange-200 dark:bg-orange-500/15 dark:text-orange-200 dark:ring-orange-400/20",
+  "Offer Released":
+    "bg-pink-50 text-pink-700 ring-pink-200 dark:bg-pink-500/15 dark:text-pink-200 dark:ring-pink-400/20",
   Selected:
     "bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-500/15 dark:text-emerald-200 dark:ring-emerald-400/20",
   Rejected:

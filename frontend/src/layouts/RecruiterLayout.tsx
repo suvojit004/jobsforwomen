@@ -21,6 +21,7 @@ import {
   Settings,
   CircleHelp,
   LogOut,
+  Bell,
 } from "lucide-react"
 
 const recruiterMenuItems = [
@@ -28,8 +29,10 @@ const recruiterMenuItems = [
   { label: "Post a Job", icon: FilePlus, href: "/recruiter/post-job" },
   { label: "My Jobs", icon: BriefcaseBusiness, href: "/recruiter/manage-jobs" },
   { label: "Applicants", icon: Users, href: "/recruiter/applicants" },
-  { label: "Messages", icon: MessageSquare, href: "/recruiter/messages", badge: "2" },
+  { label: "Messages", icon: MessageSquare, href: "/recruiter/messages" },
+  { label: "Notifications", icon: Bell, href: "/recruiter/notifications" },
   { label: "Company Profile", icon: Building, href: "/recruiter/company" },
+  { label: "Manage Team", icon: Users, href: "/recruiter/team" },
   { label: "Analytics", icon: LineChart, href: "/recruiter/analytics" },
   { label: "Settings", icon: Settings, href: "/recruiter/settings" },
   { label: "Help & Support", icon: CircleHelp, href: "/recruiter/help" },
@@ -44,15 +47,24 @@ const recruiterMobileItems = [
   { label: "Menu", href: "/recruiter/settings", icon: Settings },
 ]
 
-export function RecruiterLayout() {
+import { NotificationProvider, useNotificationContext } from "@/contexts/NotificationContext"
+
+function RecruiterLayoutInner() {
   const [isNavigationOpen, setIsNavigationOpen] = useState(false)
+  const { unreadCount } = useNotificationContext()
+
+  const menuItems = recruiterMenuItems.map((item) =>
+    item.label === "Notifications"
+      ? { ...item, badge: unreadCount > 0 ? String(unreadCount) : undefined }
+      : item
+  )
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-slate-950 dark:bg-[#0F172A] dark:text-slate-50">
       <div className="flex min-h-screen">
         <aside className="fixed inset-y-0 left-0 z-40 hidden w-20 xl:w-[264px] lg:block">
           <Sidebar
-            menuItems={recruiterMenuItems}
+            menuItems={menuItems}
             bannerTitle="Hire amazing women talent"
             bannerSubtitle="Build a diverse and inclusive team."
             bannerButtonText="Post a Job"
@@ -74,7 +86,7 @@ export function RecruiterLayout() {
             </SheetHeader>
             <Sidebar
               onNavigate={() => setIsNavigationOpen(false)}
-              menuItems={recruiterMenuItems}
+              menuItems={menuItems}
               bannerTitle="Hire amazing women talent"
               bannerSubtitle="Build a diverse and inclusive team."
               bannerButtonText="Post a Job"
@@ -94,3 +106,12 @@ export function RecruiterLayout() {
     </div>
   )
 }
+
+export function RecruiterLayout() {
+  return (
+    <NotificationProvider>
+      <RecruiterLayoutInner />
+    </NotificationProvider>
+  )
+}
+export default RecruiterLayout

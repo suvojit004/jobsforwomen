@@ -8,6 +8,9 @@ import {
   Mail,
   CheckCircle,
   FileDown,
+  X,
+  CalendarClock,
+  Gift,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { DashboardCard } from "@/components/shared/DashboardCard"
@@ -28,6 +31,18 @@ export function Applicants() {
   const [isLoading, setIsLoading] = useState(true)
   const [applicants, setApplicants] = useState<ApplicantRow[]>([])
 
+  // Interview scheduling modal state
+  const [schedulingRow, setSchedulingRow] = useState<ApplicantRow | null>(null)
+  const [interviewTitle, setInterviewTitle] = useState("")
+  const [interviewDateTime, setInterviewDateTime] = useState("")
+  const [interviewLocation, setInterviewLocation] = useState("")
+  const [interviewSubmitting, setInterviewSubmitting] = useState(false)
+
+  // Offer release modal state
+  const [releasingRow, setReleasingRow] = useState<ApplicantRow | null>(null)
+  const [offerDetailsText, setOfferDetailsText] = useState("")
+  const [offerSubmitting, setOfferSubmitting] = useState(false)
+
   const load = useCallback(async () => {
     setIsLoading(true)
     try {
@@ -45,7 +60,25 @@ export function Applicants() {
     load()
   }, [load])
 
-  // Handle status selector update
+  // Handle status selector update. "Interview Scheduled" and "Offer Released"
+  // need real structured data, so they open a modal instead of setting the
+  // status directly -- the backend rejects those two values on this endpoint.
+  const handleStatusSelect = (row: ApplicantRow, newStatus: string) => {
+    if (newStatus === "Interview Scheduled") {
+      setInterviewTitle(`Interview for ${row.job}`)
+      setInterviewDateTime("")
+      setInterviewLocation("")
+      setSchedulingRow(row)
+      return
+    }
+    if (newStatus === "Offer Released") {
+      setOfferDetailsText("")
+      setReleasingRow(row)
+      return
+    }
+    handleUpdateStatus(row.id, newStatus)
+  }
+
   const handleUpdateStatus = async (id: string, newStatus: string) => {
     const previous = applicants
     setApplicants((prev) => prev.map((app) => (app.id === id ? { ...app, status: newStatus } : app)))
@@ -57,8 +90,55 @@ export function Applicants() {
     }
   }
 
-  // Simulated download resume action
+  const handleConfirmSchedule = async () => {
+    if (!schedulingRow || !interviewTitle.trim() || !interviewDateTime) {
+      toast.error("Title and date/time are required.")
+      return
+    }
+    try {
+      setInterviewSubmitting(true)
+      await RecruiterApi.scheduleInterview(schedulingRow.id, {
+        title: interviewTitle.trim(),
+        scheduledAt: new Date(interviewDateTime).toISOString(),
+        location: interviewLocation.trim() || undefined,
+      })
+      toast.success("Interview scheduled and candidate notified.")
+      setSchedulingRow(null)
+      load()
+    } catch (err: any) {
+      toast.error(err?.message || "Couldn't schedule the interview.")
+    } finally {
+      setInterviewSubmitting(false)
+    }
+  }
+
+  const handleConfirmOffer = async () => {
+    if (!releasingRow || !offerDetailsText.trim()) {
+      toast.error("Offer details are required.")
+      return
+    }
+    try {
+      setOfferSubmitting(true)
+      await RecruiterApi.releaseOffer(releasingRow.id, offerDetailsText.trim())
+      toast.success("Offer released and candidate notified.")
+      setReleasingRow(null)
+      load()
+    } catch (err: any) {
+      toast.error(err?.message || "Couldn't release the offer.")
+    } finally {
+      setOfferSubmitting(false)
+    }
+  }
+
+  // Opens the candidate's real uploaded resume (Cloudinary URL) in a new tab.
+  // Previously this only flashed a fake "download started" toast without
+  // actually opening or fetching any file, real or otherwise.
   const handleDownloadResume = (row: ApplicantRow) => {
+    if (!row.resumeUrl) {
+      toast.error(`${row.name} has not uploaded a resume yet.`)
+      return
+    }
+    window.open(row.resumeUrl, "_blank", "noopener,noreferrer")
     setDownloadSuccessId(row.id)
     setTimeout(() => setDownloadSuccessId(null), 2500)
   }
@@ -115,22 +195,37 @@ export function Applicants() {
     {
       header: "Application Status",
       cell: (row) => (
-        <div className="flex items-center gap-2">
-          {/* Status Badge preview */}
-          <StatusBadge status={row.status as any} />
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            {/* Status Badge preview */}
+            <StatusBadge status={row.status as any} />
 
-          {/* Interactive drop selector */}
-          <select
-            value={row.status}
-            onChange={(e: any) => handleUpdateStatus(row.id, e.target.value)}
-            className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-[10px] font-black uppercase text-slate-600 focus-visible:outline-none dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300"
-          >
-            <option value="Applied">Applied</option>
-            <option value="Under Review">Under Review</option>
-            <option value="Interview Scheduled">Interview Scheduled</option>
-            <option value="Selected">Selected</option>
-            <option value="Rejected">Rejected</option>
-          </select>
+            {/* Interactive drop selector */}
+            <select
+              value={row.status}
+              onChange={(e: any) => handleStatusSelect(row, e.target.value)}
+              className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-[10px] font-black uppercase text-slate-600 focus-visible:outline-none dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300"
+            >
+              <option value="Applied">Applied</option>
+              <option value="Under Review">Under Review</option>
+              <option value="Interview Scheduled">Interview Scheduled</option>
+              <option value="Offer Released">Offer Released</option>
+              <option value="Selected">Selected</option>
+              <option value="Rejected">Rejected</option>
+            </select>
+          </div>
+          {row.nextInterview && (
+            <p className="text-[9px] font-bold text-slate-400 flex items-center gap-1">
+              <CalendarClock className="size-2.5" />
+              {row.nextInterview.title} · {new Date(row.nextInterview.scheduledAt).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}
+            </p>
+          )}
+          {row.offerDetails && (
+            <p className="text-[9px] font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1 max-w-48 truncate" title={row.offerDetails}>
+              <Gift className="size-2.5 shrink-0" />
+              {row.offerDetails}
+            </p>
+          )}
         </div>
       ),
     },
@@ -257,6 +352,106 @@ export function Applicants() {
           emptyMessage={isLoading ? "Loading applicants..." : "No applicants found matching selected criteria."}
         />
       </DashboardCard>
+
+      {/* Schedule Interview modal */}
+      {schedulingRow && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl">
+            <div className="flex items-center justify-between p-4 border-b border-slate-100 dark:border-slate-800">
+              <h3 className="text-sm font-black text-slate-900 dark:text-white flex items-center gap-1.5">
+                <CalendarClock className="size-4 text-[#6B2C91]" />
+                Schedule Interview — {schedulingRow.name}
+              </h3>
+              <button onClick={() => setSchedulingRow(null)} className="text-slate-400 hover:text-slate-700 dark:hover:text-white">
+                <X className="size-4" />
+              </button>
+            </div>
+            <div className="p-4 space-y-3">
+              <div>
+                <label className="text-[10px] font-black uppercase text-slate-400">Title</label>
+                <input
+                  type="text"
+                  value={interviewTitle}
+                  onChange={(e) => setInterviewTitle(e.target.value)}
+                  className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6B2C91]/30 dark:border-slate-800 dark:bg-slate-950 dark:text-white"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] font-black uppercase text-slate-400">Date & Time</label>
+                <input
+                  type="datetime-local"
+                  value={interviewDateTime}
+                  onChange={(e) => setInterviewDateTime(e.target.value)}
+                  className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6B2C91]/30 dark:border-slate-800 dark:bg-slate-950 dark:text-white"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] font-black uppercase text-slate-400">Location / Video Link (optional)</label>
+                <input
+                  type="text"
+                  value={interviewLocation}
+                  onChange={(e) => setInterviewLocation(e.target.value)}
+                  placeholder="e.g. Google Meet link or office address"
+                  className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6B2C91]/30 dark:border-slate-800 dark:bg-slate-950 dark:text-white"
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 p-4 border-t border-slate-100 dark:border-slate-800">
+              <Button variant="outline" size="sm" onClick={() => setSchedulingRow(null)} className="text-xs font-bold">
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                onClick={handleConfirmSchedule}
+                disabled={interviewSubmitting}
+                className="text-xs font-black bg-[#6B2C91] hover:bg-[#5a237b] text-white"
+              >
+                {interviewSubmitting ? "Scheduling..." : "Schedule & Notify"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Release Offer modal */}
+      {releasingRow && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl">
+            <div className="flex items-center justify-between p-4 border-b border-slate-100 dark:border-slate-800">
+              <h3 className="text-sm font-black text-slate-900 dark:text-white flex items-center gap-1.5">
+                <Gift className="size-4 text-emerald-600" />
+                Release Offer — {releasingRow.name}
+              </h3>
+              <button onClick={() => setReleasingRow(null)} className="text-slate-400 hover:text-slate-700 dark:hover:text-white">
+                <X className="size-4" />
+              </button>
+            </div>
+            <div className="p-4">
+              <label className="text-[10px] font-black uppercase text-slate-400">Offer Details</label>
+              <textarea
+                value={offerDetailsText}
+                onChange={(e) => setOfferDetailsText(e.target.value)}
+                rows={4}
+                placeholder="e.g. ₹12 LPA, joining date 1st Aug, remote-first role"
+                className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6B2C91]/30 dark:border-slate-800 dark:bg-slate-950 dark:text-white"
+              />
+            </div>
+            <div className="flex justify-end gap-2 p-4 border-t border-slate-100 dark:border-slate-800">
+              <Button variant="outline" size="sm" onClick={() => setReleasingRow(null)} className="text-xs font-bold">
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                onClick={handleConfirmOffer}
+                disabled={offerSubmitting}
+                className="text-xs font-black bg-emerald-600 hover:bg-emerald-700 text-white"
+              >
+                {offerSubmitting ? "Releasing..." : "Release Offer & Notify"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

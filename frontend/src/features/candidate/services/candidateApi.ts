@@ -55,6 +55,16 @@ export const candidateApi = {
     const res = await apiClient.post(`/api/v1/candidates/conversations/${conversationId}/messages`, { content })
     return res?.data
   },
+
+  async changePassword(currentPassword: string, newPassword: string) {
+    const res = await apiClient.put("/api/v1/auth/change-password", { currentPassword, newPassword })
+    return res?.data
+  },
+
+  async deleteAccount(password: string) {
+    const res = await apiClient.delete("/api/v1/auth/account", { password })
+    return res?.data
+  },
 }
 
 export default candidateApi

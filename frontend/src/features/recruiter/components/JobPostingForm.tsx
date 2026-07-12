@@ -114,7 +114,7 @@ type JobFormValues = z.infer<typeof jobSchema>
 
 type JobPostingFormProps = {
   onSubmit: (values: JobFormValues) => void
-  onSaveDraft?: (values: Partial<JobFormValues>) => void
+  onSaveDraft?: (values: Partial<JobFormValues>) => void | Promise<void>
   initialValues?: Partial<JobFormValues>
   submitLabel?: string
 }
@@ -236,10 +236,15 @@ export function JobPostingForm({
     setTimeout(() => setIsSuccess(false), 3000)
   }
 
-  const handleDraftClick = () => {
+  const handleDraftClick = async () => {
+    if (!onSaveDraft) return
     const currentValues = getValues()
-    onSaveDraft?.(currentValues)
-    alert("Draft saved successfully!")
+    // onSaveDraft (see PostJob.tsx) makes the real saveDraft API call and
+    // shows its own success/error toast. We just await it here -- we used to
+    // fire an unconditional alert("Draft saved successfully!") the instant
+    // the button was clicked, regardless of whether the save actually
+    // succeeded, and even on pages where no draft handler was wired up.
+    await onSaveDraft(currentValues)
   }
 
   // Create a mock Job object for previewing
@@ -275,7 +280,7 @@ export function JobPostingForm({
             <Eye className="size-4" />
             {isPreviewMode ? "Edit Specifications" : "Preview Posting"}
           </Button>
-          {!isPreviewMode && (
+          {!isPreviewMode && onSaveDraft && (
             <Button
               type="button"
               variant="outline"

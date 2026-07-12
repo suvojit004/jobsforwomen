@@ -23,20 +23,37 @@ import {
 import { Input } from "@/components/ui/input"
 import { Logo } from "@/components/shared/Logo"
 import { useAuth } from "@/hooks/useAuth"
+import { useNotificationContext } from "@/contexts/NotificationContext"
 
-type NavbarProps = {
-  onMenuClick: () => void
-}
-
-export function Navbar({ onMenuClick }: NavbarProps) {
+export function Navbar({ onMenuClick }: { onMenuClick: () => void }) {
   const { theme, setTheme } = useTheme()
   const navigate = useNavigate()
   const { user, logout } = useAuth()
   const isDark = theme === "dark"
 
+  let unreadCount = 0
+  try {
+    const context = useNotificationContext()
+    unreadCount = context.unreadCount
+  } catch (err) {
+    // Ignore context issues outside providers
+  }
+
   const handleLogout = async () => {
     await logout()
     navigate("/", { replace: true })
+  }
+
+  const handleBellClick = () => {
+    if (!user) return
+    const roles = user.roles || []
+    if (roles.includes("Super Admin") || roles.includes("Admin")) {
+      navigate("/admin/notifications")
+    } else if (roles.includes("Recruiter")) {
+      navigate("/recruiter/notifications")
+    } else {
+      navigate("/candidate/notifications")
+    }
   }
 
   // Get initials for profile fallback
@@ -94,12 +111,15 @@ export function Navbar({ onMenuClick }: NavbarProps) {
             variant="ghost"
             size="icon"
             className="relative shrink-0"
+            onClick={handleBellClick}
             aria-label="View notifications"
           >
             <Bell className="size-5" />
-            <span className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-black text-white ring-2 ring-white dark:ring-slate-900">
-              0
-            </span>
+            {unreadCount > 0 && (
+              <span className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-black text-white ring-2 ring-white dark:ring-slate-900 animate-pulse">
+                {unreadCount}
+              </span>
+            )}
           </Button>
 
           <Button

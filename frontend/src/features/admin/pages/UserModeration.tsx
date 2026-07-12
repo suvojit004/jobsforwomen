@@ -40,7 +40,7 @@ interface AdminUser {
   name: string
   email: string
   role: string
-  permissions: string[]
+  roles: string[]
   status: string
 }
 
@@ -76,19 +76,22 @@ export function UserModeration() {
         id: u.id,
         name: u.fullName || u.email.split("@")[0],
         email: u.email,
-        company: u.recruiterProfile?.company?.name || "TechNova Solutions",
+        company: u.recruiterProfile?.company?.name || "No Company Assigned",
         verified: !!u.recruiterProfile?.verified,
         status: u.status === "Active" ? "Active" : "Inactive"
       })))
 
-      setAdmins((adminsList || []).map((u: any) => ({
-        id: u.id,
-        name: u.fullName || u.email.split("@")[0],
-        email: u.email,
-        role: "Platform Administrator",
-        permissions: ["All Access"],
-        status: u.status === "Active" ? "Active" : "Inactive"
-      })))
+      setAdmins((adminsList || []).map((u: any) => {
+        const roleNames: string[] = (u.roles || []).map((r: any) => r.role?.name).filter(Boolean)
+        return {
+          id: u.id,
+          name: u.fullName || u.email.split("@")[0],
+          email: u.email,
+          role: roleNames.join(", ") || "Admin",
+          roles: roleNames,
+          status: u.status === "Active" ? "Active" : "Inactive"
+        }
+      }))
     } catch (err) {
       console.error("Failed to load user databases:", err)
     } finally {
@@ -113,15 +116,15 @@ export function UserModeration() {
     }
   }
 
-  const handleToggleVerification = async (userId: string, role: "candidate" | "recruiter") => {
+  // Recruiter verification is real (backed by RecruiterProfile.verified).
+  // Candidates have no separate "verification" concept in the data model --
+  // only resume presence, which is shown read-only in the Verification
+  // column below -- so there is no toggle action for candidates here.
+  const handleToggleVerification = async (userId: string) => {
     try {
-      if (role === "recruiter") {
-        const recObj = recruiters.find((r) => r.id === userId)
-        const nextVerify = !recObj?.verified
-        await AdminApi.verifyRecruiter(userId, nextVerify)
-      } else {
-        alert("Candidate resume verification is not implemented dynamically on database model level.")
-      }
+      const recObj = recruiters.find((r) => r.id === userId)
+      const nextVerify = !recObj?.verified
+      await AdminApi.verifyRecruiter(userId, nextVerify)
       loadUsers()
     } catch (err) {
       console.error("Failed to toggle verification", err)
@@ -215,14 +218,6 @@ export function UserModeration() {
         <div className="flex justify-end gap-1.5">
           <Button
             size="sm"
-            variant="outline"
-            className="h-7 text-[10px] font-bold border-slate-200 hover:bg-slate-100"
-            onClick={() => handleToggleVerification(row.id, "candidate")}
-          >
-            {row.verified ? "Revoke Verification" : "Verify Resume"}
-          </Button>
-          <Button
-            size="sm"
             variant={row.status === "Active" ? "destructive" : "outline"}
             className="h-7 text-[10px] font-bold flex items-center gap-1"
             onClick={() => handleToggleStatus(row.id, "candidate")}
@@ -297,7 +292,7 @@ export function UserModeration() {
             size="sm"
             variant="outline"
             className="h-7 text-[10px] font-bold border-slate-200 hover:bg-slate-100"
-            onClick={() => handleToggleVerification(row.id, "recruiter")}
+            onClick={() => handleToggleVerification(row.id)}
           >
             {row.verified ? "Deauthorize" : "Verify Corporate"}
           </Button>
@@ -339,14 +334,18 @@ export function UserModeration() {
       accessorKey: "role",
     },
     {
-      header: "Permissions",
+      header: "Assigned Roles",
       cell: (row) => (
         <div className="flex flex-wrap gap-1">
-          {row.permissions.map((p, i) => (
-            <span key={i} className="text-[9px] font-extrabold bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded text-slate-650 dark:text-slate-300">
-              {p}
-            </span>
-          ))}
+          {row.roles.length > 0 ? (
+            row.roles.map((r, i) => (
+              <span key={i} className="text-[9px] font-extrabold bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded text-slate-650 dark:text-slate-300">
+                {r}
+              </span>
+            ))
+          ) : (
+            <span className="text-[10px] text-slate-400 dark:text-slate-500 font-bold">No roles assigned</span>
+          )}
         </div>
       ),
     },
@@ -373,7 +372,12 @@ export function UserModeration() {
             size="sm"
             variant={row.status === "Active" ? "destructive" : "outline"}
             className="h-7 text-[10px] font-bold flex items-center gap-1"
-            disabled={row.id === "admin-1"} // Avoid locking out principal admin
+            // Never allow suspending a Super Admin through this screen -- the
+            // previous check compared row.id to the literal string "admin-1",
+            // which no real seeded/created user ID ever equals (IDs are
+            // UUIDs), so it silently protected nobody. Guard on the real role.
+            disabled={row.roles.includes("Super Admin")}
+            title={row.roles.includes("Super Admin") ? "Super Admin accounts cannot be suspended from this screen." : undefined}
             onClick={() => handleToggleStatus(row.id, "admin")}
           >
             {row.status === "Active" ? (

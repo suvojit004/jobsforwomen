@@ -2,17 +2,32 @@ import { useEffect } from "react"
 import { useNavigate } from "react-router-dom"
 import { LogOut, Loader2 } from "lucide-react"
 import { DashboardCard } from "@/components/shared/DashboardCard"
+import { useAuth } from "@/hooks/useAuth"
 
 export function Logout() {
   const navigate = useNavigate()
+  const { logout } = useAuth()
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      // Redirect back to main candidate dashboard
-      navigate("/dashboard")
-    }, 2000)
-    return () => clearTimeout(timer)
-  }, [navigate])
+    // Real logout: revokes the refresh token server-side (POST
+    // /api/v1/auth/logout) and clears the JWT access token from
+    // localStorage. Previously this page had no logout call at all -- it
+    // just waited 2 seconds and redirected to /dashboard while the access
+    // token stayed valid, so DashboardRedirect bounced the recruiter right
+    // back into /recruiter/dashboard. Clicking "Logout" did nothing at all.
+    let cancelled = false
+    async function performLogout() {
+      await logout()
+      if (!cancelled) {
+        navigate("/auth/login", { replace: true })
+      }
+    }
+    const timer = setTimeout(performLogout, 1200)
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [navigate, logout])
 
   return (
     <div className="min-h-[60vh] flex items-center justify-center p-4 select-none">
@@ -23,7 +38,7 @@ export function Logout() {
         <div className="space-y-1.5">
           <h2 className="text-lg font-black text-slate-950 dark:text-white">Logging Out...</h2>
           <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 leading-relaxed">
-            Thank you for hiring talent on JobsForWomen.info. You will be redirected back to the candidate portal shortly.
+            Thank you for hiring talent on JobsForWomen.info. You will be redirected to the login page shortly.
           </p>
         </div>
         <div className="flex items-center justify-center gap-2 pt-2 text-[11px] font-black uppercase text-slate-400">

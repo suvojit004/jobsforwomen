@@ -47,10 +47,10 @@ export function CompanyApprovals() {
       setCompanies((data || []).map((c: any) => ({
         id: c.id,
         name: c.name,
-        website: c.website || "www.example.com",
+        website: c.website || "Not specified",
         location: c.location || "Not Specified",
-        industry: c.industry?.name || "Software & Technology",
-        claimedPerks: c.claimedPerks || ["Flexible Hours", "Menstrual Leave Support"],
+        industry: c.industry?.name || "Not specified",
+        claimedPerks: (c.benefits || []).map((b: any) => b.benefitName),
         status: c.status,
         feedback: c.feedback || ""
       })))

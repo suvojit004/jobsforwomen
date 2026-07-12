@@ -1,10 +1,18 @@
 import app from "./app"
 import env from "./shared/config/env"
 import { logger } from "./shared/utils/logger"
+import { initSocket } from "./shared/socket/socket"
 
 const server = app.listen(env.PORT, () => {
   logger.info(`🚀 JobsForWomen API engine active on port ${env.PORT} [mode: ${env.NODE_ENV}]`)
 })
+
+// CRITICAL: initSocket() attaches Socket.IO to this HTTP server. It was
+// previously never called anywhere in the boot sequence -- `app.listen()`
+// alone gives you a plain HTTP server with no WebSocket layer, so real-time
+// chat and live notification delivery never actually ran, despite the
+// socket.ts implementation itself being complete and correct.
+initSocket(server)
 
 // Graceful Shutdown hooks
 const shutdown = () => {

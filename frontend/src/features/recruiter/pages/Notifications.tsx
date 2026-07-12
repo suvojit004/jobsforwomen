@@ -22,72 +22,43 @@ interface RecruiterNotification {
   read: boolean
 }
 
+import { useNotificationContext } from "@/contexts/NotificationContext"
+
 export function Notifications() {
-  const [notifications, setNotifications] = useState<RecruiterNotification[]>([
-    {
-      id: "n-1",
-      title: "New Application Submitted",
-      description: "Priya Sharma applied for the Frontend Developer opportunity.",
-      time: "10 mins ago",
-      type: "application",
-      read: false,
-    },
-    {
-      id: "n-2",
-      title: "Interview Slot Confirmed",
-      description: "Neha Singh confirmed the Technical Interview scheduled for next Tuesday.",
-      time: "1 hour ago",
-      type: "interview",
-      read: false,
-    },
-    {
-      id: "n-3",
-      title: "Menstrual Leave Champion Status Active",
-      description: "Your corporate partner verification is completed. Champion flags are now visible on all job details.",
-      time: "2 hours ago",
-      type: "partner",
-      read: true,
-    },
-    {
-      id: "n-4",
-      title: "Resume Intake Update",
-      description: "Anjali Verma uploaded a new verified resume attachment for UI/UX Designer.",
-      time: "Yesterday",
-      type: "application",
-      read: true,
-    },
-    {
-      id: "n-5",
-      title: "System Update Complete",
-      description: "Vite and Tailwind components built successfully for recruitment operations.",
-      time: "2 days ago",
-      type: "system",
-      read: true,
-    },
-  ])
+  const {
+    notifications: contextNotifications,
+    isLoading,
+    markAsRead: handleMarkRead,
+    markAllAsRead: handleMarkAllRead,
+    deleteNotification: handleClearSingle,
+  } = useNotificationContext()
 
   const [activeTab, setActiveTab] = useState<"all" | "unread" | "applications" | "interviews">("all")
 
-  // Mark single item as read
-  const handleMarkRead = (id: string) => {
-    setNotifications((prev) =>
-      prev.map((n) => (n.id === id ? { ...n, read: true } : n))
-    )
-  }
+  const notifications: RecruiterNotification[] = contextNotifications.map((n) => {
+    let type: "application" | "interview" | "system" | "partner" = "system"
+    const cat = n.category.toLowerCase()
+    if (cat.includes("application")) type = "application"
+    else if (cat.includes("interview")) type = "interview"
+    else if (cat.includes("partner") || cat.includes("verification")) type = "partner"
 
-  // Mark all as read
-  const handleMarkAllRead = () => {
-    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })))
-  }
-
-  // Clear single notification
-  const handleClearSingle = (id: string) => {
-    setNotifications((prev) => prev.filter((n) => n.id !== id))
-  }
+    return {
+      id: n.id,
+      title: n.title,
+      description: n.description,
+      time: n.time,
+      type,
+      read: n.read,
+    }
+  })
 
   // Clear all notifications
-  const handleClearAll = () => {
-    setNotifications([])
+  const handleClearAll = async () => {
+    try {
+      await handleMarkAllRead()
+    } catch (err) {
+      console.error(err)
+    }
   }
 
   // Filter notifications based on tab
@@ -110,6 +81,10 @@ export function Notifications() {
       default:
         return <Sparkles className="size-4 text-blue-500" />
     }
+  }
+
+  if (isLoading) {
+    return <div className="p-8 text-center text-sm font-bold text-[#6B2C91]">Loading notifications...</div>
   }
 
   return (

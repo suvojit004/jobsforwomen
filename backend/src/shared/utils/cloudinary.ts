@@ -2,6 +2,7 @@ import { v2 as cloudinary } from "cloudinary"
 import { Readable } from "stream"
 import env from "../config/env"
 import { logger } from "./logger"
+import prisma from "../database/db"
 
 // Configure Cloudinary with actual credentials
 cloudinary.config({
@@ -28,14 +29,61 @@ export const cloudinaryMetrics = {
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
+// Known magic-byte signatures for the file types this app accepts. Used to
+// confirm the buffer's *actual* content matches its declared MIME type,
+// independent of whatever the client claims in the multipart header (which is
+// trivially spoofable). This is structural validation, not malware detection.
+const FILE_SIGNATURES: Record<string, Buffer[]> = {
+  "application/pdf": [Buffer.from([0x25, 0x50, 0x44, 0x46])], // %PDF
+  "image/jpeg": [Buffer.from([0xff, 0xd8, 0xff])],
+  "image/png": [Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])],
+  "image/gif": [Buffer.from("GIF87a", "ascii"), Buffer.from("GIF89a", "ascii")],
+  // application/msword (legacy .doc) uses the OLE2/CFB container signature
+  "application/msword": [Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1])],
+  // .docx is a zip archive (PK..)
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": [
+    Buffer.from([0x50, 0x4b, 0x03, 0x04]),
+  ],
+}
+
 /**
- * Mock antivirus scanner checkpoint.
+ * File security checkpoint.
+ *
+ * HONEST SCOPE: this function performs real, local structural validation --
+ * empty-buffer rejection and a magic-byte signature check confirming the
+ * uploaded bytes actually match the declared MIME type (catching the common
+ * "renamed .exe as .pdf" class of spoofing). It does NOT perform genuine
+ * malware/virus scanning (content-level threat detection, e.g. ClamAV or
+ * VirusTotal). That is an EXTERNAL DEPENDENCY: no such scanning
+ * infrastructure is wired into this environment, no credentials exist for
+ * one, and this function must never report a file "clean" in the sense of
+ * "scanned for malware" -- only "structurally consistent with its declared type."
  */
-export async function scanFileForVirus(fileBuffer: Buffer): Promise<boolean> {
-  // ClamAV / VirusTotal scanner integration placeholder
-  // In development/test mode, we assume the file is clean
-  logger.info(`[VirusScanner] Executing file scan on buffer (${fileBuffer.length} bytes)...`)
-  return true // returns true if clean
+export async function scanFileForVirus(fileBuffer: Buffer, declaredMimeType?: string): Promise<boolean> {
+  if (!fileBuffer || fileBuffer.length === 0) {
+    logger.warn("[FileSecurity] Rejected upload: empty file buffer.")
+    return false
+  }
+
+  if (declaredMimeType && FILE_SIGNATURES[declaredMimeType]) {
+    const signatures = FILE_SIGNATURES[declaredMimeType]
+    let matches = signatures.some((sig) => fileBuffer.subarray(0, sig.length).equals(sig))
+
+    // WEBP needs a second check: RIFF....WEBP (bytes 8-11 == "WEBP")
+    if (!matches && declaredMimeType === "image/webp") {
+      const isRiff = fileBuffer.subarray(0, 4).toString("ascii") === "RIFF"
+      const isWebp = fileBuffer.subarray(8, 12).toString("ascii") === "WEBP"
+      matches = isRiff && isWebp
+    }
+
+    if (!matches) {
+      logger.warn(`[FileSecurity] Rejected upload: file content does not match declared type "${declaredMimeType}".`)
+      return false
+    }
+  }
+
+  logger.info(`[FileSecurity] Structural validation passed (${fileBuffer.length} bytes). NOTE: real malware/virus scanning is an EXTERNAL DEPENDENCY and is not performed here.`)
+  return true
 }
 
 /**
@@ -164,13 +212,105 @@ export async function replaceInCloudinary(
   return uploadToCloudinary(newBuffer, folder, fileName, isPrivate)
 }
 
+export interface OrphanAssetReport {
+  referencedAssets: string[]
+  cloudinaryAssets: string[]
+  possibleOrphans: string[] // exist in Cloudinary, not referenced by any DB row
+  missingReferenced: string[] // referenced by a DB row, not found in Cloudinary
+  cleaned: number // always 0 -- this is a read-only dry run, nothing is ever deleted automatically
+  scannedFolders: string[]
+  error?: string
+}
+
 /**
- * Mock Orphan Asset Cleanup utility.
+ * Orphan asset cleanup -- SAFE READ-ONLY DRY RUN.
+ *
+ * Cross-references every Company.logoPublicId and CandidateProfile.resumePublicId
+ * in the database against what Cloudinary's Admin API actually has stored under
+ * the jfw/logos and jfw/resumes prefixes. Reports orphans (uploaded but no
+ * longer referenced by any row -- e.g. left behind by a failed request) and
+ * missing-referenced assets (DB points at a public_id Cloudinary no longer has).
+ *
+ * This function NEVER deletes anything. It is intentionally read-only; actual
+ * deletion of confirmed orphans should be a separate, explicitly-invoked,
+ * human-reviewed action.
  */
-export async function runOrphanAssetCleanup(): Promise<{ cleaned: number }> {
-  // In production, queries Cloudinary listing APIs and cross-references public IDs against DB tables.
-  logger.info("[Cloudinary] Scheduled orphan assets cleanup executed successfully.")
-  return { cleaned: 0 }
+export async function runOrphanAssetCleanup(): Promise<OrphanAssetReport> {
+  const scannedFolders = ["jfw/logos", "jfw/resumes"]
+
+  try {
+    const [companies, candidates] = await Promise.all([
+      prisma.company.findMany({
+        where: { logoPublicId: { not: null } },
+        select: { logoPublicId: true },
+      }),
+      prisma.candidateProfile.findMany({
+        where: { resumePublicId: { not: null } },
+        select: { resumePublicId: true },
+      }),
+    ])
+
+    const referencedAssets = [
+      ...companies.map((c) => c.logoPublicId as string),
+      ...candidates.map((c) => c.resumePublicId as string),
+    ]
+    const referencedSet = new Set(referencedAssets)
+
+    // Logos are uploaded as resource_type "image"; resumes as "raw" (isPrivate=true).
+    const [logoList, resumeList] = await Promise.all([
+      cloudinary.api.resources({ type: "upload", resource_type: "image", prefix: "jfw/logos", max_results: 500 }),
+      cloudinary.api.resources({ type: "upload", resource_type: "raw", prefix: "jfw/resumes", max_results: 500 }),
+    ])
+
+    const cloudinaryAssets: string[] = [
+      ...(logoList.resources || []).map((r: any) => r.public_id),
+      ...(resumeList.resources || []).map((r: any) => r.public_id),
+    ]
+    const cloudinarySet = new Set(cloudinaryAssets)
+
+    const possibleOrphans = cloudinaryAssets.filter((id) => !referencedSet.has(id))
+    const missingReferenced = referencedAssets.filter((id) => !cloudinarySet.has(id))
+
+    logger.info(
+      `[Cloudinary] Orphan asset dry run complete: ${referencedAssets.length} DB-referenced, ${cloudinaryAssets.length} in Cloudinary, ${possibleOrphans.length} possible orphans, ${missingReferenced.length} missing-referenced. No deletions performed (read-only).`
+    )
+
+    return {
+      referencedAssets,
+      cloudinaryAssets,
+      possibleOrphans,
+      missingReferenced,
+      cleaned: 0,
+      scannedFolders,
+    }
+  } catch (err: any) {
+    // If Cloudinary Admin API credentials/network are unavailable, do not
+    // pretend the scan happened -- report it honestly as blocked.
+    logger.error(`[Cloudinary] Orphan asset dry run failed (EXTERNAL DEPENDENCY unavailable): ${err.message}`)
+    return {
+      referencedAssets: [],
+      cloudinaryAssets: [],
+      possibleOrphans: [],
+      missingReferenced: [],
+      cleaned: 0,
+      scannedFolders,
+      error: `EXTERNAL DEPENDENCY: Cloudinary Admin API call failed -- ${err.message}`,
+    }
+  }
+}
+
+/**
+ * Real Cloudinary connectivity check (used by admin system health), as
+ * opposed to a hardcoded "UP".
+ */
+export async function verifyCloudinaryConnection(): Promise<boolean> {
+  try {
+    await cloudinary.api.ping()
+    return true
+  } catch (err: any) {
+    logger.warn(`[Cloudinary] Connectivity check failed: ${err.message}`)
+    return false
+  }
 }
 
 export default {
@@ -179,5 +319,6 @@ export default {
   replaceInCloudinary,
   scanFileForVirus,
   runOrphanAssetCleanup,
+  verifyCloudinaryConnection,
   cloudinaryMetrics,
 }

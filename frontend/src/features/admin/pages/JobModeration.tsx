@@ -39,7 +39,7 @@ export function JobModeration() {
       setJobs((data || []).map((j: any) => ({
         id: j.id,
         title: j.title,
-        company: j.company?.name || "TechNova Solutions",
+        company: j.company?.name || "Unknown Company",
         location: j.location,
         salary: j.salaryDisplay || "N/A",
         applicantsCount: j.applicants || 0,

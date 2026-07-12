@@ -6,8 +6,16 @@ import type { Conversation, Message } from "@/types/message"
 import { cn } from "@/lib/utils"
 import { candidateApi } from "../services/candidateApi"
 import { getSocket } from "@/api/socket"
+import { useAuth } from "@/hooks/useAuth"
 
 export function Messages() {
+  const { user } = useAuth()
+  // The real signed-in user id, used to tell "my" messages apart from the
+  // other party's. Previously this compared against
+  // localStorage.getItem("user_id"), a key nothing in the app ever sets --
+  // so it was always null, and every message (including the candidate's own)
+  // was misattributed to the recruiter.
+  const currentUserId = user?.id
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [activeId, setActiveId] = useState<string>("")
   const [isTyping, setIsTyping] = useState<boolean>(false)
@@ -60,7 +68,7 @@ export function Messages() {
         const msgs = await candidateApi.getMessages(activeId)
         const formattedMsgs: Message[] = msgs.map((m: any) => ({
           id: m.id,
-          sender: m.senderId === localStorage.getItem("user_id") ? "candidate" : "recruiter",
+          sender: m.senderId === currentUserId ? "candidate" : "recruiter",
           text: m.content,
           timestamp: new Date(m.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
         }))
@@ -80,17 +88,21 @@ export function Messages() {
 
     socket.emit("join:conversation", { conversationId: activeId })
 
-    socket.on("typing", (data: { userId: string; isTyping: boolean }) => {
+    const handleTyping = (data: { conversationId: string; userId: string; isTyping: boolean }) => {
+      // The socket may still be subscribed to a previously-open conversation's
+      // room; only reflect typing state for the conversation currently on screen.
+      if (data.conversationId !== activeId) return
       setIsTyping(data.isTyping)
-    })
+    }
 
-    socket.on("notification", (data: any) => {
+    const handleNotification = (data: any) => {
       if (data.type === "message" || data.type === "MESSAGE") {
+        if (data.conversationId && data.conversationId !== activeId) return
         async function reloadMessages() {
           const msgs = await candidateApi.getMessages(activeId)
           const formattedMsgs: Message[] = msgs.map((m: any) => ({
             id: m.id,
-            sender: m.senderId === localStorage.getItem("user_id") ? "candidate" : "recruiter",
+            sender: m.senderId === currentUserId ? "candidate" : "recruiter",
             text: m.content,
             timestamp: new Date(m.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
           }))
@@ -100,11 +112,15 @@ export function Messages() {
         }
         reloadMessages()
       }
-    })
+    }
+
+    socket.on("typing", handleTyping)
+    socket.on("notification", handleNotification)
 
     return () => {
-      socket.off("typing")
-      socket.off("notification")
+      socket.off("typing", handleTyping)
+      socket.off("notification", handleNotification)
+      socket.emit("leave:conversation", { conversationId: activeId })
     }
   }, [activeId])
 
@@ -122,7 +138,7 @@ export function Messages() {
       const msgs = await candidateApi.getMessages(activeId)
       const formattedMsgs: Message[] = msgs.map((m: any) => ({
         id: m.id,
-        sender: m.senderId === localStorage.getItem("user_id") ? "candidate" : "recruiter",
+        sender: m.senderId === currentUserId ? "candidate" : "recruiter",
         text: m.content,
         timestamp: new Date(m.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
       }))

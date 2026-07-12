@@ -32,6 +32,21 @@ export interface ResetParams {
   resetLink: string
 }
 
+export interface InterviewScheduledParams {
+  recipientName: string
+  jobTitle: string
+  companyName: string
+  scheduledAt: string
+  location?: string
+}
+
+export interface OfferReleasedParams {
+  recipientName: string
+  jobTitle: string
+  companyName: string
+  offerDetails: string
+}
+
 export const EmailTemplates = {
   welcome: (params: WelcomeParams): string => `
     <div style="font-family: Arial, sans-serif; padding: 20px; line-height: 1.6;">
@@ -68,6 +83,27 @@ export const EmailTemplates = {
       <h2>Job Moderation Notification</h2>
       <p>Your job posting for <strong>${params.jobTitle}</strong> has been: <strong>${params.status.toUpperCase()}</strong>.</p>
       ${params.notes ? `<p><strong>Moderator Notes:</strong> ${params.notes}</p>` : ""}
+    </div>
+  `,
+
+  interviewScheduled: (params: InterviewScheduledParams): string => `
+    <div style="font-family: Arial, sans-serif; padding: 20px; line-height: 1.6;">
+      <h2>Interview Scheduled</h2>
+      <p>Hi ${params.recipientName},</p>
+      <p>Good news! <strong>${params.companyName}</strong> has scheduled an interview with you for the <strong>${params.jobTitle}</strong> role.</p>
+      <p><strong>When:</strong> ${params.scheduledAt}</p>
+      ${params.location ? `<p><strong>Where:</strong> ${params.location}</p>` : ""}
+      <p>Log in to your JobsForWomen account for full details.</p>
+    </div>
+  `,
+
+  offerReleased: (params: OfferReleasedParams): string => `
+    <div style="font-family: Arial, sans-serif; padding: 20px; line-height: 1.6;">
+      <h2>You've Received an Offer!</h2>
+      <p>Hi ${params.recipientName},</p>
+      <p>Congratulations! <strong>${params.companyName}</strong> has released an offer for the <strong>${params.jobTitle}</strong> role.</p>
+      <p><strong>Offer details:</strong> ${params.offerDetails}</p>
+      <p>Log in to your JobsForWomen account to review and respond.</p>
     </div>
   `,
 

@@ -352,6 +352,9 @@ export class CandidateService {
             company: true,
           },
         },
+        interviews: {
+          orderBy: { scheduledAt: "desc" },
+        },
       },
       orderBy: { appliedOn: "desc" },
     })

@@ -8,8 +8,10 @@ import {
   ChevronDown,
   ChevronUp,
 } from "lucide-react"
+import { useNavigate } from "react-router-dom"
 import { DashboardCard } from "@/components/shared/DashboardCard"
 import { Button } from "@/components/ui/button"
+import { AdminApi } from "../services/adminApi"
 
 interface FaqItem {
   q: string
@@ -17,8 +19,11 @@ interface FaqItem {
 }
 
 export function HelpSupport() {
+  const navigate = useNavigate()
   const [openFaq, setOpenFaq] = useState<number | null>(0)
   const [submitting, setSubmitting] = useState(false)
+  const [submitError, setSubmitError] = useState("")
+  const [submitSuccess, setSubmitSuccess] = useState(false)
   const [formData, setFormData] = useState({
     subject: "",
     category: "Technical Issue",
@@ -40,7 +45,7 @@ export function HelpSupport() {
     },
     {
       q: "Where do I export weekly analytics summaries?",
-      a: "Navigate to the Reports & Analytics page. You can trigger simulated exports to download CSV records directories or generate detailed PDF telemetry overviews.",
+      a: "Navigate to the Reports & Analytics page. You can trigger exports there to download live CSV summaries generated from current platform data.",
     },
   ]
 
@@ -48,19 +53,29 @@ export function HelpSupport() {
     setOpenFaq(openFaq === idx ? null : idx)
   }
 
-  const handleFormSubmit = (e: React.FormEvent) => {
+  const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    setSubmitError("")
     if (!formData.subject.trim() || !formData.message.trim()) {
-      alert("Please fill out all fields.")
+      setSubmitError("Please fill out all fields.")
       return
     }
 
     setSubmitting(true)
-    setTimeout(() => {
-      setSubmitting(false)
-      alert("Your issue ticket has been filed successfully! Support will update you soon.")
+    try {
+      // Real call: backend sends this to the support inbox via SMTP and logs
+      // an audit entry. Previously this was a pure setTimeout that always
+      // claimed the ticket was "filed successfully" -- nothing was ever sent
+      // or recorded anywhere.
+      await AdminApi.submitSupportTicket(formData.subject, formData.category, formData.message)
+      setSubmitSuccess(true)
       setFormData({ subject: "", category: "Technical Issue", message: "" })
-    }, 1000)
+      setTimeout(() => setSubmitSuccess(false), 4000)
+    } catch (err: any) {
+      setSubmitError(err?.message || "Failed to file ticket. Please try again or email support directly.")
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   return (
@@ -118,10 +133,10 @@ export function HelpSupport() {
             </h3>
             <div className="grid gap-4 sm:grid-cols-2">
               <a
-                href="#docs-rbac"
+                href="/admin/feature-configs"
                 onClick={(e) => {
                   e.preventDefault()
-                  alert("Opening RBAC & Entitlements configuration documentation...")
+                  navigate("/admin/feature-configs")
                 }}
                 className="p-4 rounded-xl border border-slate-100 dark:border-slate-850 hover:border-[#6B2C91]/30 dark:hover:border-pink-300/30 transition-all flex items-start gap-3 bg-slate-50/20 dark:bg-slate-950/5 group"
               >
@@ -137,10 +152,10 @@ export function HelpSupport() {
               </a>
 
               <a
-                href="#docs-verify"
+                href="/admin/company-approvals"
                 onClick={(e) => {
                   e.preventDefault()
-                  alert("Opening Company Approvals auditing documentation...")
+                  navigate("/admin/company-approvals")
                 }}
                 className="p-4 rounded-xl border border-slate-100 dark:border-slate-850 hover:border-[#6B2C91]/30 dark:hover:border-pink-300/30 transition-all flex items-start gap-3 bg-slate-50/20 dark:bg-slate-950/5 group"
               >
@@ -165,6 +180,16 @@ export function HelpSupport() {
             <h3 className="text-xs font-black text-slate-900 uppercase tracking-widest dark:text-white border-b border-slate-100 pb-3 dark:border-slate-800">
               Report Platform Issue
             </h3>
+            {submitSuccess && (
+              <div className="mt-3 p-2.5 bg-emerald-50 text-emerald-800 rounded-lg text-[11px] font-bold dark:bg-emerald-950/35 dark:text-emerald-300">
+                Your issue ticket has been filed successfully! Support will update you soon.
+              </div>
+            )}
+            {submitError && (
+              <div className="mt-3 p-2.5 bg-red-50 text-red-800 rounded-lg text-[11px] font-bold dark:bg-red-950/35 dark:text-red-300">
+                {submitError}
+              </div>
+            )}
             <form onSubmit={handleFormSubmit} className="space-y-3.5 mt-4 text-xs font-semibold">
               <div className="space-y-1">
                 <label className="text-[10px] font-black uppercase text-slate-400">Category</label>

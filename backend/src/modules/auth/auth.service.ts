@@ -128,6 +128,14 @@ export class AuthService {
     }
 
     if (user.status === UserStatus.PendingVerification) {
+      // SECURITY: this used to also auto-activate ANY account whose email
+      // ended in "@jobsforwomen.info" -- unconditionally, in every
+      // environment, with no environment-variable gate at all. Registration
+      // never verifies domain ownership (that's the entire point of email
+      // verification), so anyone could register attacker@jobsforwomen.info,
+      // never touch the verification email, and still get auto-activated on
+      // their first login attempt. Removed -- BYPASS_EMAIL_VERIFICATION is
+      // the only sanctioned bypass, and it must be unset/false in production.
       if (process.env.BYPASS_EMAIL_VERIFICATION === "true") {
         user.status = UserStatus.Active
         await this.authRepository.updateUserStatus(user.id, UserStatus.Active)
@@ -337,7 +345,8 @@ export class AuthService {
       invite.email,
       passwordHash,
       fullName || "Invited Member",
-      invite.roleId
+      invite.roleId,
+      invite.companyId
     )
 
     if (googleToken) {
@@ -412,6 +421,71 @@ export class AuthService {
     })
 
     return { email: record.email }
+  }
+
+  // Real change-password for an already-authenticated user. Previously the
+  // candidate and admin Settings pages both collected currentPassword/
+  // newPassword in their forms but never actually called any endpoint --
+  // they just flashed a fake "success" state, so passwords were never
+  // actually changed.
+  async changePassword(userId: string, currentPassword: string, newPassword: string) {
+    const user = await this.authRepository.findUserById(userId)
+    if (!user) {
+      throw new Error("User not found")
+    }
+    if (!user.passwordHash) {
+      throw new Error("This account uses OAuth sign-in and has no password to change")
+    }
+
+    const isMatch = await comparePassword(currentPassword, user.passwordHash)
+    if (!isMatch) {
+      throw new Error("Current password is incorrect")
+    }
+
+    const passwordHash = await hashPassword(newPassword)
+    await this.authRepository.updateUserPassword(userId, passwordHash)
+
+    // Invalidate all other sessions -- a password change should not leave
+    // stale sessions from a potentially-compromised credential still valid.
+    await this.authRepository.deleteOtherSessions("", userId)
+
+    logger.info(`[AuthService] Password changed for: ${user.email}`)
+
+    EventBus.publish("PasswordChanged", {
+      userId,
+      email: user.email,
+    })
+
+    return { email: user.email }
+  }
+
+  // Real, permanent self-service account deletion (requires the user's own
+  // current password as confirmation). Every User relation in schema.prisma
+  // is declared onDelete: Cascade for the data types a Candidate account
+  // actually owns (profile, applications, saved jobs, sessions, refresh
+  // tokens, conversations, notifications), so this is a genuine delete, not
+  // the "simulated" placeholder the candidate Settings page previously showed.
+  async deleteOwnAccount(userId: string, password: string) {
+    const user = await this.authRepository.findUserById(userId)
+    if (!user) {
+      throw new Error("User not found")
+    }
+    if (user.passwordHash) {
+      const isMatch = await comparePassword(password, user.passwordHash)
+      if (!isMatch) {
+        throw new Error("Password is incorrect")
+      }
+    }
+
+    await this.authRepository.deleteUserAccount(userId)
+    logger.info(`[AuthService] Account permanently deleted for: ${user.email}`)
+
+    EventBus.publish("AccountDeleted", {
+      userId,
+      email: user.email,
+    })
+
+    return { email: user.email }
   }
 
   private detectDeviceType(userAgent: string): string {

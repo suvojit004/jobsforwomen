@@ -87,25 +87,43 @@ export const createJobSchema = createJobBaseSchema.refine(data => data.salaryMax
 export const updateJobSchema = createJobBaseSchema.partial()
 
 // Applicant Pipeline Schema
-// Supported Workflow States: Applied, Reviewed, Shortlisted, InterviewScheduled, InterviewCompleted, OfferReleased, OfferAccepted, OfferDeclined, Hired, Rejected
+// Supported Workflow States match the real ApplicationStatus Prisma enum exactly:
+// Applied, Reviewed, Shortlisted, InterviewScheduled, OfferReleased, Hired, Rejected.
+// NOTE: InterviewScheduled and OfferReleased require structured data (a real interview
+// date, real offer details) and can no longer be set through this generic endpoint --
+// use POST /applications/:id/interview and POST /applications/:id/offer instead.
 export const progressApplicationSchema = z.object({
   status: z.enum([
     "Applied",
     "Reviewed",
     "Shortlisted",
-    "InterviewScheduled",
-    "InterviewCompleted",
-    "OfferReleased",
-    "OfferAccepted",
-    "OfferDeclined",
     "Hired",
     "Rejected"
   ]),
   notes: z.string().max(500, "Notes cannot exceed 500 characters").optional(),
 })
 
+// Schedule a real interview (creates an Interview record + moves status to InterviewScheduled)
+export const scheduleInterviewSchema = z.object({
+  title: z.string().min(1, "Title is required").max(150),
+  description: z.string().max(1000).optional(),
+  scheduledAt: z.string().refine((v) => !isNaN(Date.parse(v)), "Invalid date/time"),
+  durationMins: z.number().int().positive().max(600).optional(),
+  location: z.string().max(500).optional(),
+})
+
+// Release a real offer (persists offer details + moves status to OfferReleased)
+export const releaseOfferSchema = z.object({
+  offerDetails: z.string().min(1, "Offer details are required").max(2000),
+})
+
 // Recruiter settings preferences
 export const recruiterSettingsSchema = z.object({
   realTimeNotifications: z.boolean().optional(),
   emailDigestInterval: z.enum(["Instant", "Daily", "Weekly", "None"]).optional(),
+})
+
+// Invite Colleague Schema
+export const inviteColleagueSchema = z.object({
+  email: z.string().email("Invalid email address"),
 })

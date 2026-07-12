@@ -1,97 +1,27 @@
-import { useState, useTransition, useEffect } from "react"
+import { useState, useTransition } from "react"
 import { motion } from "framer-motion"
 import { Search, CheckCheck, BellRing } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { DashboardCard } from "@/components/dashboard/DashboardCard"
 import { EmptyState } from "@/components/shared/EmptyState"
 import { NotificationList } from "../components/Notifications/NotificationList"
-import { candidateApi } from "../services/candidateApi"
-import type { NotificationItemType } from "@/types/notification"
 import { cn } from "@/lib/utils"
-
-function mapApiNotificationToItemType(n: any): NotificationItemType {
-  const createdDate = new Date(n.createdAt || Date.now())
-  const today = new Date()
-  const yesterday = new Date(today)
-  yesterday.setDate(yesterday.getDate() - 1)
-
-  let dateGroup: "Today" | "Yesterday" | "Earlier" = "Earlier"
-  if (createdDate.toDateString() === today.toDateString()) {
-    dateGroup = "Today"
-  } else if (createdDate.toDateString() === yesterday.toDateString()) {
-    dateGroup = "Yesterday"
-  }
-
-  const timeStr = createdDate.toLocaleTimeString("en-US", {
-    hour: "2-digit",
-    minute: "2-digit"
-  })
-
-  return {
-    id: n.id,
-    title: n.title,
-    description: n.message || n.description || "",
-    category: n.category || "General",
-    read: !!n.read,
-    time: timeStr,
-    dateGroup
-  }
-}
+import { useNotificationContext } from "@/contexts/NotificationContext"
 
 export function Notifications() {
-  const [notifications, setNotifications] = useState<NotificationItemType[]>([])
+  const {
+    notifications,
+    unreadCount,
+    isLoading,
+    markAsRead: handleMarkRead,
+    markAllAsRead: handleMarkAllRead,
+    deleteNotification: handleDelete,
+  } = useNotificationContext()
+
   const [categoryFilter, setCategoryFilter] = useState<string>("All")
   const [searchQuery, setSearchQuery] = useState<string>("")
   const [unreadOnly, setUnreadOnly] = useState<boolean>(false)
-  const [isLoading, setIsLoading] = useState(true)
   const [, startTransition] = useTransition()
-
-  async function loadNotifications() {
-    try {
-      const list = await candidateApi.getNotifications()
-      setNotifications((list || []).map(mapApiNotificationToItemType))
-    } catch (err) {
-      console.error("Failed to load notifications", err)
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
-  useEffect(() => {
-    loadNotifications()
-  }, [])
-
-  const handleMarkRead = async (id: string) => {
-    try {
-      await candidateApi.markNotificationRead(id)
-      setNotifications((prev) =>
-        prev.map((n) => (n.id === id ? { ...n, read: true } : n))
-      )
-    } catch (err) {
-      console.error("Failed to mark notification read", err)
-    }
-  }
-
-  const handleDelete = async (id: string) => {
-    try {
-      await candidateApi.deleteNotification(id)
-      setNotifications((prev) => prev.filter((n) => n.id !== id))
-    } catch (err) {
-      console.error("Failed to delete notification", err)
-    }
-  }
-
-  const handleMarkAllRead = async () => {
-    try {
-      await candidateApi.markAllNotificationsRead()
-      setNotifications((prev) => prev.map((n) => ({ ...n, read: true })))
-    } catch (err) {
-      console.error("Failed to mark all notifications read", err)
-    }
-  }
-
-  // Count unread items
-  const unreadCount = notifications.filter((n) => !n.read).length
 
   // Filter application
   const filteredNotifications = notifications.filter((n) => {

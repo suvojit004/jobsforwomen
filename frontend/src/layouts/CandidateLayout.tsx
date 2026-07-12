@@ -41,15 +41,24 @@ const candidateMobileItems = [
   { label: "Profile", href: "/candidate/profile", icon: UserRound },
 ]
 
-export function CandidateLayout() {
+import { NotificationProvider, useNotificationContext } from "@/contexts/NotificationContext"
+
+function CandidateLayoutInner() {
   const [isNavigationOpen, setIsNavigationOpen] = useState(false)
+  const { unreadCount } = useNotificationContext()
+
+  const menuItems = candidateMenuItems.map((item) =>
+    item.label === "Notifications"
+      ? { ...item, badge: unreadCount > 0 ? String(unreadCount) : undefined }
+      : item
+  )
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-slate-950 dark:bg-[#0F172A] dark:text-slate-50">
       <div className="flex min-h-screen">
         <aside className="fixed inset-y-0 left-0 z-40 hidden w-20 xl:w-[264px] lg:block">
           <Sidebar 
-            menuItems={candidateMenuItems}
+            menuItems={menuItems}
             bannerTitle="Empowering Women"
             bannerSubtitle="Explore diverse returnships and flexible roles."
             bannerButtonText="Browse Jobs"
@@ -71,7 +80,7 @@ export function CandidateLayout() {
             </SheetHeader>
             <Sidebar 
               onNavigate={() => setIsNavigationOpen(false)} 
-              menuItems={candidateMenuItems}
+              menuItems={menuItems}
               bannerTitle="Empowering Women"
               bannerSubtitle="Explore diverse returnships and flexible roles."
               bannerButtonText="Browse Jobs"
@@ -89,6 +98,14 @@ export function CandidateLayout() {
       </div>
       <MobileBottomNav menuItems={candidateMobileItems} />
     </div>
+  )
+}
+
+export function CandidateLayout() {
+  return (
+    <NotificationProvider>
+      <CandidateLayoutInner />
+    </NotificationProvider>
   )
 }
 export default CandidateLayout

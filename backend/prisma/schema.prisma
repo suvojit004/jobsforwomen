@@ -53,6 +53,7 @@ enum ApplicationStatus {
   Reviewed
   Shortlisted
   InterviewScheduled
+  OfferReleased
   Rejected
   Hired
 }
@@ -125,6 +126,8 @@ model Invitation {
   role        Role      @relation(fields: [roleId], references: [id])
   invitedById String
   invitedBy   User      @relation("Inviter", fields: [invitedById], references: [id])
+  companyId   String?
+  company     Company?  @relation(fields: [companyId], references: [id], onDelete: Cascade)
   expiresAt   DateTime
   acceptedAt  DateTime?
   createdAt   DateTime  @default(now())
@@ -239,6 +242,7 @@ model Company {
   jobs                  Job[]
   benefits              CompanyBenefit[]
   history               CompanyVerificationHistory[]
+  invitations           Invitation[]
 }
 
 model CompanyBenefit {
@@ -328,6 +332,10 @@ model Job {
   savedJobs              SavedJob[]
   reports                JobReport[]
   history                JobStatusHistory[]
+
+  @@index([companyId])
+  @@index([recruiterId])
+  @@index([status])
 }
 
 model Application {
@@ -338,10 +346,14 @@ model Application {
   candidate   CandidateProfile           @relation(fields: [candidateId], references: [id], onDelete: Cascade)
   status      ApplicationStatus          @default(Applied)
   appliedOn   DateTime                   @default(now())
-  
+  offerDetails    String?
+  offerReleasedAt DateTime?
+
   // Relations
   history     ApplicationStatusHistory[]
   interviews  Interview[]
+
+  @@index([candidateId])
 }
 
 model ApplicationStatusHistory {
@@ -432,6 +444,8 @@ model Notification {
   read        Boolean   @default(false)
   expiresAt   DateTime?
   createdAt   DateTime  @default(now())
+
+  @@index([recipientId])
 }
 
 model Conversation {
@@ -459,6 +473,8 @@ model Message {
   senderId       String
   content        String
   timestamp      DateTime     @default(now())
+
+  @@index([conversationId])
 }
 
 model FeatureFlag {

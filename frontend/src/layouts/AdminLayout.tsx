@@ -23,6 +23,9 @@ import {
   UserCheck,
   Bell,
   CircleHelp,
+  Sparkles,
+  Shield,
+  Activity,
 } from "lucide-react"
 
 const adminMenuItems = [
@@ -33,9 +36,12 @@ const adminMenuItems = [
   { label: "Job Moderation", icon: ShieldAlert, href: "/admin/job-moderation" },
   { label: "Users", icon: Users, href: "/admin/users" },
   { label: "Reports & Analytics", icon: LineChart, href: "/admin/reports-analytics" },
-  { label: "Notifications", icon: Bell, href: "/admin/notifications", badge: "2" },
+  { label: "Notifications", icon: Bell, href: "/admin/notifications" },
   { label: "Settings", icon: Settings, href: "/admin/settings" },
   { label: "Activity Logs", icon: FileText, href: "/admin/activity-logs" },
+  { label: "Feature Configs", icon: Sparkles, href: "/admin/feature-configs" },
+  { label: "Roles & Permissions", icon: Shield, href: "/admin/roles-permissions" },
+  { label: "System Health", icon: Activity, href: "/admin/system-health" },
   { label: "Help & Support", icon: CircleHelp, href: "/admin/help-support" },
   { label: "Logout", icon: LogOut, href: "/admin/logout" },
 ]
@@ -48,15 +54,24 @@ const adminMobileItems = [
   { label: "Settings", href: "/admin/settings", icon: Settings },
 ]
 
-export function AdminLayout() {
+import { NotificationProvider, useNotificationContext } from "@/contexts/NotificationContext"
+
+function AdminLayoutInner() {
   const [isNavigationOpen, setIsNavigationOpen] = useState(false)
+  const { unreadCount } = useNotificationContext()
+
+  const menuItems = adminMenuItems.map((item) =>
+    item.label === "Notifications"
+      ? { ...item, badge: unreadCount > 0 ? String(unreadCount) : undefined }
+      : item
+  )
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-slate-950 dark:bg-[#0F172A] dark:text-slate-50">
       <div className="flex min-h-screen">
         <aside className="fixed inset-y-0 left-0 z-40 hidden w-20 xl:w-[264px] lg:block">
           <Sidebar
-            menuItems={adminMenuItems}
+            menuItems={menuItems}
             bannerTitle="Empowering Women"
             bannerSubtitle="Building a better future program."
             bannerButtonText="System Health"
@@ -78,7 +93,7 @@ export function AdminLayout() {
             </SheetHeader>
             <Sidebar
               onNavigate={() => setIsNavigationOpen(false)}
-              menuItems={adminMenuItems}
+              menuItems={menuItems}
               bannerTitle="Empowering Women"
               bannerSubtitle="Building a better future program."
               bannerButtonText="System Health"
@@ -96,6 +111,14 @@ export function AdminLayout() {
       </div>
       <MobileBottomNav menuItems={adminMobileItems} />
     </div>
+  )
+}
+
+export function AdminLayout() {
+  return (
+    <NotificationProvider>
+      <AdminLayoutInner />
+    </NotificationProvider>
   )
 }
 export default AdminLayout

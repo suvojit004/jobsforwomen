@@ -13,6 +13,9 @@ const Notifications = lazy(() => import("@/features/admin/pages/Notifications").
 const Settings = lazy(() => import("@/features/admin/pages/Settings").then(m => ({ default: m.Settings })))
 const ActivityLogs = lazy(() => import("@/features/admin/pages/ActivityLogs").then(m => ({ default: m.ActivityLogs })))
 const HelpSupport = lazy(() => import("@/features/admin/pages/HelpSupport").then(m => ({ default: m.HelpSupport })))
+const FeatureConfigs = lazy(() => import("@/features/admin/pages/FeatureConfigs").then(m => ({ default: m.FeatureConfigs })))
+const RolesPermissions = lazy(() => import("@/features/admin/pages/RolesPermissions").then(m => ({ default: m.RolesPermissions })))
+const SystemHealth = lazy(() => import("@/features/admin/pages/SystemHealth").then(m => ({ default: m.SystemHealth })))
 const Logout = lazy(() => import("@/features/admin/pages/Logout").then(m => ({ default: m.Logout })))
 
 export function AdminRoutes() {
@@ -30,6 +33,9 @@ export function AdminRoutes() {
         <Route path="notifications" element={<Notifications />} />
         <Route path="settings" element={<Settings />} />
         <Route path="activity-logs" element={<ActivityLogs />} />
+        <Route path="feature-configs" element={<FeatureConfigs />} />
+        <Route path="roles-permissions" element={<RolesPermissions />} />
+        <Route path="system-health" element={<SystemHealth />} />
         <Route path="help-support" element={<HelpSupport />} />
         <Route path="logout" element={<Logout />} />
         <Route path="*" element={<Navigate to="dashboard" replace />} />

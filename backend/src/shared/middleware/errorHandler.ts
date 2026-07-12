@@ -26,6 +26,17 @@ export function errorHandler(
 
   // Check for Prisma / DB errors
   if (err.code && err.meta) {
+    // P2002 = unique constraint violation -- this is a client-side conflict
+    // (duplicate entry), not a genuine server failure, so it's a 409 not a 400.
+    if (err.code === "P2002") {
+      logger.warn(`[Req: ${reqId}] Duplicate record conflict: ${err.message}`)
+      return sendError(res, "A record with these details already exists", null, 409)
+    }
+    // P2025 = record not found for update/delete
+    if (err.code === "P2025") {
+      logger.warn(`[Req: ${reqId}] Record not found: ${err.message}`)
+      return sendError(res, "The requested record was not found", null, 404)
+    }
     logger.error(`[Req: ${reqId}] Database Error: ${err.message}`)
     return sendError(res, "Database operation failed", null, 400)
   }
@@ -36,7 +47,15 @@ export function errorHandler(
     return sendError(res, err.message, null, err.statusCode)
   }
 
-  // Map known error messages to correct HTTP status codes
+  // Map known error messages to correct HTTP status codes.
+  // NOTE: most service methods throw plain `new Error("...")` rather than
+  // AppError, so without this mapping every business-rule rejection (not
+  // found / forbidden / already exists / bad state transition) falls through
+  // to the generic 500 branch below and gets logged as an "Unhandled
+  // Exception" even though it's an entirely expected, non-server-side
+  // failure. This won't catch every case (that would need every service to
+  // throw AppError with an explicit code), but it covers the common,
+  // recurring shapes seen across the auth/admin/recruiter/candidate modules.
   const message = err.message || ""
   if (message.includes("Invalid email or password") || message.includes("invalid credentials")) {
     logger.warn(`[Req: ${reqId}] Authentication failure: ${message}`)
@@ -51,6 +70,38 @@ export function errorHandler(
   ) {
     logger.warn(`[Req: ${reqId}] Access forbidden: ${message}`)
     return sendError(res, message, null, 403)
+  }
+
+  if (message.includes("Forbidden") || message.includes("Access denied") || message.includes("not authorized") || message.includes("Not authorized")) {
+    logger.warn(`[Req: ${reqId}] Forbidden: ${message}`)
+    return sendError(res, message, null, 403)
+  }
+
+  if (message.toLowerCase().includes("not found")) {
+    logger.warn(`[Req: ${reqId}] Not found: ${message}`)
+    return sendError(res, message, null, 404)
+  }
+
+  if (
+    message.includes("already exists") ||
+    message.includes("already applied") ||
+    message.includes("duplicate") ||
+    message.includes("Cannot delete built-in system role") ||
+    message.includes("currently assigned to")
+  ) {
+    logger.warn(`[Req: ${reqId}] Conflict: ${message}`)
+    return sendError(res, message, null, 409)
+  }
+
+  if (
+    message.includes("Invalid status transition") ||
+    message.includes("terminal state") ||
+    message.includes("requires additional details") ||
+    message.includes("Cannot schedule") ||
+    message.includes("Cannot release")
+  ) {
+    logger.warn(`[Req: ${reqId}] Invalid state transition: ${message}`)
+    return sendError(res, message, null, 400)
   }
 
   // Fallback for general unhandled exceptions

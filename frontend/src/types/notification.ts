@@ -11,7 +11,7 @@ export interface NotificationItemType {
   id: string
   title: string
   description: string
-  category: "General" | "Jobs" | "Interviews"
+  category: string
   read: boolean
   time: string
   dateGroup: "Today" | "Yesterday" | "Earlier"

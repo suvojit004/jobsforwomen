@@ -91,6 +91,51 @@ export const AdminApi = {
     const res = await apiClient.get("/api/v1/admins/notifications")
     return res?.data?.notifications || res?.data || []
   },
+
+  async markNotificationRead(id: string) {
+    const res = await apiClient.put(`/api/v1/admins/notifications/${id}/read`, {})
+    return res?.data
+  },
+
+  async markAllNotificationsRead() {
+    const res = await apiClient.put("/api/v1/admins/notifications/read-all", {})
+    return res?.data
+  },
+
+  async deleteNotification(id: string) {
+    const res = await apiClient.delete(`/api/v1/admins/notifications/${id}`)
+    return res?.data
+  },
+
+  async getRBAC() {
+    const res = await apiClient.get("/api/v1/admins/rbac")
+    return res?.data || { roles: [], permissions: [] }
+  },
+
+  async createRole(name: string, permissionNames: string[] = []) {
+    const res = await apiClient.post("/api/v1/admins/rbac/roles", { name, permissions: permissionNames })
+    return res?.data
+  },
+
+  async updateRolePermissions(roleId: string, permissionNames: string[]) {
+    const res = await apiClient.put(`/api/v1/admins/rbac/roles/${roleId}`, { permissions: permissionNames })
+    return res?.data
+  },
+
+  async deleteRole(roleId: string) {
+    const res = await apiClient.delete(`/api/v1/admins/rbac/roles/${roleId}`)
+    return res?.data
+  },
+
+  async changePassword(currentPassword: string, newPassword: string) {
+    const res = await apiClient.put("/api/v1/auth/change-password", { currentPassword, newPassword })
+    return res?.data
+  },
+
+  async submitSupportTicket(subject: string, category: string, message: string) {
+    const res = await apiClient.post("/api/v1/admins/support-ticket", { subject, category, message })
+    return res?.data
+  },
 }
 
 export default AdminApi

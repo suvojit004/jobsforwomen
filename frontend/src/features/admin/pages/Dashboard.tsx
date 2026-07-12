@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react"
+import { useNavigate } from "react-router-dom"
 import {
   Users,
   BriefcaseBusiness,
@@ -24,32 +25,8 @@ import { AdminApi } from "../services/adminApi"
 
 const APPLICATIONS_COLORS = ["#6B2C91", "#EC4899", "#3B82F6", "#10B981"]
 
-const applicationsData = [
-  { name: "Applied", value: 7452, percent: "40.2%" },
-  { name: "Shortlisted", value: 2512, percent: "20.3%" },
-  { name: "Interviewing", value: 1523, percent: "12.3%" },
-  { name: "Offered", value: 905, percent: "7.2%" },
-]
-
-const categoriesData = [
-  { name: "IT & Software", value: 2458, color: "bg-[#6B2C91]", max: 2500 },
-  { name: "Marketing", value: 1245, color: "bg-blue-500", max: 2500 },
-  { name: "Design", value: 890, color: "bg-cyan-500", max: 2500 },
-  { name: "HR", value: 654, color: "bg-emerald-500", max: 2500 },
-  { name: "Others", value: 539, color: "bg-amber-500", max: 2500 },
-]
-
-const growthData = [
-  { day: "12 May", Users: 18000 },
-  { day: "13 May", Users: 19500 },
-  { day: "14 May", Users: 21000 },
-  { day: "15 May", Users: 22200 },
-  { day: "16 May", Users: 23500 },
-  { day: "17 May", Users: 24000 },
-  { day: "18 May", Users: 24685 },
-]
-
 export function Dashboard() {
+  const navigate = useNavigate()
   const [companyTab, setCompanyTab] = useState<"pending" | "approved" | "rejected">("pending")
   const [jobTab, setJobTab] = useState<"all" | "reported" | "removed">("all")
 
@@ -58,14 +35,16 @@ export function Dashboard() {
   const [candidates, setCandidates] = useState<any[]>([])
   const [jobs, setJobs] = useState<any[]>([])
   const [audits, setAudits] = useState<any[]>([])
+  const [applicationFunnel, setApplicationFunnel] = useState<{ name: string; value: number; percent: string }[]>([])
+  const [departmentDistribution, setDepartmentDistribution] = useState<{ name: string; value: number; color: string; max: number }[]>([])
+  const [userGrowth, setUserGrowth] = useState<{ day: string; Users: number }[]>([])
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
     async function loadData() {
       try {
-        const [_dash, _health, userList, companyList, jobsList, auditList] = await Promise.all([
+        const [dash, userList, companyList, jobsList, auditList] = await Promise.all([
           AdminApi.getDashboard(),
-          AdminApi.getHealth(),
           AdminApi.getUsers(),
           AdminApi.getCompanies(),
           AdminApi.getJobs(),
@@ -76,12 +55,21 @@ export function Dashboard() {
           u.roles?.some((r: any) => r.role?.name === "Candidate")
         )
 
+        // Real counts only -- this previously fell back to large hardcoded
+        // numbers (2458 companies, 5784 jobs, 24685 candidates, and an
+        // unconditional fake 12392 applications) whenever the real count was
+        // 0, which is exactly the case for a fresh/empty platform: a brand
+        // new install would show fabricated activity instead of true zeros.
+        const analytics = dash?.analytics || {}
         setMetrics({
-          companies: companyList.length || 2458,
-          jobs: jobsList.length || 5784,
-          candidates: candidateUsers.length || 24685,
-          applications: 12392,
+          companies: companyList.length,
+          jobs: jobsList.length,
+          candidates: candidateUsers.length,
+          applications: analytics.applicationVolume ?? 0,
         })
+        setApplicationFunnel(analytics.applicationFunnel || [])
+        setDepartmentDistribution(analytics.departmentDistribution || [])
+        setUserGrowth(analytics.userGrowth || [])
 
         setCompanies((companyList || []).slice(0, 5).map((c: any) => ({
           id: c.id,
@@ -100,14 +88,18 @@ export function Dashboard() {
         })))
 
         setJobs((jobsList || []).slice(0, 5).map((j: any) => ({
+          id: j.id,
           title: j.title,
-          company: j.company?.name || "TechNova Solutions",
+          company: j.company?.name || "Unknown Company",
           status: j.status === "approved" ? "Active" : "Reported"
         })))
 
         setAudits((auditList || []).slice(0, 4).map((a: any) => ({
-          title: `${a.action.replace(/_/g, " ")} on ${a.entity}`,
-          actor: `by User ${a.actorId}`
+          // AuditLog has no `actorId` field -- it's `operatorEmail`/`operatorId`.
+          // The previous code always rendered "by User undefined" for every
+          // single real audit row.
+          title: `${a.action.replace(/_/g, " ")} on ${a.entity || "record"}`,
+          actor: a.operatorEmail ? `by ${a.operatorEmail}` : "by System"
         })))
 
       } catch (err) {
@@ -550,9 +542,10 @@ export function Dashboard() {
                     </td>
                     <td className="py-2.5 pl-2 text-right">
                       <button
-                        onClick={() => alert(`Opening action menu for ${job.title}...`)}
+                        onClick={() => navigate("/admin/job-moderation")}
                         className="text-slate-400 hover:text-slate-600 dark:hover:text-white"
-                        aria-label="More actions"
+                        aria-label="Manage this job in Job Moderation"
+                        title="Manage this job in Job Moderation"
                       >
                         <MoreHorizontal className="size-4 ml-auto" />
                       </button>
@@ -578,11 +571,15 @@ export function Dashboard() {
           <h5 className="text-[11px] font-black text-slate-900 dark:text-white uppercase tracking-wider">
             Applications by Status
           </h5>
+          {applicationFunnel.length === 0 ? (
+            <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 py-6 text-center">No applications yet.</p>
+          ) : (
+          <>
           <div className="h-32 flex items-center justify-center relative">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Pie
-                  data={applicationsData}
+                  data={applicationFunnel}
                   cx="50%"
                   cy="50%"
                   innerRadius={32}
@@ -590,7 +587,7 @@ export function Dashboard() {
                   paddingAngle={3}
                   dataKey="value"
                 >
-                  {applicationsData.map((_, index) => (
+                  {applicationFunnel.map((_, index) => (
                     <Cell key={`cell-${index}`} fill={APPLICATIONS_COLORS[index % APPLICATIONS_COLORS.length]} />
                   ))}
                 </Pie>
@@ -599,7 +596,7 @@ export function Dashboard() {
             </ResponsiveContainer>
           </div>
           <div className="space-y-1 text-[9px] font-black text-slate-500">
-            {applicationsData.map((item, idx) => (
+            {applicationFunnel.map((item, idx) => (
               <div key={idx} className="flex justify-between items-center">
                 <div className="flex items-center gap-1.5">
                   <span className="size-1.5 rounded-full" style={{ backgroundColor: APPLICATIONS_COLORS[idx] }} />
@@ -609,6 +606,8 @@ export function Dashboard() {
               </div>
             ))}
           </div>
+          </>
+          )}
         </DashboardCard>
 
         {/* Widget 2: Top Job Categories (Progress Indicators) */}
@@ -617,23 +616,27 @@ export function Dashboard() {
             Top Job Categories
           </h5>
           <div className="space-y-3.5">
-            {categoriesData.map((cat, idx) => {
-              const widthPercent = Math.min(100, (cat.value / cat.max) * 100)
-              return (
-                <div key={idx} className="space-y-1 font-bold text-[10px]">
-                  <div className="flex justify-between text-slate-700 dark:text-slate-350">
-                    <span>{cat.name}</span>
-                    <span className="font-black text-slate-900 dark:text-white">{cat.value.toLocaleString()}</span>
+            {departmentDistribution.length === 0 ? (
+              <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500">No jobs posted yet.</p>
+            ) : (
+              departmentDistribution.map((cat, idx) => {
+                const widthPercent = Math.min(100, (cat.value / cat.max) * 100)
+                return (
+                  <div key={idx} className="space-y-1 font-bold text-[10px]">
+                    <div className="flex justify-between text-slate-700 dark:text-slate-350">
+                      <span>{cat.name}</span>
+                      <span className="font-black text-slate-900 dark:text-white">{cat.value.toLocaleString()}</span>
+                    </div>
+                    <div className="h-1.5 w-full bg-slate-100 rounded-full dark:bg-slate-800 overflow-hidden">
+                      <div
+                        className={cn("h-full rounded-full", cat.color)}
+                        style={{ width: `${widthPercent}%` }}
+                      />
+                    </div>
                   </div>
-                  <div className="h-1.5 w-full bg-slate-100 rounded-full dark:bg-slate-800 overflow-hidden">
-                    <div
-                      className={cn("h-full rounded-full", cat.color)}
-                      style={{ width: `${widthPercent}%` }}
-                    />
-                  </div>
-                </div>
-              )
-            })}
+                )
+              })
+            )}
           </div>
         </DashboardCard>
 
@@ -643,21 +646,20 @@ export function Dashboard() {
             Recent Activities
           </h5>
           <div className="space-y-3">
-            {(audits.length > 0 ? audits : [
-              { title: "TechNova Solutions badge marked as Pending Review", actor: "by Admin User" },
-              { title: "Bright Future Tech company approved", actor: "by Admin User" },
-              { title: "Marketing Executive job reported", actor: "by System" },
-              { title: "New user Anjali Verma registered", actor: "by System" },
-            ]).map((item, idx) => (
-              <div key={idx} className="text-[10px] leading-relaxed border-l-2 border-slate-150 pl-2 dark:border-slate-800">
-                <p className="font-extrabold text-slate-800 dark:text-slate-200">
-                  {item.title}
-                </p>
-                <span className="text-[9px] font-bold text-slate-450 dark:text-slate-500">
-                  {item.actor}
-                </span>
-              </div>
-            ))}
+            {audits.length === 0 ? (
+              <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500">No recent activity recorded yet.</p>
+            ) : (
+              audits.map((item, idx) => (
+                <div key={idx} className="text-[10px] leading-relaxed border-l-2 border-slate-150 pl-2 dark:border-slate-800">
+                  <p className="font-extrabold text-slate-800 dark:text-slate-200">
+                    {item.title}
+                  </p>
+                  <span className="text-[9px] font-bold text-slate-450 dark:text-slate-500">
+                    {item.actor}
+                  </span>
+                </div>
+              ))
+            )}
           </div>
           <a href="/admin/activity-logs" className="text-[9px] font-black text-[#6B2C91] dark:text-pink-300 hover:underline">
             View all activities →
@@ -679,23 +681,31 @@ export function Dashboard() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50 dark:divide-slate-850">
-                {[
-                  { name: "TechNova Solutions", status: "Pending Review", style: "bg-amber-100 text-amber-800 dark:bg-amber-950/20 dark:text-amber-400", date: "10 May 2025" },
-                  { name: "Bright Future Tech", status: "Pending Review", style: "bg-amber-100 text-amber-800 dark:bg-amber-950/20 dark:text-amber-400", date: "09 May 2025" },
-                  { name: "Digital Minds", status: "Not Claimed", style: "bg-slate-100 text-slate-655 dark:bg-slate-800 dark:text-slate-400", date: "09 May 2025" },
-                  { name: "CodeCraft Solutions", status: "Approved", style: "bg-pink-100 text-pink-700 dark:bg-pink-950/20 dark:text-pink-300", date: "08 May 2025" },
-                  { name: "InnovateX Pvt. Ltd.", status: "Approved", style: "bg-pink-100 text-pink-700 dark:bg-pink-950/20 dark:text-pink-300", date: "07 May 2025" },
-                ].map((item, idx) => (
-                  <tr key={idx} className="hover:bg-slate-50/30 dark:hover:bg-slate-900/10">
-                    <td className="py-1.5 font-extrabold text-slate-900 dark:text-white max-w-[80px] truncate">{item.name}</td>
-                    <td className="py-1.5 px-1">
-                      <span className={cn("text-[8px] font-black uppercase px-1 py-0.5 rounded", item.style)}>
-                        {item.status}
-                      </span>
-                    </td>
-                    <td className="py-1.5 text-right font-mono text-slate-400">{item.date}</td>
+                {companies.length === 0 ? (
+                  <tr>
+                    <td colSpan={3} className="py-3 text-center text-slate-400 font-bold">No companies registered yet.</td>
                   </tr>
-                ))}
+                ) : (
+                  companies.map((item, idx) => {
+                    const style =
+                      item.badge === "Approved"
+                        ? "bg-pink-100 text-pink-700 dark:bg-pink-950/20 dark:text-pink-300"
+                        : item.badge === "Rejected"
+                        ? "bg-red-100 text-red-700 dark:bg-red-950/20 dark:text-red-400"
+                        : "bg-amber-100 text-amber-800 dark:bg-amber-950/20 dark:text-amber-400"
+                    return (
+                      <tr key={item.id || idx} className="hover:bg-slate-50/30 dark:hover:bg-slate-900/10">
+                        <td className="py-1.5 font-extrabold text-slate-900 dark:text-white max-w-[80px] truncate">{item.name}</td>
+                        <td className="py-1.5 px-1">
+                          <span className={cn("text-[8px] font-black uppercase px-1 py-0.5 rounded", style)}>
+                            {item.badge}
+                          </span>
+                        </td>
+                        <td className="py-1.5 text-right font-mono text-slate-400">{item.date}</td>
+                      </tr>
+                    )
+                  })
+                )}
               </tbody>
             </table>
           </div>
@@ -711,15 +721,24 @@ export function Dashboard() {
               User Growth <span className="text-[8px] font-bold text-slate-450 uppercase">(This Week)</span>
             </h5>
             <div className="mt-1">
-              <span className="text-lg font-black text-slate-900 dark:text-white">24,685</span>
-              <p className="text-[9px] font-black text-emerald-600 dark:text-emerald-450 flex items-center gap-0.5 mt-0.5">
-                ↑ 15.2% <span className="font-semibold text-slate-405 dark:text-slate-500">from last week</span>
-              </p>
+              <span className="text-lg font-black text-slate-900 dark:text-white">
+                {(userGrowth[userGrowth.length - 1]?.Users ?? 0).toLocaleString()}
+              </span>
+              {(() => {
+                const first = userGrowth[0]?.Users ?? 0
+                const last = userGrowth[userGrowth.length - 1]?.Users ?? 0
+                const changePercent = first > 0 ? (((last - first) / first) * 100).toFixed(1) : null
+                return changePercent !== null ? (
+                  <p className="text-[9px] font-black text-emerald-600 dark:text-emerald-450 flex items-center gap-0.5 mt-0.5">
+                    ↑ {changePercent}% <span className="font-semibold text-slate-405 dark:text-slate-500">from last week</span>
+                  </p>
+                ) : null
+              })()}
             </div>
           </div>
           <div className="h-24 text-[8px]">
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={growthData} margin={{ top: 0, right: 0, left: -30, bottom: 0 }}>
+              <AreaChart data={userGrowth} margin={{ top: 0, right: 0, left: -30, bottom: 0 }}>
                 <defs>
                   <linearGradient id="growthLineGradient" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="#6B2C91" stopOpacity={0.2} />

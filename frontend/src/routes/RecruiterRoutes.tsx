@@ -14,6 +14,7 @@ const Notifications = lazy(() => import("@/features/recruiter/pages/Notification
 const Settings = lazy(() => import("@/features/recruiter/pages/Settings").then(m => ({ default: m.Settings })))
 const Help = lazy(() => import("@/features/recruiter/pages/Help").then(m => ({ default: m.Help })))
 const Logout = lazy(() => import("@/features/recruiter/pages/Logout").then(m => ({ default: m.Logout })))
+const Team = lazy(() => import("@/features/recruiter/pages/Team").then(m => ({ default: m.Team })))
 
 export function RecruiterRoutes() {
   return (
@@ -26,6 +27,7 @@ export function RecruiterRoutes() {
       <Route path="applicants" element={<Applicants />} />
       <Route path="applicants/:id" element={<CandidatePreview />} />
       <Route path="company" element={<CompanyProfile />} />
+      <Route path="team" element={<Team />} />
       <Route path="analytics" element={<Analytics />} />
       <Route path="messages" element={<Messages />} />
       <Route path="notifications" element={<Notifications />} />

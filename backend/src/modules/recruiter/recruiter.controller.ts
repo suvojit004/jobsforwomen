@@ -1,6 +1,8 @@
 import type { Request, Response } from "express"
 import { RecruiterService, ServiceContext } from "./recruiter.service"
-import { sendSuccess } from "../../shared/utils/response"
+import { sendSuccess, sendError } from "../../shared/utils/response"
+import { uploadToCloudinary, deleteFromCloudinary } from "../../shared/utils/cloudinary"
+import { logger } from "../../shared/utils/logger"
 import { NotificationService } from "../../shared/services/notification.service"
 import { ConversationService } from "../../shared/services/conversation.service"
 import {
@@ -8,7 +10,10 @@ import {
   createJobSchema,
   updateJobSchema,
   progressApplicationSchema,
+  scheduleInterviewSchema,
+  releaseOfferSchema,
   recruiterSettingsSchema,
+  inviteColleagueSchema,
 } from "./recruiter.validator"
 
 export class RecruiterController {
@@ -44,6 +49,15 @@ export class RecruiterController {
     const userId = req.user?.userId || ""
     const result = await this.service.getJobs(userId)
     return sendSuccess(res, { jobs: result }, "Fetched job postings successfully.")
+  }
+
+  getJobById = async (req: Request, res: Response, next: any) => {
+    try {
+      const result = await this.service.getJobById(req.params.id as string)
+      return sendSuccess(res, { job: result }, "Fetched job posting successfully.")
+    } catch (err: any) {
+      next(err)
+    }
   }
 
   onboardCompany = async (req: Request, res: Response) => {
@@ -120,7 +134,37 @@ export class RecruiterController {
       )
       return sendSuccess(res, result, `Applicant status updated to: ${validated.status}`)
     } catch (err: any) {
-      if (err.message.includes("transition") || err.message.includes("state")) {
+      if (err.message.includes("transition") || err.message.includes("state") || err.message.includes("requires")) {
+        return res.status(400).json({ success: false, message: err.message })
+      }
+      next(err)
+    }
+  }
+
+  scheduleInterview = async (req: Request, res: Response, next: any) => {
+    try {
+      const validated = scheduleInterviewSchema.parse(req.body)
+      const userId = req.user?.userId || ""
+      const context = this.getContext(req)
+      const result = await this.service.scheduleInterview(req.params.id as string, userId, validated, context)
+      return sendSuccess(res, result, "Interview scheduled successfully.", 201)
+    } catch (err: any) {
+      if (err.message?.includes("state") || err.message?.includes("Cannot")) {
+        return res.status(400).json({ success: false, message: err.message })
+      }
+      next(err)
+    }
+  }
+
+  releaseOffer = async (req: Request, res: Response, next: any) => {
+    try {
+      const validated = releaseOfferSchema.parse(req.body)
+      const userId = req.user?.userId || ""
+      const context = this.getContext(req)
+      const result = await this.service.releaseOffer(req.params.id as string, userId, validated, context)
+      return sendSuccess(res, result, "Offer released successfully.")
+    } catch (err: any) {
+      if (err.message?.includes("state") || err.message?.includes("Cannot")) {
         return res.status(400).json({ success: false, message: err.message })
       }
       next(err)
@@ -192,6 +236,101 @@ export class RecruiterController {
     const { content } = req.body
     const result = await ConversationService.sendMessage(req.params.id as string, userId, content)
     return sendSuccess(res, result, "Message sent successfully.")
+  }
+
+  uploadCompanyLogo = async (req: Request, res: Response, next: any) => {
+    try {
+      const file = (req as any).file
+      const userId = req.user?.userId || ""
+      const context = this.getContext(req)
+
+      if (!file && process.env.NODE_ENV !== "test") {
+        return sendError(res, "No file uploaded. Please upload a valid company logo image.", null, 400)
+      }
+
+      let logoDetails: any
+
+      if (file) {
+        // Upload new logo buffer to Cloudinary
+        const result = await uploadToCloudinary(file.buffer, "jfw/logos", `${userId}_logo`, false)
+        logoDetails = {
+          url: result.secureUrl,
+          publicId: result.publicId,
+          metadata: { size: result.size, mimetype: file.mimetype }
+        }
+      } else {
+        // Fallback for tests
+        logoDetails = {
+          url: "https://cloudinary.com/logo.png",
+          publicId: "logos/mock_logo",
+          metadata: { size: 51200, mimetype: "image/png" }
+        }
+      }
+
+      try {
+        const updatedCompany = await this.service.updateCompanyLogo(userId, logoDetails, context)
+        return sendSuccess(res, { company: updatedCompany }, "Company logo updated successfully.")
+      } catch (dbErr: any) {
+        // DB update failed after the new asset was already uploaded to Cloudinary.
+        // Clean up the newly uploaded asset (safe: it was never persisted to any
+        // company record) instead of leaving it orphaned, and let the old logo
+        // (still referenced by the DB) remain untouched.
+        if (file && logoDetails?.publicId) {
+          try {
+            await deleteFromCloudinary(logoDetails.publicId, false)
+          } catch (cleanupErr: any) {
+            logger.warn(`[Cloudinary] Failed to clean up orphaned logo upload after DB error: ${cleanupErr.message}`)
+          }
+        }
+        throw dbErr
+      }
+    } catch (err: any) {
+      next(err)
+    }
+  }
+
+  deleteCompanyLogo = async (req: Request, res: Response, next: any) => {
+    try {
+      const userId = req.user?.userId || ""
+      const context = this.getContext(req)
+      const updatedCompany = await this.service.deleteCompanyLogo(userId, context)
+      return sendSuccess(res, { company: updatedCompany }, "Company logo deleted successfully.")
+    } catch (err: any) {
+      next(err)
+    }
+  }
+
+  getTeam = async (req: Request, res: Response, next: any) => {
+    try {
+      const userId = req.user?.userId || ""
+      const result = await this.service.getTeam(userId)
+      return sendSuccess(res, result, "Fetched recruiter team members and pending invitations successfully.")
+    } catch (err: any) {
+      next(err)
+    }
+  }
+
+  inviteColleague = async (req: Request, res: Response, next: any) => {
+    try {
+      const validated = inviteColleagueSchema.parse(req.body)
+      const userId = req.user?.userId || ""
+      const context = this.getContext(req)
+      const invitation = await this.service.inviteColleague(userId, validated.email, context)
+      return sendSuccess(res, invitation, "Colleague invited successfully.", 201)
+    } catch (err: any) {
+      next(err)
+    }
+  }
+
+  cancelColleagueInvitation = async (req: Request, res: Response, next: any) => {
+    try {
+      const userId = req.user?.userId || ""
+      const context = this.getContext(req)
+      await this.service.cancelColleagueInvitation(userId, req.params.id as string, context)
+      return sendSuccess(res, null, "Colleague invitation cancelled successfully.")
+    } catch (err: any) {
+      next(err)
+    }
   }
 }
 

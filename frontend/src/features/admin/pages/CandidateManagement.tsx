@@ -1,7 +1,6 @@
 import { useState, useEffect } from "react"
 import {
   Search,
-  UserCheck,
   UserX,
   ShieldCheck,
   ShieldAlert,
@@ -20,14 +19,14 @@ interface CandidateUser {
   email: string
   role: string
   careerBreak: boolean
-  verified: boolean
+  hasResume: boolean
   status: string
 }
 
 export function CandidateManagement() {
   const [candidates, setCandidates] = useState<CandidateUser[]>([])
   const [searchQuery, setSearchQuery] = useState("")
-  const [filterMode, setFilterMode] = useState<"all" | "verified" | "pending" | "blocked">("all")
+  const [filterMode, setFilterMode] = useState<"all" | "hasResume" | "noResume" | "blocked">("all")
   const [loading, setLoading] = useState(true)
 
   const loadCandidates = async () => {
@@ -40,7 +39,7 @@ export function CandidateManagement() {
         email: u.email,
         role: u.candidateProfile?.title || "Professional",
         careerBreak: !!u.candidateProfile?.bio,
-        verified: !!u.candidateProfile?.resumeUrl,
+        hasResume: !!u.candidateProfile?.resumeUrl,
         status: u.status === "Active" ? "Active" : "Blocked"
       })))
     } catch (err) {
@@ -65,10 +64,6 @@ export function CandidateManagement() {
     }
   }
 
-  const handleToggleVerification = async (_userId: string) => {
-    alert("Candidate resume verification is not implemented dynamically on database model level.")
-  }
-
   // Filter logic
   const filteredCandidates = candidates.filter((c) => {
     const matchesSearch =
@@ -78,8 +73,8 @@ export function CandidateManagement() {
     
     if (!matchesSearch) return false
 
-    if (filterMode === "verified") return c.verified
-    if (filterMode === "pending") return !c.verified
+    if (filterMode === "hasResume") return c.hasResume
+    if (filterMode === "noResume") return !c.hasResume
     if (filterMode === "blocked") return c.status === "Blocked"
     return true
   })
@@ -112,17 +107,17 @@ export function CandidateManagement() {
       ),
     },
     {
-      header: "Verification",
+      header: "Resume Status",
       cell: (row) => (
-        row.verified ? (
-          <span className="inline-flex items-center gap-1 text-[10px] font-black text-emerald-700 bg-emerald-100/75 dark:bg-emerald-950/25 dark:text-emerald-355 px-2 py-0.5 rounded-full">
+        row.hasResume ? (
+          <span className="inline-flex items-center gap-1 text-[10px] font-black text-emerald-700 bg-emerald-100/75 dark:bg-emerald-950/25 dark:text-emerald-300 px-2 py-0.5 rounded-full">
             <ShieldCheck className="size-3" />
-            Credentials Verified
+            Resume Uploaded
           </span>
         ) : (
           <span className="inline-flex items-center gap-1 text-[10px] font-black text-amber-700 bg-amber-100/75 dark:bg-amber-955/25 dark:text-amber-300 px-2 py-0.5 rounded-full">
             <ShieldAlert className="size-3" />
-            Pending Review
+            No Resume
           </span>
         )
       ),
@@ -146,16 +141,6 @@ export function CandidateManagement() {
       className: "text-right",
       cell: (row) => (
         <div className="flex justify-end gap-1.5">
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-7 text-[10px] font-bold border-slate-200 hover:bg-slate-100"
-            onClick={() => handleToggleVerification(row.id)}
-          >
-            <UserCheck className="size-3 mr-0.5" />
-            {row.verified ? "Revoke Verification" : "Verify Resume"}
-          </Button>
-
           <Button
             size="sm"
             variant={row.status === "Active" ? "destructive" : "default"}
@@ -197,18 +182,18 @@ export function CandidateManagement() {
             All Candidates
           </Button>
           <Button
-            variant={filterMode === "verified" ? "default" : "outline"}
+            variant={filterMode === "hasResume" ? "default" : "outline"}
             className="h-8 text-[11px] font-bold"
-            onClick={() => setFilterMode("verified")}
+            onClick={() => setFilterMode("hasResume")}
           >
-            Verified Only
+            With Resume
           </Button>
           <Button
-            variant={filterMode === "pending" ? "default" : "outline"}
+            variant={filterMode === "noResume" ? "default" : "outline"}
             className="h-8 text-[11px] font-bold"
-            onClick={() => setFilterMode("pending")}
+            onClick={() => setFilterMode("noResume")}
           >
-            Pending Check
+            No Resume
           </Button>
           <Button
             variant={filterMode === "blocked" ? "default" : "outline"}

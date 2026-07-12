@@ -17,11 +17,15 @@ router.use(requireActiveUser)
 // General Admin Search & Dashboard metrics (Admin, Super Admin, Moderator, Support)
 router.get("/dashboard", controller.getDashboard)
 router.get("/health", controller.getSystemHealth)
+router.get("/storage/orphan-scan", requireSuperAdmin, controller.getOrphanAssetReport)
 router.get("/search", controller.globalSearch)
 
 // Audits & Reports (Admin, Super Admin)
 router.get("/reports", controller.getReports)
 router.get("/audits", controller.getAuditLogs)
+
+// Support ticket submission (Admin Help & Support page)
+router.post("/support-ticket", controller.submitSupportTicket)
 
 // Recruiter / Company Verification (Admin, Super Admin, Moderator)
 router.get("/companies", controller.listCompanies)
@@ -61,5 +65,8 @@ router.delete("/feature-flags/:id", requireSuperAdmin, controller.deleteFeatureF
 router.get("/settings", controller.getAdminSettings)
 router.put("/settings", controller.updateAdminSettings)
 router.get("/notifications", controller.getAdminNotifications)
+router.put("/notifications/read-all", controller.markAllAdminNotificationsRead)
+router.put("/notifications/:id/read", controller.markAdminNotificationRead)
+router.delete("/notifications/:id", controller.deleteAdminNotification)
 
 export default router

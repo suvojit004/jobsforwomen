@@ -49,6 +49,8 @@ export function FeatureConfigs() {
 
   const [saving, setSaving] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
+  const [saveSuccess, setSaveSuccess] = useState(false)
+  const [saveError, setSaveError] = useState("")
 
   useEffect(() => {
     async function loadFlags() {
@@ -198,12 +200,34 @@ export function FeatureConfigs() {
     }
   }
 
-  const handleSaveAll = () => {
+  // Each toggle already persists immediately via handleToggle's real
+  // AdminApi.updateFeatureFlag/createFeatureFlag calls above, so there is
+  // nothing left to "propagate" here. This used to be a pure setTimeout that
+  // always claimed success regardless of what actually happened. Instead we
+  // re-fetch the flags from the server to confirm they're really in sync,
+  // and only report success if that real check passes.
+  const handleSaveAll = async () => {
     setSaving(true)
-    setTimeout(() => {
+    setSaveError("")
+    try {
+      const list = await AdminApi.getFeatureFlags()
+      setFlags((prev) => {
+        const mappedFlags = { ...prev }
+        list.forEach((f: any) => {
+          if (f.key in mappedFlags) {
+            mappedFlags[f.key as FeatureKey] = !!f.enabled
+          }
+        })
+        return mappedFlags
+      })
+      setSaveSuccess(true)
+      setTimeout(() => setSaveSuccess(false), 3000)
+    } catch (err) {
+      console.error("Failed to confirm feature configuration sync", err)
+      setSaveError("Couldn't confirm configuration sync with the server. Please try again.")
+    } finally {
       setSaving(false)
-      alert("Feature configurations propagated to API nodes successfully!")
-    }, 1000)
+    }
   }
 
   if (isLoading) {
@@ -222,6 +246,14 @@ export function FeatureConfigs() {
           <p className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">
             Globally configure active application modules, database syncs, experimental AI scripts, and communication flows.
           </p>
+          {saveSuccess && (
+            <p className="mt-1.5 text-xs font-bold text-emerald-600 dark:text-emerald-400">
+              Configuration sync confirmed with the server.
+            </p>
+          )}
+          {saveError && (
+            <p className="mt-1.5 text-xs font-bold text-red-600 dark:text-red-400">{saveError}</p>
+          )}
         </div>
         <div className="shrink-0">
           <Button
@@ -230,7 +262,7 @@ export function FeatureConfigs() {
             disabled={saving}
             className="h-8 text-xs font-black bg-[#6B2C91] hover:bg-[#5a237b] text-white dark:bg-pink-650 dark:hover:bg-pink-700"
           >
-            {saving ? "Propagating Configs..." : "Save Feature Configurations"}
+            {saving ? "Confirming Sync..." : "Confirm Configuration Sync"}
           </Button>
         </div>
       </div>

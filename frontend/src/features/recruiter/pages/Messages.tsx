@@ -4,7 +4,6 @@ import {
   Search,
   Send,
   ArrowLeft,
-  FileText,
   Sparkles,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -31,8 +30,16 @@ interface RecruiterConversation {
 
 import { RecruiterApi } from "../services/recruiterApi"
 import { getSocket } from "@/api/socket"
+import { useAuth } from "@/hooks/useAuth"
 
 export function Messages() {
+  const { user } = useAuth()
+  // The real signed-in user id, used to tell "my" messages apart from the
+  // candidate's. Previously this compared against
+  // localStorage.getItem("user_id"), a key nothing in the app ever sets --
+  // so it was always null, and every message (including the recruiter's own)
+  // was misattributed to the candidate.
+  const currentUserId = user?.id
   const [conversations, setConversations] = useState<RecruiterConversation[]>([])
   const [activeId, setActiveId] = useState<string>("")
   const [inputText, setInputText] = useState("")
@@ -88,7 +95,7 @@ export function Messages() {
         const msgs = await RecruiterApi.getMessages(activeId)
         const formattedMsgs: ChatMessage[] = msgs.map((m: any) => ({
           id: m.id,
-          sender: m.senderId === localStorage.getItem("user_id") ? "recruiter" : "candidate",
+          sender: m.senderId === currentUserId ? "recruiter" : "candidate",
           text: m.content,
           timestamp: new Date(m.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
         }))
@@ -108,17 +115,21 @@ export function Messages() {
 
     socket.emit("join:conversation", { conversationId: activeId })
 
-    socket.on("typing", (data: { userId: string; isTyping: boolean }) => {
+    const handleTyping = (data: { conversationId: string; userId: string; isTyping: boolean }) => {
+      // The socket may still be subscribed to a previously-open conversation's
+      // room; only reflect typing state for the conversation currently on screen.
+      if (data.conversationId !== activeId) return
       setIsTyping(data.isTyping)
-    })
+    }
 
-    socket.on("notification", (data: any) => {
+    const handleNotification = (data: any) => {
       if (data.type === "message" || data.type === "MESSAGE") {
+        if (data.conversationId && data.conversationId !== activeId) return
         async function reloadMessages() {
           const msgs = await RecruiterApi.getMessages(activeId)
           const formattedMsgs: ChatMessage[] = msgs.map((m: any) => ({
             id: m.id,
-            sender: m.senderId === localStorage.getItem("user_id") ? "recruiter" : "candidate",
+            sender: m.senderId === currentUserId ? "recruiter" : "candidate",
             text: m.content,
             timestamp: new Date(m.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
           }))
@@ -128,11 +139,15 @@ export function Messages() {
         }
         reloadMessages()
       }
-    })
+    }
+
+    socket.on("typing", handleTyping)
+    socket.on("notification", handleNotification)
 
     return () => {
-      socket.off("typing")
-      socket.off("notification")
+      socket.off("typing", handleTyping)
+      socket.off("notification", handleNotification)
+      socket.emit("leave:conversation", { conversationId: activeId })
     }
   }, [activeId])
 
@@ -158,7 +173,7 @@ export function Messages() {
       const msgs = await RecruiterApi.getMessages(activeId)
       const formattedMsgs: ChatMessage[] = msgs.map((m: any) => ({
         id: m.id,
-        sender: m.senderId === localStorage.getItem("user_id") ? "recruiter" : "candidate",
+        sender: m.senderId === currentUserId ? "recruiter" : "candidate",
         text: m.content,
         timestamp: new Date(m.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
       }))
@@ -342,18 +357,6 @@ export function Messages() {
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="outline"
-                    className="h-8 text-[10px] font-bold gap-1 cursor-pointer"
-                    onClick={() =>
-                      window.open(`/recruiter/applicants/${activeConversation.id === "conv-priya" ? "application-1" : activeConversation.id}`, "_blank")
-                    }
-                  >
-                    <FileText className="size-3.5" />
-                    Inspect Resume
-                  </Button>
-                </div>
               </div>
 
               {/* Message Thread area */}

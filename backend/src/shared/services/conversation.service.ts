@@ -1,4 +1,6 @@
 import prisma from "../database/db"
+import { sendRealTimeNotification } from "../socket/socket"
+import { logger } from "../utils/logger"
 
 export class ConversationService {
   static async getConversations(userId: string) {
@@ -57,12 +59,35 @@ export class ConversationService {
       throw new Error("Forbidden: Access denied")
     }
 
-    return prisma.message.create({
+    const message = await prisma.message.create({
       data: {
         conversationId,
         senderId,
         content,
       },
     })
+
+    // Push a real-time signal to every other participant so open chat
+    // windows refresh without waiting for a manual reload. This does not
+    // create a persisted Notification row -- chat has its own inbox, and
+    // every message doesn't need a bell entry.
+    try {
+      const others = await prisma.conversationParticipant.findMany({
+        where: { conversationId, userId: { not: senderId } },
+        select: { userId: true },
+      })
+      for (const { userId } of others) {
+        sendRealTimeNotification(userId, {
+          type: "message",
+          conversationId,
+          messageId: message.id,
+          senderId,
+        })
+      }
+    } catch (err: any) {
+      logger.warn(`[ConversationService] Real-time message emit failed: ${err.message}`)
+    }
+
+    return message
   }
 }

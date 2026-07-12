@@ -37,6 +37,9 @@ import { RecruiterApi } from "../services/recruiterApi"
 export function CompanyProfile() {
   const [successMsg, setSuccessMsg] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
+  const [logoUrl, setLogoUrl] = useState<string | null>(null)
+  const [isUploading, setIsUploading] = useState(false)
+  const [logoError, setLogoError] = useState<string | null>(null)
 
   const {
     register,
@@ -60,12 +63,60 @@ export function CompanyProfile() {
     },
   })
 
+  const handleLogoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    const allowedMimeTypes = ["image/jpeg", "image/png", "image/gif", "image/webp"]
+    if (!allowedMimeTypes.includes(file.type)) {
+      setLogoError("Invalid file type. Only JPEG, PNG, GIF, and WEBP are allowed.")
+      return
+    }
+
+    if (file.size > 2 * 1024 * 1024) {
+      setLogoError("File size exceeds 2 MB limit.")
+      return
+    }
+
+    setLogoError(null)
+    setIsUploading(true)
+
+    try {
+      const res = await RecruiterApi.uploadCompanyLogo(file)
+      if (res && res.success && res.data?.company) {
+        setLogoUrl(res.data.company.logoUrl || null)
+      } else {
+        setLogoError("Failed to upload logo image.")
+      }
+    } catch (err: any) {
+      setLogoError(err.message || "An error occurred during logo upload.")
+    } finally {
+      setIsUploading(false)
+    }
+  }
+
+  const handleLogoDelete = async () => {
+    setIsUploading(true)
+    try {
+      const res = await RecruiterApi.deleteCompanyLogo()
+      if (res && res.success) {
+        setLogoUrl(null)
+        setLogoError(null)
+      }
+    } catch (err: any) {
+      setLogoError(err.message || "Failed to remove logo.")
+    } finally {
+      setIsUploading(false)
+    }
+  }
+
   useEffect(() => {
     async function loadCompany() {
       try {
         const dash = await RecruiterApi.getDashboard()
         const comp = dash?.company || dash?.recruiterProfile?.company
         if (comp) {
+          setLogoUrl(comp.logoUrl || null)
           const perks = comp.claimedPerks || []
           reset({
             name: comp.name || "",
@@ -140,6 +191,53 @@ export function CompanyProfile() {
 
       {/* Main Profile Form */}
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+        <DashboardCard className="p-6">
+          <div className="flex flex-col sm:flex-row items-center gap-6">
+            <div className="relative group shrink-0 size-24 rounded-2xl overflow-hidden border-2 border-dashed border-slate-200 dark:border-slate-850 bg-slate-50 dark:bg-slate-900 flex items-center justify-center">
+              {logoUrl ? (
+                <img src={logoUrl} alt="Company Logo" className="size-full object-contain" />
+              ) : (
+                <Building2 className="size-8 text-slate-350 dark:text-slate-600" />
+              )}
+              {isUploading && (
+                <div className="absolute inset-0 bg-white/75 dark:bg-black/75 flex items-center justify-center">
+                  <span className="size-5 border-2 border-slate-300 border-t-[#6B2C91] rounded-full animate-spin dark:border-slate-700 dark:border-t-pink-500" />
+                </div>
+              )}
+            </div>
+            <div className="space-y-2 text-center sm:text-left flex-1">
+              <h4 className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-wider">Company Logo</h4>
+              <p className="text-[10px] font-semibold text-slate-400 dark:text-slate-500">
+                Upload a PNG, JPEG, GIF or WEBP image. Max size 2 MB.
+              </p>
+              <div className="flex flex-wrap gap-2 justify-center sm:justify-start">
+                <label className="inline-flex items-center justify-center px-4 py-2 rounded-xl text-[11px] font-black text-white bg-[#6B2C91] hover:bg-[#5a237b] dark:bg-pink-650 dark:hover:bg-pink-700 cursor-pointer transition-colors shadow-sm select-none">
+                  Select Logo File
+                  <input
+                    type="file"
+                    accept="image/png, image/jpeg, image/gif, image/webp"
+                    className="hidden"
+                    onChange={handleLogoChange}
+                    disabled={isUploading}
+                  />
+                </label>
+                {logoUrl && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="h-8 rounded-xl text-[11px] font-black border-slate-200 text-slate-650 hover:text-red-500 dark:border-slate-800 dark:text-slate-400 cursor-pointer"
+                    onClick={handleLogoDelete}
+                    disabled={isUploading}
+                  >
+                    Remove Logo
+                  </Button>
+                )}
+              </div>
+              {logoError && <p className="text-[10px] font-bold text-red-500 mt-1">{logoError}</p>}
+            </div>
+          </div>
+        </DashboardCard>
+
         <DashboardCard className="p-6 space-y-6">
           <h3 className="text-xs font-black text-slate-900 uppercase dark:text-white border-b border-slate-100 pb-2 dark:border-slate-800">
             Basic Information

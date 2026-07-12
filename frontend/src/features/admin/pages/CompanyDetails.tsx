@@ -12,6 +12,14 @@ import {
 } from "lucide-react"
 import { DashboardCard } from "@/components/shared/DashboardCard"
 import { AdminApi } from "../services/adminApi"
+import { cn } from "@/lib/utils"
+
+interface CompanyRecruiterContact {
+  name: string
+  email: string
+  phone: string | null
+  verified: boolean
+}
 
 interface AdminCompany {
   id: string
@@ -21,6 +29,8 @@ interface AdminCompany {
   industry: string
   claimedPerks: string[]
   status: string
+  recruiters: CompanyRecruiterContact[]
+  hiredCount: number
 }
 
 interface AdminJob {
@@ -50,17 +60,24 @@ export function CompanyDetails() {
         const formattedComps = (comps || []).map((c: any) => ({
           id: c.id,
           name: c.name,
-          website: c.website || "www.example.com",
-          location: c.location || "Not Specified",
-          industry: c.industry?.name || "Software & Technology",
-          claimedPerks: c.claimedPerks || ["Flexible Hours", "Menstrual Leave Support"],
-          status: c.status
+          website: c.website || "Not specified",
+          location: c.location || "Not specified",
+          industry: c.industry?.name || "Not specified",
+          claimedPerks: (c.benefits || []).map((b: any) => b.benefitName),
+          status: c.status,
+          recruiters: (c.recruiters || []).map((r: any) => ({
+            name: r.fullName || r.user?.email?.split("@")[0] || "Unknown",
+            email: r.user?.email || "",
+            phone: r.phone || null,
+            verified: !!r.verified,
+          })),
+          hiredCount: c.hiredCount || 0,
         }))
         setCompanies(formattedComps)
         setAllJobs((jobs || []).map((j: any) => ({
           id: j.id,
           title: j.title,
-          company: j.company?.name || "TechNova Solutions",
+          company: j.company?.name || "Unknown Company",
           location: j.location,
           salary: j.salaryDisplay || "N/A",
           applicantsCount: j.applicants || 0,
@@ -83,13 +100,9 @@ export function CompanyDetails() {
     (j) => j.company.toLowerCase() === selectedCompany?.name.toLowerCase()
   )
 
-  // Mock Recruiter Info
-  const recruiterInfo = {
-    name: "Aarti Deshmukh",
-    email: "aarti.d@corp-onboarding.in",
-    role: "Senior Lead Talent Acquisition",
-    phone: "+91 98765 43210",
-  }
+  // Real recruiter contacts for the selected company (RecruiterProfile rows),
+  // not a fixed name shown for every company regardless of selection.
+  const companyRecruiters = selectedCompany?.recruiters || []
 
   return (
     <div className="space-y-6 select-none animate-fadeIn">
@@ -249,25 +262,42 @@ export function CompanyDetails() {
             <DashboardCard className="p-5 space-y-4">
               <h3 className="text-xs font-black text-slate-900 uppercase tracking-widest dark:text-white flex items-center gap-1.5 border-b border-slate-100 pb-3 dark:border-slate-800">
                 <Users className="size-4 text-[#6B2C91]" />
-                Primary Talent Representative
+                Talent Representatives ({companyRecruiters.length})
               </h3>
-              <div className="space-y-3 text-xs font-semibold">
-                <div className="space-y-0.5">
-                  <p className="text-[10px] font-black uppercase text-slate-400">Full Name</p>
-                  <p className="text-slate-905 dark:text-white font-bold">{recruiterInfo.name}</p>
+              {companyRecruiters.length === 0 ? (
+                <p className="text-xs font-semibold text-slate-400 dark:text-slate-500 py-2">
+                  No recruiters have registered under this company yet.
+                </p>
+              ) : (
+                <div className="space-y-4 divide-y divide-slate-100 dark:divide-slate-800">
+                  {companyRecruiters.map((r, i) => (
+                    <div key={i} className={cn("space-y-3 text-xs font-semibold", i > 0 && "pt-4")}>
+                      <div className="space-y-0.5">
+                        <p className="text-[10px] font-black uppercase text-slate-400">Full Name</p>
+                        <p className="text-slate-905 dark:text-white font-bold">
+                          {r.name}
+                          {r.verified && (
+                            <span className="ml-1.5 text-[9px] font-black text-emerald-600 dark:text-emerald-400 uppercase align-middle">Verified</span>
+                          )}
+                        </p>
+                      </div>
+                      <div className="space-y-0.5">
+                        <p className="text-[10px] font-black uppercase text-slate-400">Email Address</p>
+                        <a href={`mailto:${r.email}`} className="text-[#6B2C91] dark:text-pink-300 hover:underline flex items-center gap-1 mt-0.5">
+                          <Mail className="size-3.5" />
+                          {r.email}
+                        </a>
+                      </div>
+                      {r.phone && (
+                        <div className="space-y-0.5">
+                          <p className="text-[10px] font-black uppercase text-slate-400">Phone</p>
+                          <p className="text-slate-505 dark:text-slate-400">{r.phone}</p>
+                        </div>
+                      )}
+                    </div>
+                  ))}
                 </div>
-                <div className="space-y-0.5">
-                  <p className="text-[10px] font-black uppercase text-slate-400">Company Designation</p>
-                  <p className="text-slate-505 dark:text-slate-400">{recruiterInfo.role}</p>
-                </div>
-                <div className="space-y-0.5">
-                  <p className="text-[10px] font-black uppercase text-slate-400">Email Address</p>
-                  <a href={`mailto:${recruiterInfo.email}`} className="text-[#6B2C91] dark:text-pink-300 hover:underline flex items-center gap-1 mt-0.5">
-                    <Mail className="size-3.5" />
-                    {recruiterInfo.email}
-                  </a>
-                </div>
-              </div>
+              )}
             </DashboardCard>
 
             {/* Statistics telemetry card */}
@@ -281,7 +311,7 @@ export function CompanyDetails() {
                   <p className="text-[9px] font-black uppercase text-slate-400 mt-1">Open Positions</p>
                 </div>
                 <div className="p-3 bg-slate-50 rounded-xl dark:bg-slate-950/20">
-                  <p className="text-xl font-black text-[#6B2C91] dark:text-pink-300">14</p>
+                  <p className="text-xl font-black text-[#6B2C91] dark:text-pink-300">{selectedCompany?.hiredCount ?? 0}</p>
                   <p className="text-[9px] font-black uppercase text-slate-400 mt-1">Total Hires</p>
                 </div>
               </div>

@@ -155,6 +155,7 @@ const APPLICATION_STATUS_MAP: Record<string, DisplayApplicationStatus> = {
   Reviewed: "Under Review",
   Shortlisted: "Under Review",
   InterviewScheduled: "Interview Scheduled",
+  OfferReleased: "Offer Released",
   Rejected: "Rejected",
   Hired: "Selected",
 }
@@ -163,6 +164,7 @@ type DisplayApplicationStatus =
   | "Applied"
   | "Under Review"
   | "Interview Scheduled"
+  | "Offer Released"
   | "Selected"
   | "Rejected"
 
@@ -174,6 +176,7 @@ export interface DisplayApplication {
   appliedDate: string
   status: DisplayApplicationStatus
   interviewDate?: string
+  offerDetails?: string
   recruiter?: string
 }
 
@@ -184,13 +187,19 @@ export interface DisplayApplication {
  */
 export function mapApiApplication(app: any): DisplayApplication {
   const companyName = app.job?.company?.name || "Unknown Company"
+  const latestInterview = (app.interviews || [])[0]
   return {
     id: app.id,
     company: companyName,
     companyCode: codeForCompany(companyName),
     job: app.job?.title || "Untitled Role",
     appliedDate: formatDate(app.appliedOn),
-    status: APPLICATION_STATUS_MAP[app.status] || "Applied",
+    // Falling back to the raw backend value (rather than "Applied") means an
+    // unmapped future status is at least visible/debuggable instead of lying
+    // about the application's real state.
+    status: APPLICATION_STATUS_MAP[app.status] || (app.status as DisplayApplicationStatus),
+    interviewDate: latestInterview?.scheduledAt ? formatDate(latestInterview.scheduledAt) : undefined,
+    offerDetails: app.offerDetails || undefined,
   }
 }
 

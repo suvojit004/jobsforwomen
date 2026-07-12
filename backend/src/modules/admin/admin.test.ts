@@ -56,11 +56,48 @@ jest.mock("../../shared/utils/redis", () => {
     set: jest.fn(),
     del: jest.fn(),
     keys: jest.fn(),
+    // getSystemHealth() does a real readiness check (redis.status === "ready")
+    // and a real PING round-trip rather than a hardcoded "UP" -- the mock
+    // needs to simulate a healthy, connected client for that check to pass.
+    status: "ready",
+    ping: jest.fn().mockResolvedValue("PONG"),
   }
   return {
     ...localRedisMock,
     redis: localRedisMock,
     default: localRedisMock,
+    __esModule: true,
+  }
+})
+
+// getSystemHealth() also performs a real SMTP verify() and a real Cloudinary
+// Admin API ping. Both would otherwise make real outbound network calls
+// during tests (slow, flaky, and dependent on live credentials), so only
+// those two specific functions are stubbed here -- everything else these
+// modules export keeps its real implementation via jest.requireActual.
+jest.mock("../../shared/utils/email", () => {
+  const actual = jest.requireActual("../../shared/utils/email")
+  return {
+    ...actual,
+    verifyEmailTransport: jest.fn().mockResolvedValue(true),
+    // __esModule must be re-declared explicitly: `Object.defineProperty(exports,
+    // "__esModule", ...)` in the real compiled output defines it as
+    // non-enumerable, so `{...actual}` silently drops it. Without it, TS's
+    // `__importDefault` interop helper can't tell this mock is an ES module
+    // and wraps the WHOLE mocked object as `{ default: mockedObject }`
+    // instead of preserving the real `default` (the EmailService class) --
+    // which is exactly what broke every `EmailService.sendXyzEmail(...)` call
+    // in queue.ts ("email_1.default.sendXyzEmail is not a function") the
+    // first time this file mocked this module.
+    __esModule: true,
+  }
+})
+
+jest.mock("../../shared/utils/cloudinary", () => {
+  const actual = jest.requireActual("../../shared/utils/cloudinary")
+  return {
+    ...actual,
+    verifyCloudinaryConnection: jest.fn().mockResolvedValue(true),
     __esModule: true,
   }
 })
@@ -232,6 +269,9 @@ describe("Admin Module Integration Tests (Phase 7)", () => {
       expect(res.body.success).toBe(true)
       expect(res.body.data.database).toBe("UP")
       expect(res.body.data.redis).toBe("UP")
+      expect(res.body.data.email).toBe("UP")
+      expect(res.body.data.storage).toBe("UP")
+      expect(res.body.data.socketio).toBeDefined()
       expect(res.body.data.apiUptime).toBeDefined()
     })
   })

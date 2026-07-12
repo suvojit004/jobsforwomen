@@ -21,6 +21,21 @@ export const emailMetrics = {
   bounced: 0,
 }
 
+/**
+ * Real SMTP connectivity check (used by admin system health), as opposed to a
+ * hardcoded "UP". Verifies the transporter can actually authenticate against
+ * the configured SMTP host.
+ */
+export async function verifyEmailTransport(): Promise<boolean> {
+  try {
+    await transporter.verify()
+    return true
+  } catch (err: any) {
+    logger.warn(`[EmailService] SMTP connectivity check failed: ${err.message}`)
+    return false
+  }
+}
+
 export class EmailService {
   /**
    * Sends email containing HTML and auto-generated Plain-text fallback.
@@ -89,6 +104,29 @@ export class EmailService {
   static async sendWeeklyDigest(to: string, recipientName: string, jobs: Array<{ title: string; companyName: string; location: string }>): Promise<boolean> {
     const html = EmailTemplates.weeklyDigest({ recipientName, jobsCount: jobs.length, jobs })
     return this.sendMail(to, "JobsForWomen Weekly Highlights Digest", html)
+  }
+
+  static async sendInterviewScheduledEmail(
+    to: string,
+    recipientName: string,
+    jobTitle: string,
+    companyName: string,
+    scheduledAt: string,
+    location?: string
+  ): Promise<boolean> {
+    const html = EmailTemplates.interviewScheduled({ recipientName, jobTitle, companyName, scheduledAt, location })
+    return this.sendMail(to, `Interview Scheduled: ${jobTitle} at ${companyName}`, html)
+  }
+
+  static async sendOfferReleasedEmail(
+    to: string,
+    recipientName: string,
+    jobTitle: string,
+    companyName: string,
+    offerDetails: string
+  ): Promise<boolean> {
+    const html = EmailTemplates.offerReleased({ recipientName, jobTitle, companyName, offerDetails })
+    return this.sendMail(to, `You've Received an Offer: ${jobTitle} at ${companyName}`, html)
   }
 }
 

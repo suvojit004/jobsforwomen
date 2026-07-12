@@ -11,6 +11,8 @@ import {
   forgotPasswordSchema,
   resetPasswordSchema,
   acceptInvitationSchema,
+  changePasswordSchema,
+  deleteAccountSchema,
 } from "./auth.validator"
 
 export class AuthController {
@@ -229,6 +231,26 @@ export class AuthController {
     const validated = resetPasswordSchema.parse(req.body)
     await this.authService.resetPassword(validated.token, validated.password)
     return sendSuccess(res, null, "Password reset completed successfully.")
+  }
+
+  changePassword = async (req: Request, res: Response) => {
+    const user = req.user
+    if (!user) {
+      return sendError(res, "Authentication required", null, 401)
+    }
+    const validated = changePasswordSchema.parse(req.body)
+    await this.authService.changePassword(user.userId, validated.currentPassword, validated.newPassword)
+    return sendSuccess(res, null, "Password changed successfully.")
+  }
+
+  deleteAccount = async (req: Request, res: Response) => {
+    const user = req.user
+    if (!user) {
+      return sendError(res, "Authentication required", null, 401)
+    }
+    const validated = deleteAccountSchema.parse(req.body)
+    await this.authService.deleteOwnAccount(user.userId, validated.password)
+    return sendSuccess(res, null, "Account deleted successfully.")
   }
 
   initiateGoogleOAuth = (req: Request, res: Response) => {

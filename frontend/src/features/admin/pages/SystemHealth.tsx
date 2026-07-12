@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import {
   Activity,
   Clock,
@@ -10,86 +10,117 @@ import {
 } from "lucide-react"
 import { DashboardCard } from "@/components/shared/DashboardCard"
 import { Button } from "@/components/ui/button"
+import { AdminApi } from "../services/adminApi"
 
 interface ServiceHealth {
   name: string
-  status: "Healthy" | "Degraded" | "Down"
-  latency: string
-  uptime: string
+  status: "UP" | "DOWN" | "UNKNOWN"
   details: string
   icon: React.ComponentType<{ className?: string }>
 }
 
+function formatUptime(totalSeconds: number) {
+  const days = Math.floor(totalSeconds / 86400)
+  const hours = Math.floor((totalSeconds % 86400) / 3600)
+  const minutes = Math.floor((totalSeconds % 3600) / 60)
+  if (days > 0) return `${days}d ${hours}h`
+  if (hours > 0) return `${hours}h ${minutes}m`
+  return `${minutes}m`
+}
+
+function formatBytes(bytes: number) {
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+}
+
 export function SystemHealth() {
   const [refreshing, setRefreshing] = useState(false)
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState("")
   const [lastCheck, setLastCheck] = useState("")
+  const [health, setHealth] = useState<any>(null)
 
-  const getTimestamp = () => {
-    return new Date().toLocaleTimeString()
-  }
-
-  useEffect(() => {
-    setLastCheck(getTimestamp())
+  const load = useCallback(async () => {
+    setError("")
+    try {
+      const data = await AdminApi.getHealth()
+      setHealth(data)
+      setLastCheck(new Date().toLocaleTimeString())
+    } catch (err) {
+      console.error("Failed to load system health", err)
+      setError("Failed to fetch live system health from the server.")
+    }
   }, [])
 
-  const handleRefresh = () => {
+  useEffect(() => {
+    async function initialLoad() {
+      await load()
+      setIsLoading(false)
+    }
+    initialLoad()
+  }, [load])
+
+  const handleRefresh = async () => {
     setRefreshing(true)
-    setTimeout(() => {
-      setRefreshing(false)
-      setLastCheck(getTimestamp())
-    }, 1000)
+    await load()
+    setRefreshing(false)
   }
 
-  const services: ServiceHealth[] = [
-    {
-      name: "Core API Gateway",
-      status: "Healthy",
-      latency: "42 ms",
-      uptime: "99.92%",
-      details: "Load average: 1.45. Version v1.2.0 active.",
-      icon: Zap,
-    },
-    {
-      name: "PostgreSQL Database",
-      status: "Healthy",
-      latency: "6 ms",
-      uptime: "99.98%",
-      details: "Connections: 45/200 active. Buffer hit rate: 99.8%.",
-      icon: Database,
-    },
-    {
-      name: "Redis Cache Store",
-      status: "Healthy",
-      latency: "1 ms",
-      uptime: "100.00%",
-      details: "Memory utilization: 124MB / 512MB (24%). Key eviction rate: 0/s.",
-      icon: HardDrive,
-    },
-    {
-      name: "SMTP Email Server",
-      status: "Healthy",
-      latency: "420 ms",
-      uptime: "99.85%",
-      details: "Send queue: 0 pending. Daily relay usage: 1,420 / 10,000 sent.",
-      icon: Mail,
-    },
-    {
-      name: "Socket.IO Real-time Engine",
-      status: "Healthy",
-      latency: "12 ms",
-      uptime: "99.90%",
-      details: "Active connections: 1,242 WebSocket sessions. Message rate: 45/s.",
-      icon: Activity,
-    },
-    {
-      name: "Object Storage Bucket",
-      status: "Healthy",
-      latency: "115 ms",
-      uptime: "99.99%",
-      details: "Total files: 142k (Resume PDFs, images). Storage size: 1.2 TB / 10 TB.",
-      icon: HardDrive,
-    },
-  ]
+  // Real service statuses reported by GET /api/v1/admins/health, which
+  // actually pings the database, Redis, SMTP transport, Cloudinary, and
+  // checks whether Socket.IO was really initialized -- as opposed to the
+  // previous version of this page, which was a fully hardcoded list that
+  // always showed every service as "Healthy" with fabricated latency and
+  // uptime numbers, regardless of real system state.
+  const services: ServiceHealth[] = health
+    ? [
+        {
+          name: "PostgreSQL Database",
+          status: health.database || "UNKNOWN",
+          details: "Live SELECT 1 connectivity check against the configured DATABASE_URL.",
+          icon: Database,
+        },
+        {
+          name: "Redis Cache Store",
+          status: health.redis || "UNKNOWN",
+          details: "Real PING round-trip against the configured Redis connection.",
+          icon: HardDrive,
+        },
+        {
+          name: "SMTP Email Server",
+          status: health.email || "UNKNOWN",
+          details: "Live SMTP transporter.verify() against the configured mail host.",
+          icon: Mail,
+        },
+        {
+          name: "Object Storage (Cloudinary)",
+          status: health.storage || "UNKNOWN",
+          details: "Live connectivity ping against the configured Cloudinary account.",
+          icon: HardDrive,
+        },
+        {
+          name: "Socket.IO Real-time Engine",
+          status: health.socketio || "UNKNOWN",
+          details: "Reports UP only if the server actually initialized the Socket.IO instance at boot.",
+          icon: Activity,
+        },
+        {
+          name: "Core API Process",
+          status: "UP",
+          details: `Node process uptime: ${formatUptime(health.apiUptime || 0)}.`,
+          icon: Zap,
+        },
+      ]
+    : []
+
+  const statusStyles: Record<string, string> = {
+    UP: "text-emerald-700 bg-emerald-100/60 dark:bg-emerald-950/30 dark:text-emerald-350",
+    DOWN: "text-red-700 bg-red-100/60 dark:bg-red-950/30 dark:text-red-350",
+    UNKNOWN: "text-slate-600 bg-slate-100/60 dark:bg-slate-800 dark:text-slate-350",
+  }
+
+  if (isLoading) {
+    return <div className="p-8 text-center text-sm font-bold text-[#6B2C91]">Checking system health...</div>
+  }
 
   return (
     <div className="space-y-6 select-none animate-fadeIn">
@@ -101,7 +132,7 @@ export function SystemHealth() {
             Infrastructure Status
           </h1>
           <p className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">
-            Real-time status overview, latency charts, and uptime check indices for platform systems.
+            Live connectivity checks against the database, cache, mail, storage, and real-time systems.
           </p>
         </div>
         <div className="flex items-center gap-3 shrink-0">
@@ -121,6 +152,12 @@ export function SystemHealth() {
         </div>
       </div>
 
+      {error && (
+        <div className="rounded-lg border border-pink-200 bg-pink-50 px-4 py-2.5 text-xs font-bold text-pink-700 dark:border-pink-900 dark:bg-pink-950/30 dark:text-pink-300">
+          {error}
+        </div>
+      )}
+
       {/* Health Grid */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         {services.map((svc) => (
@@ -128,8 +165,7 @@ export function SystemHealth() {
             key={svc.name}
             className="p-5 flex flex-col justify-between space-y-4 relative overflow-hidden"
           >
-            {/* Heartbeat pulse overlay */}
-            <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/5 dark:bg-emerald-500/2 rounded-full -translate-y-16 translate-x-16" />
+            <div className={`absolute top-0 right-0 w-32 h-32 rounded-full -translate-y-16 translate-x-16 ${svc.status === "UP" ? "bg-emerald-500/5 dark:bg-emerald-500/2" : "bg-red-500/5 dark:bg-red-500/2"}`} />
 
             <div className="flex items-start justify-between">
               <div className="space-y-1">
@@ -141,22 +177,10 @@ export function SystemHealth() {
                   {svc.name}
                 </h3>
               </div>
-              <span className="inline-flex items-center gap-1 text-[9px] font-black text-emerald-700 bg-emerald-100/60 dark:bg-emerald-950/30 dark:text-emerald-350 px-2 py-0.5 rounded-full relative">
-                <span className="size-1.5 rounded-full bg-emerald-500 motion-safe:animate-ping absolute left-2" />
-                <span className="size-1.5 rounded-full bg-emerald-500" />
+              <span className={`inline-flex items-center gap-1 text-[9px] font-black px-2 py-0.5 rounded-full relative ${statusStyles[svc.status]}`}>
+                <span className={`size-1.5 rounded-full ${svc.status === "UP" ? "bg-emerald-500" : svc.status === "DOWN" ? "bg-red-500" : "bg-slate-400"}`} />
                 {svc.status}
               </span>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4 border-t border-b border-slate-100 py-3 dark:border-slate-850">
-              <div className="space-y-0.5">
-                <p className="text-[9px] font-black text-slate-450 uppercase dark:text-slate-500">Latency</p>
-                <p className="text-sm font-black text-slate-900 dark:text-white">{svc.latency}</p>
-              </div>
-              <div className="space-y-0.5">
-                <p className="text-[9px] font-black text-slate-450 uppercase dark:text-slate-500">Uptime Check</p>
-                <p className="text-sm font-black text-slate-900 dark:text-white">{svc.uptime}</p>
-              </div>
             </div>
 
             <div>
@@ -168,46 +192,34 @@ export function SystemHealth() {
         ))}
       </div>
 
-      {/* Platform Load Overview */}
-      <DashboardCard className="p-5 space-y-4">
-        <div className="border-b border-slate-100 pb-3 dark:border-slate-800">
-          <h4 className="text-xs font-black text-slate-900 uppercase dark:text-white">
-            System Operations Threshold logs
-          </h4>
-        </div>
-        <div className="grid gap-6 md:grid-cols-3 text-xs">
-          <div className="p-4 border border-slate-150 rounded-xl dark:border-slate-850 space-y-2">
-            <h5 className="font-bold text-slate-900 dark:text-white">Server CPU utilization</h5>
-            <div className="h-2 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
-              <div className="h-full bg-[#6B2C91] dark:bg-pink-600 rounded-full" style={{ width: "34%" }} />
+      {/* Process Resource Usage */}
+      {health && (
+        <DashboardCard className="p-5 space-y-4">
+          <div className="border-b border-slate-100 pb-3 dark:border-slate-800">
+            <h4 className="text-xs font-black text-slate-900 uppercase dark:text-white">
+              API Process Resource Usage
+            </h4>
+          </div>
+          <div className="grid gap-6 md:grid-cols-3 text-xs">
+            <div className="p-4 border border-slate-150 rounded-xl dark:border-slate-850 space-y-2">
+              <h5 className="font-bold text-slate-900 dark:text-white">Process Uptime</h5>
+              <p className="text-lg font-black text-slate-900 dark:text-white">{formatUptime(health.apiUptime || 0)}</p>
             </div>
-            <div className="flex justify-between text-[10px] font-bold text-slate-500">
-              <span>Usage: 34%</span>
-              <span>Uptime: 14 Days</span>
+            <div className="p-4 border border-slate-150 rounded-xl dark:border-slate-850 space-y-2">
+              <h5 className="font-bold text-slate-900 dark:text-white">Heap Memory Used</h5>
+              <p className="text-lg font-black text-slate-900 dark:text-white">
+                {health.memoryUsage ? formatBytes(health.memoryUsage.heapUsed) : "N/A"}
+              </p>
+            </div>
+            <div className="p-4 border border-slate-150 rounded-xl dark:border-slate-850 space-y-2">
+              <h5 className="font-bold text-slate-900 dark:text-white">RSS Memory</h5>
+              <p className="text-lg font-black text-slate-900 dark:text-white">
+                {health.memoryUsage ? formatBytes(health.memoryUsage.rss) : "N/A"}
+              </p>
             </div>
           </div>
-          <div className="p-4 border border-slate-150 rounded-xl dark:border-slate-850 space-y-2">
-            <h5 className="font-bold text-slate-900 dark:text-white">API Network Traffic</h5>
-            <div className="h-2 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
-              <div className="h-full bg-blue-500 rounded-full" style={{ width: "62%" }} />
-            </div>
-            <div className="flex justify-between text-[10px] font-bold text-slate-500">
-              <span>Bandwidth: 142 Mbps</span>
-              <span>Capacity: 500 Mbps</span>
-            </div>
-          </div>
-          <div className="p-4 border border-slate-150 rounded-xl dark:border-slate-850 space-y-2">
-            <h5 className="font-bold text-slate-900 dark:text-white">Email Delivery Rates</h5>
-            <div className="h-2 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
-              <div className="h-full bg-emerald-500 rounded-full" style={{ width: "99%" }} />
-            </div>
-            <div className="flex justify-between text-[10px] font-bold text-slate-500">
-              <span>Delivered: 99.5%</span>
-              <span>Bounced: 0.5%</span>
-            </div>
-          </div>
-        </div>
-      </DashboardCard>
+        </DashboardCard>
+      )}
     </div>
   )
 }

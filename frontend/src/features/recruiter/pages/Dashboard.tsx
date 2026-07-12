@@ -86,23 +86,30 @@ export function Dashboard() {
           avatarLetters: a.name.split(" ").map((n: string) => n[0]).join("").slice(0, 2).toUpperCase()
         })))
 
-        const comp = dash?.company || dash?.recruiterProfile?.company
+        const comp = dash?.company
         if (comp) {
+          // "Menstrual Leave Champion" is a claimed CompanyBenefit that an
+          // admin verifies -- there is no such boolean field on Company
+          // itself, so it must be derived from the real benefits list rather
+          // than read from a field that doesn't exist (which always
+          // evaluated to false) or hardcoded to true (the old fallback path).
+          const championBenefit = (comp.benefits || []).find(
+            (b: any) => b.benefitName === "Menstrual Leave Champion"
+          )
           setCompany({
-            name: comp.name || "My Company",
-            website: comp.website || "www.example.com",
+            name: comp.name || "Unnamed Company",
+            website: comp.website || "Not specified",
             description: comp.description || "No description set yet.",
-            menstrualLeaveChampion: !!comp.menstrualLeaveChampion,
-            perks: comp.claimedPerks || ["Work-from-Home Policy", "Flexible Working Hours"]
+            menstrualLeaveChampion: !!championBenefit?.verified,
+            perks: (comp.benefits || []).map((b: any) => b.benefitName)
           })
         } else {
-          setCompany({
-            name: "TechNova Solutions",
-            website: "www.technova.com",
-            description: "We build innovative software solutions that empower businesses worldwide.",
-            menstrualLeaveChampion: true,
-            perks: ["Work-from-Home Policy", "Menstrual Leave Support", "Flexible Working Hours"]
-          })
+          // Honest empty state -- no company record found for this recruiter
+          // profile. Previously this branch fabricated a fake "TechNova
+          // Solutions" company and displayed it as if it were real, on every
+          // single dashboard load (the backend never actually sent a
+          // `company` field before this fix, so this branch always ran).
+          setCompany(null)
         }
       } catch (err) {
         console.error("Failed to load recruiter dashboard", err)
@@ -112,12 +119,6 @@ export function Dashboard() {
     }
     loadDashboard()
   }, [])
-
-  const handleToggleChampion = () => {
-    const nextVal = !company.menstrualLeaveChampion
-    setCompany((prev: any) => ({ ...prev, menstrualLeaveChampion: nextVal }))
-    alert("Champion status toggled! To submit official verification documents, please go to the Company tab.")
-  }
 
   const stats = [
     {
@@ -160,16 +161,10 @@ export function Dashboard() {
 
 
 
-  // Mock Recharts line chart dataset
-  const chartData = [
-    { name: "6 May", Applied: 12, Shortlisted: 4, Interviewing: 1, Offered: 0 },
-    { name: "7 May", Applied: 20, Shortlisted: 8, Interviewing: 3, Offered: 1 },
-    { name: "8 May", Applied: 28, Shortlisted: 10, Interviewing: 5, Offered: 2 },
-    { name: "9 May", Applied: 35, Shortlisted: 12, Interviewing: 7, Offered: 3 },
-    { name: "10 May", Applied: 40, Shortlisted: 14, Interviewing: 8, Offered: 3 },
-    { name: "11 May", Applied: 45, Shortlisted: 16, Interviewing: 9, Offered: 4 },
-    { name: "12 May", Applied: 48, Shortlisted: 18, Interviewing: 10, Offered: 4 },
-  ]
+  // Real 7-day application trend from the backend (Application rows grouped
+  // by day, computed in RecruiterService.getDashboard). Empty until the
+  // company has real application activity -- never backfilled with fake numbers.
+  const chartData = dashboardData?.applicationTrend || []
 
   // Reusable columns definition for My Job Postings DataTable
   const columns: ColumnDef<JobPosting>[] = [
@@ -235,7 +230,7 @@ export function Dashboard() {
       {/* Greet & Header */}
       <div>
         <h1 className="text-2xl font-black tracking-normal text-slate-950 dark:text-white">
-          Welcome back, TechNova Solutions! 👋
+          Welcome back{company?.name ? `, ${company.name}` : ""}! 👋
         </h1>
         <p className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">
           Here's what's happening with your jobs today.
@@ -348,6 +343,20 @@ export function Dashboard() {
 
         {/* Right Column: Company Perks, Recruiter Profile & Recent Logs */}
         <div className="lg:col-span-4 space-y-6">
+          {!company ? (
+            <DashboardCard className="p-5 space-y-3 text-center">
+              <p className="text-xs font-bold text-slate-500 dark:text-slate-400">
+                No company profile found for your account yet.
+              </p>
+              <Button
+                onClick={() => navigate("/recruiter/company")}
+                className="bg-[#6B2C91] hover:bg-[#5a237b] text-white font-extrabold text-xs h-9 dark:bg-pink-600 dark:hover:bg-pink-700"
+              >
+                Complete Company Profile
+              </Button>
+            </DashboardCard>
+          ) : (
+          <>
           {/* Company Profile Widget */}
           <DashboardCard className="p-5 space-y-4">
             <div className="flex items-start justify-between">
@@ -392,7 +401,10 @@ export function Dashboard() {
 
             <hr className="border-slate-100 dark:border-slate-800" />
 
-            {/* Menstrual Leave Champion Toggle Badge card */}
+            {/* Menstrual Leave Champion status card -- read-only. Verification
+                is an admin-gated action (CompanyBenefit.verified), so this can
+                no longer be flipped client-side with no persistence; it just
+                reflects real status and links to where it's actually claimed. */}
             <div className="bg-gradient-to-br from-violet-50/50 to-pink-50/50 p-3.5 rounded-xl border border-violet-100 dark:from-violet-500/10 dark:to-pink-500/5 dark:border-violet-400/20">
               <div className="flex items-start justify-between gap-2.5">
                 <div className="space-y-0.5">
@@ -403,21 +415,24 @@ export function Dashboard() {
                     </p>
                   </div>
                   <p className="text-[10px] text-slate-500 leading-normal dark:text-slate-400">
-                    Flag company as Menstrual Leave Champion. Showcase commitment to women's well-being.
+                    {company.menstrualLeaveChampion
+                      ? "Verified Menstrual Leave Champion. Shown to candidates on your job listings."
+                      : "Claim this perk and submit for admin verification from your Company Profile."}
                   </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={handleToggleChampion}
-                  className={cn(
-                    "rounded-md px-2 py-1 text-[9px] font-black uppercase transition-colors shrink-0 cursor-pointer",
-                    company.menstrualLeaveChampion
-                      ? "bg-emerald-500 text-white hover:bg-emerald-600"
-                      : "bg-slate-200 text-slate-500 hover:bg-slate-350 dark:bg-slate-800 dark:text-slate-400"
-                  )}
-                >
-                  {company.menstrualLeaveChampion ? "Active" : "Inactive"}
-                </button>
+                {company.menstrualLeaveChampion ? (
+                  <span className="rounded-md px-2 py-1 text-[9px] font-black uppercase shrink-0 bg-emerald-500 text-white">
+                    Active
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => navigate("/recruiter/company")}
+                    className="rounded-md px-2 py-1 text-[9px] font-black uppercase shrink-0 cursor-pointer bg-slate-200 text-slate-500 hover:bg-slate-350 dark:bg-slate-800 dark:text-slate-400"
+                  >
+                    Inactive
+                  </button>
+                )}
               </div>
             </div>
           </DashboardCard>
@@ -427,6 +442,11 @@ export function Dashboard() {
             <h3 className="text-xs font-black text-slate-950 dark:text-white">
               Company Perks & Benefits
             </h3>
+            {company.perks.length === 0 ? (
+              <p className="text-xs font-semibold text-slate-400 dark:text-slate-500">
+                No perks claimed yet.
+              </p>
+            ) : (
             <ul className="space-y-2.5">
               {company.perks.map((perk: string, idx: number) => (
                 <li key={idx} className="flex items-center gap-2 text-xs font-semibold text-slate-700 dark:text-slate-300 animate-fadeIn">
@@ -435,6 +455,7 @@ export function Dashboard() {
                 </li>
               ))}
             </ul>
+            )}
             <div className="pt-2">
               <Button
                 variant="outline"
@@ -446,6 +467,8 @@ export function Dashboard() {
               </Button>
             </div>
           </DashboardCard>
+          </>
+          )}
 
           {/* Recent Applicants */}
           <div className="space-y-3">

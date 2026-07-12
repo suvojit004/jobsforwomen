@@ -204,6 +204,13 @@ export class AuthRepository {
     })
   }
 
+  // Every profile/session/token/etc relation on User is declared with
+  // onDelete: Cascade in schema.prisma, so deleting the User row removes the
+  // account's data in one real, atomic operation -- not a soft "simulated" flag.
+  async deleteUserAccount(userId: string) {
+    return prisma.user.delete({ where: { id: userId } })
+  }
+
   async findEmailVerification(token: string) {
     return prisma.emailVerification.findUnique({
       where: { token },
@@ -320,23 +327,39 @@ export class AuthRepository {
     })
   }
 
-  async createInvitedUser(email: string, passwordHash: string | null, fullName: string, roleId: string) {
-    return prisma.user.create({
-      data: {
-        email,
-        passwordHash,
-        status: "Active",
-        roles: {
-          create: {
-            roleId,
-          },
-        },
-        adminProfile: {
-          create: {
-            fullName,
-          },
+  async createInvitedUser(email: string, passwordHash: string | null, fullName: string, roleId: string, companyId?: string | null) {
+    const role = await prisma.role.findUnique({ where: { id: roleId } })
+    const isRecruiter = role?.name === "Recruiter"
+
+    const data: any = {
+      email,
+      passwordHash,
+      status: "Active",
+      roles: {
+        create: {
+          roleId,
         },
       },
+    }
+
+    if (isRecruiter && companyId) {
+      data.recruiterProfile = {
+        create: {
+          fullName,
+          companyId,
+          verified: true,
+        }
+      }
+    } else {
+      data.adminProfile = {
+        create: {
+          fullName,
+        }
+      }
+    }
+
+    return prisma.user.create({
+      data,
       include: {
         roles: {
           include: {
@@ -344,6 +367,7 @@ export class AuthRepository {
           },
         },
         adminProfile: true,
+        recruiterProfile: true,
       },
     })
   }

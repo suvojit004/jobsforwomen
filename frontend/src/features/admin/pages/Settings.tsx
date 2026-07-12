@@ -48,6 +48,7 @@ export function Settings() {
   const [saving, setSaving] = useState(false)
   const [success, setSuccess] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
+  const [submitError, setSubmitError] = useState("")
 
   const {
     register,
@@ -91,7 +92,11 @@ export function Settings() {
 
   const onSubmit = async (values: AdminSettingsValues) => {
     setSaving(true)
+    setSubmitError("")
     try {
+      if (values.newPassword && values.newPassword.length > 0) {
+        await AdminApi.changePassword(values.currentPassword, values.newPassword)
+      }
       await AdminApi.updateSettings({
         name: values.name,
         email: values.email,
@@ -106,8 +111,9 @@ export function Settings() {
         confirmNewPassword: "",
       })
       setTimeout(() => setSuccess(false), 3000)
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to update settings:", err)
+      setSubmitError(err?.message || "Failed to save changes. Please check your current password and try again.")
     } finally {
       setSaving(false)
     }
@@ -145,6 +151,13 @@ export function Settings() {
                 <div className="p-3 bg-emerald-50 text-emerald-800 rounded-lg text-xs font-bold flex items-center gap-1.5 dark:bg-emerald-950/35 dark:text-emerald-300">
                   <CheckIcon className="size-4 shrink-0" />
                   Profile and security preferences successfully updated!
+                </div>
+              )}
+
+              {submitError && (
+                <div className="p-3 bg-red-50 text-red-800 rounded-lg text-xs font-bold flex items-center gap-1.5 dark:bg-red-950/35 dark:text-red-300">
+                  <AlertCircle className="size-4 shrink-0" />
+                  {submitError}
                 </div>
               )}
 

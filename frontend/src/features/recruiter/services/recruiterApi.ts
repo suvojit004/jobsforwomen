@@ -93,10 +93,13 @@ export interface RecruiterJobRow {
   postedOn: string
 }
 
+// These four are the only statuses settable through the plain status dropdown.
+// "Interview Scheduled" and "Offer Released" require structured data (a real
+// date, real offer details) and go through scheduleInterview()/releaseOffer()
+// instead -- the backend rejects them here on purpose.
 const APPLICANT_STATUS_TO_BACKEND: Record<string, string> = {
   Applied: "Applied",
   "Under Review": "Reviewed",
-  "Interview Scheduled": "InterviewScheduled",
   Selected: "Hired",
   Rejected: "Rejected",
 }
@@ -106,10 +109,7 @@ const APPLICANT_STATUS_FROM_BACKEND: Record<string, string> = {
   Reviewed: "Under Review",
   Shortlisted: "Under Review",
   InterviewScheduled: "Interview Scheduled",
-  InterviewCompleted: "Interview Scheduled",
-  OfferReleased: "Selected",
-  OfferAccepted: "Selected",
-  OfferDeclined: "Rejected",
+  OfferReleased: "Offer Released",
   Hired: "Selected",
   Rejected: "Rejected",
 }
@@ -121,6 +121,21 @@ export interface ApplicantRow {
   job: string
   appliedDate: string
   status: string
+  offerDetails?: string
+  nextInterview?: { title: string; scheduledAt: string; location?: string } | null
+  // Full candidate profile fields -- real data from CandidateProfile, used by
+  // the applicant detail page (previously that page used entirely hardcoded
+  // fake candidates instead of any of this).
+  title?: string
+  bio?: string
+  resumeUrl?: string | null
+  resumeMetadata?: { uploadedAt?: string; size?: number; mimetype?: string } | null
+  experience?: { id: string; jobTitle: string; company: string; duration: string; description?: string }[]
+  education?: { id: string; degree: string; institution: string; duration: string; grade?: string }[]
+  skills?: string[]
+  languages?: string[]
+  noticePeriod?: string
+  expectedSalary?: string
 }
 
 export const RecruiterApi = {
@@ -150,6 +165,47 @@ export const RecruiterApi = {
     }))
   },
 
+  // Real single-job fetch for the Job Details page. Previously that page
+  // never called the backend at all -- it matched the route's :id against a
+  // hardcoded array of 5 sample jobs plus a localStorage override cache, so
+  // every real job (real UUID ids from Postgres) always showed "Posting Not
+  // Found."
+  async getJobById(id: string) {
+    const res = await apiClient.get(`/api/v1/recruiters/jobs/${id}`)
+    const job = res?.data?.job
+    if (!job) return null
+    return {
+      id: job.id,
+      title: job.title,
+      department: job.department,
+      workMode: mapWorkModeFromBackend(job.workMode),
+      type: job.type,
+      location: job.location,
+      description: job.description,
+      responsibilities: job.responsibilities,
+      requirements: job.requirements,
+      benefits: job.benefits,
+      deadline: job.deadline,
+      salary: job.salaryDisplay,
+      skills: job.skills || [],
+      menstrualLeaveChampion: !!job.menstrualLeaveChampion,
+      flexibleHours: !!job.flexibleHours,
+      workFromHome: !!job.workFromHome,
+      applicants: job.applicants,
+      status: job.status,
+      postedOn: formatDate(job.postedOn),
+    }
+  },
+
+  async updateJob(id: string, values: JobPostingFormValues) {
+    const payload = buildCreateJobPayload(values)
+    // status is only meaningful at creation time (draft vs pending_approval);
+    // updates should never silently re-submit an already-live job for
+    // re-approval, so we don't send it here.
+    const { status, ...updatePayload } = payload as any
+    return apiClient.put(`/api/v1/recruiters/jobs/${id}`, updatePayload)
+  },
+
   async archiveJob(id: string) {
     return apiClient.post(`/api/v1/recruiters/jobs/${id}/archive`, {})
   },
@@ -166,19 +222,48 @@ export const RecruiterApi = {
     const qs = jobId ? `?jobId=${jobId}` : ""
     const res = await apiClient.get(`/api/v1/recruiters/applications${qs}`)
     const applications: any[] = res?.data?.applications || []
-    return applications.map((app) => ({
-      id: app.id,
-      name: app.candidate?.fullName || "Unknown Candidate",
-      email: app.candidate?.user?.email || "",
-      job: app.job?.title || "",
-      appliedDate: formatDate(app.appliedOn),
-      status: APPLICANT_STATUS_FROM_BACKEND[app.status] || app.status,
-    }))
+    return applications.map((app) => {
+      const latestInterview = (app.interviews || [])[0]
+      const candidate = app.candidate || {}
+      return {
+        id: app.id,
+        name: candidate.fullName || "Unknown Candidate",
+        email: candidate.user?.email || "",
+        job: app.job?.title || "",
+        appliedDate: formatDate(app.appliedOn),
+        status: APPLICANT_STATUS_FROM_BACKEND[app.status] || app.status,
+        offerDetails: app.offerDetails || undefined,
+        nextInterview: latestInterview
+          ? { title: latestInterview.title, scheduledAt: latestInterview.scheduledAt, location: latestInterview.location }
+          : null,
+        title: candidate.title || undefined,
+        bio: candidate.bio || undefined,
+        resumeUrl: candidate.resumeUrl || null,
+        resumeMetadata: candidate.resumeMetadata || null,
+        experience: Array.isArray(candidate.experience) ? candidate.experience : [],
+        education: Array.isArray(candidate.education) ? candidate.education : [],
+        skills: (candidate.skills || []).map((cs: any) => cs.skill?.name).filter(Boolean),
+        languages: candidate.languages || [],
+        noticePeriod: candidate.noticePeriod || undefined,
+        expectedSalary: candidate.expectedSalary || undefined,
+      }
+    })
   },
 
   async updateApplicantStatus(applicationId: string, displayStatus: string) {
     const status = APPLICANT_STATUS_TO_BACKEND[displayStatus] || displayStatus
     return apiClient.put(`/api/v1/recruiters/applications/${applicationId}/status`, { status })
+  },
+
+  async scheduleInterview(
+    applicationId: string,
+    data: { title: string; description?: string; scheduledAt: string; durationMins?: number; location?: string }
+  ) {
+    return apiClient.post(`/api/v1/recruiters/applications/${applicationId}/interview`, data)
+  },
+
+  async releaseOffer(applicationId: string, offerDetails: string) {
+    return apiClient.post(`/api/v1/recruiters/applications/${applicationId}/offer`, { offerDetails })
   },
 
   async getDashboard() {
@@ -193,6 +278,18 @@ export const RecruiterApi = {
 
   async onboardCompany(payload: any) {
     const res = await apiClient.post("/api/v1/recruiters/company/onboard", payload)
+    return res?.data
+  },
+
+  async uploadCompanyLogo(file: File) {
+    const formData = new FormData()
+    formData.append("logo", file)
+    const res = await apiClient.post("/api/v1/recruiters/company/logo", formData)
+    return res?.data
+  },
+
+  async deleteCompanyLogo() {
+    const res = await apiClient.delete("/api/v1/recruiters/company/logo")
     return res?.data
   },
 
@@ -238,6 +335,21 @@ export const RecruiterApi = {
 
   async sendMessage(conversationId: string, content: string) {
     const res = await apiClient.post(`/api/v1/recruiters/conversations/${conversationId}/messages`, { content })
+    return res?.data
+  },
+
+  async getTeam() {
+    const res = await apiClient.get("/api/v1/recruiters/team")
+    return res?.data || { members: [], invitations: [], companyName: "" }
+  },
+
+  async inviteColleague(email: string) {
+    const res = await apiClient.post("/api/v1/recruiters/team/invite", { email })
+    return res?.data
+  },
+
+  async cancelColleagueInvitation(id: string) {
+    const res = await apiClient.post(`/api/v1/recruiters/team/invitations/${id}/cancel`, {})
     return res?.data
   },
 }

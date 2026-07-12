@@ -17,6 +17,7 @@ import {
 } from "recharts"
 import { DashboardCard } from "@/components/shared/DashboardCard"
 import { Button } from "@/components/ui/button"
+import apiClient from "@/api/client"
 
 const monthlyReportsData = [
   { month: "Jan", Applications: 120, Hired: 18 },
@@ -29,13 +30,47 @@ const monthlyReportsData = [
 
 export function ReportsAnalytics() {
   const [downloading, setDownloading] = useState<string | null>(null)
+  const [exportError, setExportError] = useState("")
 
-  const handleExport = (fileName: string) => {
+  // Calls the real GET /api/v1/admins/reports?type=...&export=csv endpoint,
+  // which streams a CSV built from live database counts, and triggers an
+  // actual browser download of the response bytes. Previously this just
+  // faked a delay and popped an alert claiming a file had been "downloaded"
+  // -- nothing was ever generated, fetched, or saved.
+  const handleExport = async (type: string, fileName: string) => {
     setDownloading(fileName)
-    setTimeout(() => {
+    setExportError("")
+    try {
+      const token = localStorage.getItem("jwt_token")
+      const res = await fetch(
+        `${apiClient.defaults.baseURL}/api/v1/admins/reports?type=${encodeURIComponent(type)}&export=csv`,
+        {
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+          credentials: "include",
+        }
+      )
+      if (!res.ok) {
+        throw new Error(`HTTP error! Status: ${res.status}`)
+      }
+      const blob = await res.blob()
+      const disposition = res.headers.get("Content-Disposition") || ""
+      const match = disposition.match(/filename=([^;]+)/)
+      const downloadName = match ? match[1].trim() : fileName
+
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = downloadName
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      console.error("Failed to generate report", err)
+      setExportError(`Failed to generate "${fileName}". Please try again.`)
+    } finally {
       setDownloading(null)
-      alert(`Export completed! "${fileName}" has been downloaded successfully.`)
-    }, 1500)
+    }
   }
 
   const exportCards = [
@@ -43,6 +78,7 @@ export function ReportsAnalytics() {
       title: "Candidates Directory",
       desc: "All registered candidate accounts, career breaks, profiles completion percentage, and skills.",
       fileName: "Candidates_Directory_Report.csv",
+      type: "candidates",
       icon: FileSpreadsheet,
       format: "CSV File",
     },
@@ -50,6 +86,7 @@ export function ReportsAnalytics() {
       title: "Employers & Recruiters",
       desc: "Recruiter profiles, associated companies, and equality perks validation statuses.",
       fileName: "Recruiters_Partner_Report.csv",
+      type: "recruiters",
       icon: FileSpreadsheet,
       format: "CSV File",
     },
@@ -57,15 +94,17 @@ export function ReportsAnalytics() {
       title: "Job Listings Audit",
       desc: "Active jobs postings, salaries, applications count, and reported status tags.",
       fileName: "JobListings_Platform_Report.csv",
+      type: "jobs",
       icon: FileSpreadsheet,
       format: "CSV File",
     },
     {
       title: "Operational Analytics",
       desc: "Monthly application traffic, sourcing success indices, and system operation metrics summaries.",
-      fileName: "JobsForWomen_System_Analytics.pdf",
+      fileName: "JobsForWomen_System_Analytics.csv",
+      type: "analytics",
       icon: FileText,
-      format: "PDF Document",
+      format: "CSV File",
     },
   ]
 
@@ -152,6 +191,9 @@ export function ReportsAnalytics() {
         <h4 className="text-xs font-black text-slate-500 uppercase tracking-widest border-b border-slate-200 pb-2.5 dark:border-slate-800">
           Data Export Directory
         </h4>
+        {exportError && (
+          <p className="mt-3 text-xs font-bold text-red-600 dark:text-red-400">{exportError}</p>
+        )}
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 mt-4">
           {exportCards.map((card) => {
             const isDownloading = downloading === card.fileName
@@ -176,7 +218,7 @@ export function ReportsAnalytics() {
                 </div>
                 <div>
                   <Button
-                    onClick={() => handleExport(card.fileName)}
+                    onClick={() => handleExport(card.type, card.fileName)}
                     disabled={isDownloading}
                     className="w-full text-[10px] font-black flex items-center justify-center gap-1.5 h-8 bg-slate-100 hover:bg-slate-200 text-slate-900 border border-slate-250/20 dark:bg-slate-900 dark:hover:bg-slate-800 dark:text-white dark:border-slate-800"
                   >

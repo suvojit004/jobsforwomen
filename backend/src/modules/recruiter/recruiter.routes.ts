@@ -6,6 +6,7 @@ import {
   requireApprovedCompany,
   requireOwnership,
 } from "../rbac/rbac.middleware"
+import { uploadLogoMiddleware } from "../../shared/middleware/upload.middleware"
 
 const router = Router()
 const controller = new RecruiterController()
@@ -20,6 +21,8 @@ router.get("/analytics", controller.getAnalytics)
 
 // Company Onboarding Wizard (Does NOT require approved company)
 router.post("/company/onboard", controller.onboardCompany)
+router.post("/company/logo", uploadLogoMiddleware, controller.uploadCompanyLogo)
+router.delete("/company/logo", controller.deleteCompanyLogo)
 
 // Settings Management
 router.get("/settings", controller.getSettings)
@@ -27,6 +30,7 @@ router.put("/settings", controller.updateSettings)
 
 // Job Management (Requires approved company)
 router.get("/jobs", requireApprovedCompany, controller.getJobs)
+router.get("/jobs/:id", requireApprovedCompany, requireOwnership("Job"), controller.getJobById)
 router.post("/jobs", requireApprovedCompany, controller.postJob)
 router.put("/jobs/:id", requireApprovedCompany, requireOwnership("Job"), controller.updateJob)
 router.post("/jobs/:id/duplicate", requireApprovedCompany, requireOwnership("Job"), controller.duplicateJob)
@@ -37,6 +41,12 @@ router.delete("/jobs/:id", requireApprovedCompany, requireOwnership("Job"), cont
 // Applicants Pipeline Management (Requires approved company)
 router.get("/applications", requireApprovedCompany, controller.getCompanyApplications)
 router.put("/applications/:id/status", requireApprovedCompany, requireOwnership("Application"), controller.progressApplicant)
+router.post("/applications/:id/interview", requireApprovedCompany, requireOwnership("Application"), controller.scheduleInterview)
+router.post("/applications/:id/offer", requireApprovedCompany, requireOwnership("Application"), controller.releaseOffer)
+// Team management (Requires approved company)
+router.get("/team", requireApprovedCompany, controller.getTeam)
+router.post("/team/invite", requireApprovedCompany, controller.inviteColleague)
+router.post("/team/invitations/:id/cancel", requireApprovedCompany, controller.cancelColleagueInvitation)
 
 // Notifications
 router.get("/notifications", controller.getNotifications)

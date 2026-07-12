@@ -39,6 +39,7 @@ export function Settings() {
   const [confirmPassword, setConfirmPassword] = useState("")
   const [twoFactor, setTwoFactor] = useState(false)
   const [passwordSuccess, setPasswordSuccess] = useState(false)
+  const [passwordError, setPasswordError] = useState("")
 
   // Notification states
   const [emailNewJobs, setEmailNewJobs] = useState(true)
@@ -52,6 +53,8 @@ export function Settings() {
   const [indexSearch, setIndexSearch] = useState(true)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [deleteConfirmText, setDeleteConfirmText] = useState("")
+  const [deletePassword, setDeletePassword] = useState("")
+  const [deleteError, setDeleteError] = useState("")
 
   useEffect(() => {
     async function loadData() {
@@ -97,14 +100,24 @@ export function Settings() {
     }
   }
 
-  const handlePasswordSubmit = (e: React.FormEvent) => {
+  const handlePasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!currentPassword || !newPassword || newPassword !== confirmPassword) return
-    setPasswordSuccess(true)
-    setCurrentPassword("")
-    setNewPassword("")
-    setConfirmPassword("")
-    setTimeout(() => setPasswordSuccess(false), 3000)
+    setPasswordError("")
+    if (!currentPassword || !newPassword) return
+    if (newPassword !== confirmPassword) {
+      setPasswordError("New password and confirmation do not match.")
+      return
+    }
+    try {
+      await candidateApi.changePassword(currentPassword, newPassword)
+      setPasswordSuccess(true)
+      setCurrentPassword("")
+      setNewPassword("")
+      setConfirmPassword("")
+      setTimeout(() => setPasswordSuccess(false), 3000)
+    } catch (err: any) {
+      setPasswordError(err?.message || "Failed to change password. Please check your current password.")
+    }
   }
 
   const handleNotificationsSubmit = async (e: React.FormEvent) => {
@@ -124,11 +137,16 @@ export function Settings() {
     }
   }
 
-  const handleDeleteAccount = () => {
-    if (deleteConfirmText.toLowerCase() === "delete") {
-      alert("Account deletion simulated successfully.")
-      setShowDeleteConfirm(false)
-      setDeleteConfirmText("")
+  const handleDeleteAccount = async () => {
+    if (deleteConfirmText.toLowerCase() !== "delete" || !deletePassword) return
+    setDeleteError("")
+    try {
+      await candidateApi.deleteAccount(deletePassword)
+      localStorage.removeItem("jwt_token")
+      localStorage.removeItem("userRole")
+      window.location.href = "/auth/login"
+    } catch (err: any) {
+      setDeleteError(err?.message || "Failed to delete account. Please check your password.")
     }
   }
 
@@ -385,6 +403,11 @@ export function Settings() {
                       Password updated!
                     </span>
                   )}
+                  {passwordError && (
+                    <span className="text-xs text-red-600 font-extrabold">
+                      {passwordError}
+                    </span>
+                  )}
                 </div>
               </form>
             </DashboardCard>
@@ -533,11 +556,21 @@ export function Settings() {
                       onChange={(e) => setDeleteConfirmText(e.target.value)}
                       className="w-full max-w-xs rounded-lg border border-red-300 bg-white px-3 py-1.5 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/30 dark:border-red-900/40 dark:bg-slate-950 dark:text-white font-extrabold"
                     />
+                    <input
+                      type="password"
+                      placeholder="Enter your current password"
+                      value={deletePassword}
+                      onChange={(e) => setDeletePassword(e.target.value)}
+                      className="w-full max-w-xs rounded-lg border border-red-300 bg-white px-3 py-1.5 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/30 dark:border-red-900/40 dark:bg-slate-950 dark:text-white font-extrabold"
+                    />
+                    {deleteError && (
+                      <p className="text-xs font-bold text-red-700 dark:text-red-300">{deleteError}</p>
+                    )}
                     <div className="flex gap-2">
                       <Button
                         type="button"
                         variant="destructive"
-                        disabled={deleteConfirmText.toLowerCase() !== "delete"}
+                        disabled={deleteConfirmText.toLowerCase() !== "delete" || !deletePassword}
                         onClick={handleDeleteAccount}
                         className="h-8 text-xs font-extrabold px-4"
                       >
@@ -549,6 +582,8 @@ export function Settings() {
                         onClick={() => {
                           setShowDeleteConfirm(false)
                           setDeleteConfirmText("")
+                          setDeletePassword("")
+                          setDeleteError("")
                         }}
                         className="h-8 text-xs font-bold border-slate-350"
                       >
