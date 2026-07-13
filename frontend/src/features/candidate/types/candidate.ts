@@ -1,3 +1,5 @@
+import type { NormalizedResume } from "../utils/resumeMapper"
+
 export interface WorkExperience {
   id: string
   jobTitle: string
@@ -45,12 +47,7 @@ export interface ExtendedCandidate {
     duration: string
     summary: string
   }
-  resume: {
-    name: string
-    uploadDate: string
-    verified: boolean
-    url: string
-  }
+  resume: NormalizedResume
   education: Education[]
   workExperience: WorkExperience[]
   preferences: JobPreferences

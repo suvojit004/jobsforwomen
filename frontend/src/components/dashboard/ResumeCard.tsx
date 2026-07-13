@@ -18,18 +18,25 @@ type ResumeCardProps = {
     uploadDate: string
     verified: boolean
     url: string
+    publicId?: string
+    size?: number
+    mimetype?: string
+    originalName?: string
+    uploadedAt?: string
   }
   onChanged?: () => void | Promise<void>
+  onUpload?: (file: File) => Promise<any>
+  onDelete?: () => Promise<any>
 }
 
-export function ResumeCard({ resume, onChanged }: ResumeCardProps) {
+export function ResumeCard({ resume, onChanged, onUpload, onDelete }: ResumeCardProps) {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [isUploading, setIsUploading] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
 
   if (!resume) return null
 
-  const hasResume = !!resume.url
+  const hasResume = Boolean(resume?.url)
 
   const handlePickFile = () => {
     if (isUploading) return
@@ -53,7 +60,11 @@ export function ResumeCard({ resume, onChanged }: ResumeCardProps) {
 
     setIsUploading(true)
     try {
-      await candidateApi.uploadResume(file)
+      if (onUpload) {
+        await onUpload(file)
+      } else {
+        await candidateApi.uploadResume(file)
+      }
       toast.success(hasResume ? "Resume replaced successfully." : "Resume uploaded successfully.")
       await onChanged?.()
     } catch (err: any) {
@@ -70,7 +81,11 @@ export function ResumeCard({ resume, onChanged }: ResumeCardProps) {
     }
     setIsDeleting(true)
     try {
-      await candidateApi.deleteResume()
+      if (onDelete) {
+        await onDelete()
+      } else {
+        await candidateApi.deleteResume()
+      }
       toast.success("Resume removed successfully.")
       await onChanged?.()
     } catch (err: any) {

@@ -405,10 +405,6 @@ export class AdminService {
     } else if (action === "reject") {
       status = JobStatus.flagged
       visibility = JobVisibility.hidden
-      // Previously this reused "JobUpdated" -- a generic audit-only event
-      // with no recipient targeting or rejection reason -- so a rejected
-      // recruiter never actually found out their posting was rejected, or
-      // why, outside of manually checking the job's status.
       domainEvent = "JobRejected"
     } else if (action === "hide") {
       visibility = JobVisibility.hidden

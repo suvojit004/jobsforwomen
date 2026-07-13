@@ -344,6 +344,7 @@ export function initNotificationListener() {
 
   // 15. Admin Job Approved Event -- notify the owning recruiter and matched candidates
   EventBus.subscribe("JobApproved", async (payload: any) => {
+    // 1. Audit log
     EventBus.publish("AuditCreated", {
       ...payload.context,
       category: "ADMIN",

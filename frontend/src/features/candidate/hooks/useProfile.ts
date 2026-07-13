@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react"
+import { mapResumeData } from "../utils/resumeMapper"
 import { candidateApi } from "../services/candidateApi"
 import type {
   ExtendedCandidate,
@@ -15,7 +16,6 @@ export function useProfile() {
   const [isLoading, setIsLoading] = useState(true)
 
   const mapProfileToState = (prof: any): ExtendedCandidate => {
-    const resumeMeta = prof?.resumeMetadata ?? {}
     return {
       fullName: prof?.fullName ?? "",
       role: prof?.title ?? "Professional",
@@ -34,16 +34,7 @@ export function useProfile() {
         duration: "",
         summary: "",
       },
-      resume: {
-        name: prof?.resumeUrl
-          ? resumeMeta.originalName ?? prof.resumeUrl.split("/").pop() ?? "Resume"
-          : "",
-        uploadDate: resumeMeta.uploadedAt
-          ? new Date(resumeMeta.uploadedAt).toLocaleDateString()
-          : "",
-        verified: !!prof?.resumeUrl,
-        url: prof?.resumeUrl ?? "",
-      },
+      resume: mapResumeData(prof?.resumeUrl, prof?.resumePublicId, prof?.resumeMetadata),
       education: prof?.education ?? [],
       workExperience: prof?.experience ?? [],
       preferences: {
@@ -55,20 +46,29 @@ export function useProfile() {
     }
   }
 
-  const fetchProfile = async () => {
-    setIsLoading(true)
+  const fetchProfile = async (showLoading = true) => {
+    if (showLoading) setIsLoading(true)
     try {
       const prof = await candidateApi.getProfile()
-      setCandidateData(mapProfileToState(prof))
+      setCandidateData((prev) => {
+        const mapped = mapProfileToState(prof)
+        if (!prev) return mapped
+        return {
+          ...prev,
+          ...mapped,
+          // Prevent overwriting a newer locally uploaded resume with stale data
+          resume: prev.resume.url ? prev.resume : mapped.resume,
+        }
+      })
     } catch (err) {
       console.error("Failed to fetch profile", err)
     } finally {
-      setIsLoading(false)
+      if (showLoading) setIsLoading(false)
     }
   }
 
   useEffect(() => {
-    fetchProfile()
+    fetchProfile(true)
   }, [])
 
   const startEditing = () => {
@@ -290,13 +290,65 @@ export function useProfile() {
     }
   }
 
+  const uploadResume = async (file: File) => {
+    try {
+      const updated = await candidateApi.uploadResume(file)
+      if (updated) {
+        setCandidateData((prev) => {
+          if (!prev) return mapProfileToState(updated)
+          return {
+            ...prev,
+            resume: mapResumeData(updated.resumeUrl, updated.resumePublicId, updated.resumeMetadata),
+          }
+        })
+        setEditingData((prev) => {
+          if (!prev) return null
+          return {
+            ...prev,
+            resume: mapResumeData(updated.resumeUrl, updated.resumePublicId, updated.resumeMetadata),
+          }
+        })
+      }
+      return updated
+    } catch (err) {
+      console.error("Failed to upload resume in hook:", err)
+      throw err
+    }
+  }
+
+  const deleteResume = async () => {
+    try {
+      const updated = await candidateApi.deleteResume()
+      if (updated) {
+        setCandidateData((prev) => {
+          if (!prev) return mapProfileToState(updated)
+          return {
+            ...prev,
+            resume: mapResumeData(updated.resumeUrl, updated.resumePublicId, updated.resumeMetadata),
+          }
+        })
+        setEditingData((prev) => {
+          if (!prev) return null
+          return {
+            ...prev,
+            resume: mapResumeData(updated.resumeUrl, updated.resumePublicId, updated.resumeMetadata),
+          }
+        })
+      }
+      return updated
+    } catch (err) {
+      console.error("Failed to delete resume in hook:", err)
+      throw err
+    }
+  }
+
   return {
     candidateData,
     isEditing,
     editingData,
     isLoading,
     saveError,
-    refreshProfile: fetchProfile,
+    refreshProfile: () => fetchProfile(false),
     startEditing,
     cancelChanges,
     saveChanges,
@@ -316,5 +368,7 @@ export function useProfile() {
     addSocialLink,
     updateSocialLink,
     removeSocialLink,
+    uploadResume,
+    deleteResume,
   }
 }

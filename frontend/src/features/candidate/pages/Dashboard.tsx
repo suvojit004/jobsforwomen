@@ -11,6 +11,7 @@ import { ResumeCard } from "@/components/dashboard/ResumeCard"
 import { useAuth } from "@/hooks/useAuth"
 import { candidateApi } from "../services/candidateApi"
 import { CandidateJobsApi, mapApiApplication } from "../services/jobsApi"
+import { mapResumeData } from "../utils/resumeMapper"
 import type { ExtendedJob } from "@/types/job"
 import type { Activity } from "@/types/dashboard"
 
@@ -23,7 +24,6 @@ import type { Activity } from "@/types/dashboard"
 // were entirely fake data shown to every candidate regardless of what they'd
 // actually entered.
 function mapDashboardProfile(prof: any, fallbackName?: string, fallbackEmail?: string) {
-  const resumeMeta = prof?.resumeMetadata || {}
   return {
     fullName: prof?.fullName || fallbackName || "Candidate",
     role: prof?.title || "Professional",
@@ -45,16 +45,7 @@ function mapDashboardProfile(prof: any, fallbackName?: string, fallbackEmail?: s
       duration: "",
       summary: "",
     },
-    resume: {
-      name: prof?.resumeUrl
-        ? resumeMeta.originalName || prof.resumeUrl.split("/").pop() || "Resume"
-        : "",
-      uploadDate: resumeMeta.uploadedAt
-        ? new Date(resumeMeta.uploadedAt).toLocaleDateString()
-        : "",
-      verified: !!prof?.resumeUrl,
-      url: prof?.resumeUrl || "",
-    },
+    resume: mapResumeData(prof?.resumeUrl, prof?.resumePublicId, prof?.resumeMetadata),
   }
 }
 

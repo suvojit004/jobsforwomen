@@ -11,10 +11,6 @@ export function PostJob() {
       await RecruiterApi.createJob(values)
       toast.success("Job posted successfully. It's now pending admin approval.")
       setTimeout(() => {
-        // "/recruiter/jobs" matches no registered route (real routes are
-        // "manage-jobs" and "jobs/:id") -- it used to fall through to
-        // RecruiterRoutes' catch-all and silently bounce to the dashboard
-        // instead of showing the recruiter their new posting.
         navigate("/recruiter/manage-jobs")
       }, 1200)
     } catch (err: any) {

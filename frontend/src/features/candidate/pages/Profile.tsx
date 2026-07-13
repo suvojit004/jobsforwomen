@@ -38,6 +38,8 @@ export function Profile() {
     addSocialLink,
     updateSocialLink,
     removeSocialLink,
+    uploadResume,
+    deleteResume,
   } = useProfile()
 
   if (isLoading || !candidateData) {
@@ -132,7 +134,12 @@ export function Profile() {
             isEditing={isEditing}
             onChange={updateCareerBreak}
           />
-          <ResumeCard resume={currentData.resume} onChanged={refreshProfile} />
+          <ResumeCard
+            resume={currentData.resume}
+            onUpload={uploadResume}
+            onDelete={deleteResume}
+            onChanged={refreshProfile}
+          />
         </div>
       </div>
     </motion.div>

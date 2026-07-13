@@ -54,12 +54,6 @@ async function tryRefreshToken(baseURL: string): Promise<boolean> {
       const token = data?.data?.accessToken
       if (!token) return false
       localStorage.setItem("jwt_token", token)
-      // A new refresh succeeded, so any earlier "session expired" state no
-      // longer applies -- allow it to fire again if a *future* refresh fails.
-      sessionExpiredDispatched = false
-
-      // Keep the Socket.IO connection authenticated with the freshly issued
-      // access token. Without this, the socket keeps using the stale token
       // it connected with and gets disconnected by the server ("jwt
       // expired") independently of the REST session having just recovered.
       // Dynamic import avoids a hard import cycle between this generic API
