@@ -44,10 +44,15 @@ export function CandidateRegister() {
   }
 
   const handleGoogleRegister = () => {
-    // Send roleType=Candidate to OAuth
+    // initiateGoogleOAuth reads req.query.role (not "roleType") -- this
+    // previously sent the wrong param name, so it silently always fell back
+    // to the "Candidate" default. Harmless on this specific page (which is
+    // for candidates anyway), but fixed for correctness since a Recruiter
+    // equivalent of this button would have silently registered recruiters as
+    // candidates.
     toast.info("Connecting to Google OAuth account...")
     const backendUrl = import.meta.env.VITE_API_URL || "http://localhost:5000"
-    window.location.href = `${backendUrl}/api/v1/auth/google?roleType=Candidate`
+    window.location.href = `${backendUrl}/api/v1/auth/google?role=Candidate`
   }
 
   if (registered) {

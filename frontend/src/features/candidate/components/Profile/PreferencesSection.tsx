@@ -41,42 +41,54 @@ export function PreferencesSection({
       </h2>
 
       {!isEditing ? (
-        <dl className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-          <div className="rounded-xl bg-slate-50 p-3 dark:bg-slate-950/40">
+        // Capped at 2 columns regardless of viewport: this card renders inside a
+        // narrow sidebar column (lg:col-span-4 of 12) once the page layout goes
+        // multi-column, so a wider grid (e.g. 4 columns) looks fine at first
+        // glance but clips/overflows as soon as that sidebar constraint kicks
+        // in. min-w-0 + break-words let long values (salary ranges, city
+        // names) wrap safely instead of forcing the grid wider than its parent.
+        <dl className="grid grid-cols-1 gap-3 min-[400px]:grid-cols-2">
+          <div className="min-w-0 rounded-xl bg-slate-50 p-3 dark:bg-slate-950/40">
             <dt className="text-[10px] font-bold text-slate-500 dark:text-slate-400">Expected Salary</dt>
-            <dd className="mt-1 text-sm font-extrabold text-slate-950 dark:text-white">
-              {preferences.expectedSalary}
+            <dd className="mt-1 break-words text-sm font-extrabold text-slate-950 dark:text-white">
+              {preferences.expectedSalary || "Not specified"}
             </dd>
           </div>
-          <div className="rounded-xl bg-slate-50 p-3 dark:bg-slate-950/40">
+          <div className="min-w-0 rounded-xl bg-slate-50 p-3 dark:bg-slate-950/40">
             <dt className="text-[10px] font-bold text-slate-500 dark:text-slate-400">Availability</dt>
-            <dd className="mt-1 text-sm font-extrabold text-slate-950 dark:text-white">
-              {preferences.availability}
+            <dd className="mt-1 break-words text-sm font-extrabold text-slate-950 dark:text-white">
+              {preferences.availability || "Not specified"}
             </dd>
           </div>
-          <div className="rounded-xl bg-slate-50 p-3 dark:bg-slate-950/40">
+          <div className="min-w-0 rounded-xl bg-slate-50 p-3 dark:bg-slate-950/40">
             <dt className="text-[10px] font-bold text-slate-500 dark:text-slate-400">Notice Period</dt>
-            <dd className="mt-1 text-sm font-extrabold text-slate-950 dark:text-white">
-              {preferences.noticePeriod}
+            <dd className="mt-1 break-words text-sm font-extrabold text-slate-950 dark:text-white">
+              {preferences.noticePeriod || "Not specified"}
             </dd>
           </div>
-          <div className="rounded-xl bg-slate-50 p-3 dark:bg-slate-950/40 col-span-2 sm:col-span-1">
-            <dt className="text-[10px] font-bold text-slate-500 dark:text-slate-400 mb-1.5">Preferred Locations</dt>
-            <dd className="flex flex-wrap gap-1">
-              {preferences.preferredLocation.map((loc) => (
-                <span
-                  key={loc}
-                  className="rounded bg-violet-50 px-1.5 py-0.5 text-[10px] font-extrabold text-[#6B2C91] ring-1 ring-violet-100 dark:bg-violet-500/20 dark:text-pink-100"
-                >
-                  {loc}
-                </span>
-              ))}
+          <div className="min-w-0 rounded-xl bg-slate-50 p-3 dark:bg-slate-950/40">
+            <dt className="mb-1.5 text-[10px] font-bold text-slate-500 dark:text-slate-400">Preferred Locations</dt>
+            <dd className="flex min-w-0 flex-wrap gap-1">
+              {preferences.preferredLocation.length === 0 ? (
+                <span className="text-xs font-semibold text-slate-400 dark:text-slate-500">None specified</span>
+              ) : (
+                preferences.preferredLocation.map((loc) => (
+                  <span
+                    key={loc}
+                    className="max-w-full break-words rounded bg-violet-50 px-1.5 py-0.5 text-[10px] font-extrabold text-[#6B2C91] ring-1 ring-violet-100 dark:bg-violet-500/20 dark:text-pink-100"
+                  >
+                    {loc}
+                  </span>
+                ))
+              )}
             </dd>
           </div>
         </dl>
       ) : (
         <div className="space-y-4">
-          <div className="grid gap-4 sm:grid-cols-3">
+          {/* Same narrow-sidebar reasoning as the view-mode grid above --
+              capped at 2 columns so inputs never get squeezed. */}
+          <div className="grid gap-4 min-[400px]:grid-cols-2">
             <div className="flex flex-col gap-1.5">
               <label htmlFor="expectedSalary" className="text-xs font-extrabold text-slate-600 dark:text-slate-400">
                 Expected Salary
@@ -128,11 +140,11 @@ export function PreferencesSection({
             <label className="text-xs font-extrabold text-slate-600 dark:text-slate-400 block mb-2">
               Preferred Locations
             </label>
-            <div className="flex flex-wrap gap-1.5 mb-3">
+            <div className="flex min-w-0 flex-wrap gap-1.5 mb-3">
               {preferences.preferredLocation.map((loc) => (
                 <span
                   key={loc}
-                  className="inline-flex items-center gap-1 rounded bg-violet-50 px-2 py-0.5 text-xs font-extrabold text-[#6B2C91] ring-1 ring-violet-100 dark:bg-violet-500/20 dark:text-pink-100"
+                  className="inline-flex max-w-full items-center gap-1 break-words rounded bg-violet-50 px-2 py-0.5 text-xs font-extrabold text-[#6B2C91] ring-1 ring-violet-100 dark:bg-violet-500/20 dark:text-pink-100"
                 >
                   {loc}
                   <button

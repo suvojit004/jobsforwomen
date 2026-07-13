@@ -207,6 +207,7 @@ export function BrowseJobs() {
               title="No Opportunities Found"
               description="We couldn't find any job listing matching your current filter set. Try resetting or adjusting your search queries."
               actionLabel="Reset Search Filters"
+              onActionClick={handleClearFilters}
             />
           </div>
         )}

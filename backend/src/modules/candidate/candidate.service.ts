@@ -22,7 +22,9 @@ export class CandidateService {
     const candidate = await prisma.candidateProfile.findUnique({
       where: { userId },
       include: {
-        user: true,
+        // Only ever expose safe, non-sensitive user fields here -- never
+        // `user: true`, which would include passwordHash in the API response.
+        user: { select: { email: true, status: true } },
         skills: {
           include: {
             skill: true,
@@ -55,6 +57,12 @@ export class CandidateService {
       fullName: candidate.fullName,
       title: candidate.title,
       bio: candidate.bio,
+      phone: candidate.phone,
+      location: candidate.location,
+      totalExperience: candidate.totalExperience,
+      careerBreak: candidate.careerBreak,
+      preferredLocations: candidate.preferredLocations,
+      availability: candidate.availability,
       noticePeriod: candidate.noticePeriod,
       expectedSalary: candidate.expectedSalary,
     }
@@ -87,9 +95,15 @@ export class CandidateService {
         fullName: data.fullName,
         title: data.title,
         bio: data.bio,
+        phone: data.phone,
+        location: data.location,
+        totalExperience: data.totalExperience,
         avatarUrl: data.avatarUrl,
         noticePeriod: data.noticePeriod,
         expectedSalary: data.expectedSalary,
+        availability: data.availability,
+        preferredLocations: data.preferredLocations,
+        careerBreak: data.careerBreak === undefined ? undefined : (data.careerBreak as any),
         languages: data.languages,
         experience: data.experience,
         education: data.education,
@@ -99,7 +113,9 @@ export class CandidateService {
 
     const fullUser = await prisma.user.findUnique({
       where: { id: userId },
-      include: { candidateProfile: { include: { skills: true } } },
+      include: {
+        candidateProfile: { include: { skills: { include: { skill: true } } } },
+      },
     })
     const completion = calculateProfileCompletion(fullUser)
 
@@ -115,6 +131,12 @@ export class CandidateService {
         fullName: updated.fullName,
         title: updated.title,
         bio: updated.bio,
+        phone: updated.phone,
+        location: updated.location,
+        totalExperience: updated.totalExperience,
+        careerBreak: updated.careerBreak,
+        preferredLocations: updated.preferredLocations,
+        availability: updated.availability,
         noticePeriod: updated.noticePeriod,
         expectedSalary: updated.expectedSalary,
         profileCompletePercent: completion,
@@ -122,7 +144,18 @@ export class CandidateService {
     })
 
     return {
-      profile: updated,
+      // Return the full profile (with skills + a safe, minimal user summary
+      // included, same shape as getProfile) rather than the bare update()
+      // result -- the frontend re-syncs its state from this response after
+      // saving, and a partial shape here would make skills/email disappear
+      // from the UI until the next full page reload. Only email is exposed
+      // from the user record -- never spread the raw User row (passwordHash
+      // etc.) into an API response.
+      profile: {
+        ...fullUser?.candidateProfile,
+        user: fullUser ? { email: fullUser.email } : null,
+        profileCompletePercent: completion,
+      },
       profileCompletePercent: completion,
     }
   }
@@ -617,6 +650,15 @@ export class CandidateService {
       showSalary: true,
       theme: "System",
       emailFormat: "HTML",
+      // Defaults for the fields the candidate Settings page's Notifications
+      // and Security tabs actually read/write -- matches that page's own
+      // initial React state so first-time load doesn't flip every toggle to
+      // "off" the moment settings actually start persisting.
+      emailNewJobs: true,
+      emailStatusUpdate: true,
+      emailInterviews: true,
+      emailPlatformNews: false,
+      twoFactorEnabled: false,
     }
 
     return user.preferences ? { ...defaultPrefs, ...(user.preferences as any) } : defaultPrefs

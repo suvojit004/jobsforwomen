@@ -18,9 +18,10 @@ type CandidateInformationCardProps = {
     profileCompletion: number
     skills: string[]
   }
+  onEdit?: () => void
 }
 
-export function CandidateInformationCard({ candidate }: CandidateInformationCardProps) {
+export function CandidateInformationCard({ candidate, onEdit }: CandidateInformationCardProps) {
   if (!candidate) return null
 
   const stats = [
@@ -52,6 +53,7 @@ export function CandidateInformationCard({ candidate }: CandidateInformationCard
             size="sm"
             className="h-7 gap-1 text-[#6B2C91] dark:text-pink-200"
             aria-label="Edit candidate profile"
+            onClick={onEdit}
           >
             <Edit3 className="size-3.5" />
             Edit

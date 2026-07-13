@@ -301,6 +301,119 @@ async function main() {
     })
   }
 
+  // 9. Seed Active Candidates
+  console.log("Seeding Active Candidates...")
+  const candidateRole = roleInstances["Candidate"]
+  const candidatePasswordHash = await bcrypt.hash("candidate123", 10)
+
+  const candidatesList = [
+    {
+      email: "priya.sharma@gmail.com",
+      fullName: "Priya Sharma",
+      title: "Software Engineer",
+      bio: "Passionate full-stack developer with 3+ years of experience working with React, Node.js, and PostgreSQL. Committed to advocating for diversity in tech.",
+      noticePeriod: "1 Month",
+      expectedSalary: "₹15,00,000",
+      skills: ["React", "TypeScript", "Node.js", "PostgreSQL"],
+      experience: [
+        {
+          company: "TechNova Solutions",
+          role: "Frontend Engineer",
+          duration: "2 Years",
+          description: "Developed and maintained user-facing features using React and Tailwind CSS."
+        }
+      ],
+      education: [
+        {
+          degree: "B.Tech in Computer Science",
+          institution: "Delhi Technological University",
+          year: "2022"
+        }
+      ]
+    },
+    {
+      email: "ananya.sen@outlook.com",
+      fullName: "Ananya Sen",
+      title: "Product Manager",
+      bio: "Detail-oriented product manager with 4 years of experience leading cross-functional teams to ship user-centric web and mobile products.",
+      noticePeriod: "Immediate",
+      expectedSalary: "₹18,00,000",
+      skills: ["Product Roadmap", "Agile", "User Research", "SQL"],
+      experience: [
+        {
+          company: "Digital Minds",
+          role: "Associate Product Manager",
+          duration: "3 Years",
+          description: "Led the development of an analytics dashboard, improving user engagement by 20%."
+        }
+      ],
+      education: [
+        {
+          degree: "MBA in Systems",
+          institution: "FMS Delhi",
+          year: "2020"
+        }
+      ]
+    }
+  ]
+
+  for (const cData of candidatesList) {
+    const candidateUser = await prisma.user.upsert({
+      where: { email: cData.email },
+      update: {
+        status: UserStatus.Active,
+      },
+      create: {
+        email: cData.email,
+        passwordHash: candidatePasswordHash,
+        status: UserStatus.Active,
+        roles: {
+          create: {
+            roleId: candidateRole.id,
+          },
+        },
+        candidateProfile: {
+          create: {
+            fullName: cData.fullName,
+            title: cData.title,
+            bio: cData.bio,
+            noticePeriod: cData.noticePeriod,
+            expectedSalary: cData.expectedSalary,
+            experience: cData.experience as any,
+            education: cData.education as any,
+            languages: ["English", "Hindi"],
+            socialLinks: [
+              { platform: "LinkedIn", url: `https://linkedin.com/in/${cData.fullName.toLowerCase().replace(/\s+/g, "")}` }
+            ]
+          }
+        }
+      }
+    })
+
+    // Seed candidate skills
+    const profile = await prisma.candidateProfile.findUnique({
+      where: { userId: candidateUser.id }
+    })
+
+    if (profile) {
+      for (const skillName of cData.skills) {
+        const skill = await prisma.skill.upsert({
+          where: { name: skillName },
+          update: {},
+          create: { name: skillName }
+        })
+
+        await prisma.candidateSkill.upsert({
+          where: {
+            candidateId_skillId: { candidateId: profile.id, skillId: skill.id }
+          },
+          update: {},
+          create: { candidateId: profile.id, skillId: skill.id }
+        })
+      }
+    }
+  }
+
   console.log("🎉 Database Seeding Completed Successfully!")
 }
 

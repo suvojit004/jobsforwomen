@@ -38,7 +38,7 @@ export function JobDetailContent({
       {/* Back link */}
       <div>
         <Link
-          to="/jobs"
+          to="/candidate/jobs"
           className="inline-flex items-center gap-1.5 text-xs font-extrabold text-[#6B2C91] hover:underline dark:text-pink-200"
         >
           <ArrowLeft className="size-3.5" />

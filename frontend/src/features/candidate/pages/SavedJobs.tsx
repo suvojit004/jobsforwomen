@@ -107,7 +107,7 @@ export function SavedJobs() {
             title="No Saved Jobs"
             description="You haven't bookmarked any opportunities yet. Save roles from the browse careers page to compare them here."
             actionLabel="Browse Available Careers"
-            onActionClick={() => navigate("/jobs")}
+            onActionClick={() => navigate("/candidate/jobs")}
           />
         </div>
       )}

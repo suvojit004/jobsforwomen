@@ -14,50 +14,60 @@ export function useProfile() {
   const [editingData, setEditingData] = useState<ExtendedCandidate | null>(null)
   const [isLoading, setIsLoading] = useState(true)
 
-  useEffect(() => {
-    async function fetchProfile() {
-      setIsLoading(true)
-      try {
-        const prof = await candidateApi.getProfile()
-        const extendedProfile: ExtendedCandidate = {
-          fullName: prof?.fullName || "",
-          role: prof?.title || "Professional",
-          email: "", // User level
-          phone: prof?.phone || "",
-          location: prof?.bio || "",
-          experience: prof?.noticePeriod || "",
-          currentCtc: prof?.expectedSalary || "",
-          profileCompletion: 85,
-          skills: (prof?.skills || []).map((s: any) => s.skill?.name || s.name || s),
-          languages: prof?.languages || ["English"],
-          socialLinks: prof?.socialLinks || [],
-          careerBreak: {
-            hasBreak: true,
-            reason: "Maternity Leave",
-            duration: "2 Years",
-            summary: "Focused on parenting and upskilling in modern technologies."
-          },
-          resume: {
-            name: prof?.resumeUrl ? "Resume_latest.pdf" : "",
-            uploadDate: "Just now",
-            verified: !!prof?.resumeUrl
-          },
-          education: prof?.education || [],
-          workExperience: prof?.workExperience || [],
-          preferences: {
-            expectedSalary: prof?.expectedSalary || "",
-            preferredLocation: [prof?.bio || ""],
-            availability: "Immediate",
-            noticePeriod: prof?.noticePeriod || ""
-          }
-        }
-        setCandidateData(extendedProfile)
-      } catch (err) {
-        console.error("Failed to fetch profile", err)
-      } finally {
-        setIsLoading(false)
-      }
+  const mapProfileToState = (prof: any): ExtendedCandidate => {
+    const resumeMeta = prof?.resumeMetadata ?? {}
+    return {
+      fullName: prof?.fullName ?? "",
+      role: prof?.title ?? "Professional",
+      email: prof?.user?.email ?? "",
+      phone: prof?.phone ?? "",
+      location: prof?.location ?? "",
+      experience: prof?.totalExperience ?? "",
+      currentCtc: prof?.expectedSalary ?? "",
+      profileCompletion: prof?.profileCompletePercent ?? 0,
+      skills: (prof?.skills ?? []).map((s: any) => s.skill?.name ?? s.name ?? s),
+      languages: prof?.languages?.length ? prof.languages : ["English"],
+      socialLinks: prof?.socialLinks ?? [],
+      careerBreak: prof?.careerBreak ?? {
+        hasBreak: false,
+        reason: "",
+        duration: "",
+        summary: "",
+      },
+      resume: {
+        name: prof?.resumeUrl
+          ? resumeMeta.originalName ?? prof.resumeUrl.split("/").pop() ?? "Resume"
+          : "",
+        uploadDate: resumeMeta.uploadedAt
+          ? new Date(resumeMeta.uploadedAt).toLocaleDateString()
+          : "",
+        verified: !!prof?.resumeUrl,
+        url: prof?.resumeUrl ?? "",
+      },
+      education: prof?.education ?? [],
+      workExperience: prof?.experience ?? [],
+      preferences: {
+        expectedSalary: prof?.expectedSalary ?? "",
+        preferredLocation: prof?.preferredLocations?.length ? prof.preferredLocations : [],
+        availability: prof?.availability ?? "Immediate",
+        noticePeriod: prof?.noticePeriod ?? "",
+      },
     }
+  }
+
+  const fetchProfile = async () => {
+    setIsLoading(true)
+    try {
+      const prof = await candidateApi.getProfile()
+      setCandidateData(mapProfileToState(prof))
+    } catch (err) {
+      console.error("Failed to fetch profile", err)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  useEffect(() => {
     fetchProfile()
   }, [])
 
@@ -72,27 +82,37 @@ export function useProfile() {
     setIsEditing(false)
   }
 
+  const [saveError, setSaveError] = useState<string | null>(null)
+
   const saveChanges = async () => {
     if (editingData) {
+      setSaveError(null)
       try {
         const payload = {
           fullName: editingData.fullName,
           title: editingData.role,
           phone: editingData.phone,
-          bio: editingData.location,
-          noticePeriod: editingData.experience,
+          location: editingData.location,
+          totalExperience: editingData.experience,
+          noticePeriod: editingData.preferences.noticePeriod,
           expectedSalary: editingData.currentCtc,
+          availability: editingData.preferences.availability,
+          preferredLocations: editingData.preferences.preferredLocation,
+          careerBreak: editingData.careerBreak,
           languages: editingData.languages,
           socialLinks: editingData.socialLinks,
           skills: editingData.skills,
           education: editingData.education,
-          workExperience: editingData.workExperience,
+          experience: editingData.workExperience,
         }
-        await candidateApi.updateProfile(payload)
-        setCandidateData(editingData)
+        const updated = await candidateApi.updateProfile(payload)
+        // Re-sync from the server's response (not just the local optimistic
+        // edits) so the UI reflects exactly what was actually persisted.
+        setCandidateData(updated ? mapProfileToState(updated) : editingData)
         setIsEditing(false)
-      } catch (err) {
+      } catch (err: any) {
         console.error("Failed to save profile changes", err)
+        setSaveError(err?.message || "Failed to save changes. Please try again.")
       }
     }
   }
@@ -275,6 +295,8 @@ export function useProfile() {
     isEditing,
     editingData,
     isLoading,
+    saveError,
+    refreshProfile: fetchProfile,
     startEditing,
     cancelChanges,
     saveChanges,

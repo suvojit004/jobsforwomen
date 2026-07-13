@@ -10,27 +10,43 @@ export function calculateProfileCompletion(user: any): number {
   let filled = 0
   let total = 0
 
-  if (user.candidateProfile) {
-    const profile = user.candidateProfile
-    const fields = ["fullName", "title", "bio", "avatarUrl", "resumeUrl", "noticePeriod", "expectedSalary"]
-    total = fields.length + 3 // fields + skills + experience + education
+  const isProfileDirect = !user.candidateProfile && !user.recruiterProfile && (user.fullName !== undefined)
+
+  if (user.candidateProfile || (isProfileDirect && user.experience !== undefined)) {
+    const profile = user.candidateProfile || user
+    const fields = [
+      "fullName",
+      "title",
+      "bio",
+      "phone",
+      "location",
+      "totalExperience",
+      "avatarUrl",
+      "resumeUrl",
+      "noticePeriod",
+      "expectedSalary",
+      "availability"
+    ]
+    total = fields.length + 4 // fields + skills + experience + education + careerBreak
     fields.forEach((f) => {
       if (profile[f]) filled++
     })
     if (profile.skills && profile.skills.length > 0) filled++
     if (profile.experience && profile.experience.length > 0) filled++
     if (profile.education && profile.education.length > 0) filled++
-  } else if (user.recruiterProfile) {
-    const profile = user.recruiterProfile
+    if (profile.careerBreak && (profile.careerBreak as any).hasBreak) filled++
+  } else if (user.recruiterProfile || (isProfileDirect && user.companyId !== undefined)) {
+    const profile = user.recruiterProfile || user
     const fields = ["fullName", "phone"]
     total = fields.length + 3 // fields + company name + website + location
     fields.forEach((f) => {
       if (profile[f]) filled++
     })
-    if (profile.company) {
-      if (profile.company.name) filled++
-      if (profile.company.website) filled++
-      if (profile.company.location) filled++
+    const company = profile.company
+    if (company) {
+      if (company.name) filled++
+      if (company.website) filled++
+      if (company.location) filled++
     }
   }
 

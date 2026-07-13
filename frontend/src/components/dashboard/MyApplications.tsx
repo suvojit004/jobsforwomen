@@ -1,4 +1,5 @@
 import { useMemo } from "react"
+import { useNavigate } from "react-router-dom"
 import { ChevronRight } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
@@ -21,6 +22,7 @@ type MyApplicationsProps = {
 }
 
 export function MyApplications({ applications = [] }: MyApplicationsProps) {
+  const navigate = useNavigate()
   const tableMeta = useMemo(
     () => ({
       hasInterviewDate: applications.some(
@@ -54,6 +56,7 @@ export function MyApplications({ applications = [] }: MyApplicationsProps) {
             variant="ghost"
             size="sm"
             className="h-7 text-xs text-[#6B2C91] dark:text-pink-200"
+            onClick={() => navigate("/candidate/applications")}
           >
             View all
           </Button>
@@ -128,6 +131,7 @@ export function MyApplications({ applications = [] }: MyApplicationsProps) {
                         variant="ghost"
                         size="sm"
                         className="h-7 gap-1 text-xs text-[#6B2C91] dark:text-pink-200"
+                        onClick={() => navigate("/candidate/applications")}
                       >
                         View Details
                         <ChevronRight className="size-3.5" />
@@ -140,7 +144,7 @@ export function MyApplications({ applications = [] }: MyApplicationsProps) {
           </>
         ) : (
           <div className="m-4">
-            <NoApplicationsState />
+            <NoApplicationsState onActionClick={() => navigate("/candidate/jobs")} />
           </div>
         )}
       </DashboardCard>

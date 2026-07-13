@@ -2,6 +2,11 @@ import type { Request, Response } from "express"
 import { AuthService } from "./auth.service"
 import { sendSuccess, sendError } from "../../shared/utils/response"
 import { getGoogleAuthUrl, getGoogleUser } from "../../shared/utils/googleOAuth"
+import {
+  REFRESH_COOKIE_NAME,
+  getRefreshCookieOptions,
+  getClearRefreshCookieOptions,
+} from "../../shared/utils/cookies"
 import env from "../../shared/config/env"
 import {
   registerCandidateSchema,
@@ -66,13 +71,7 @@ export class AuthController {
     const result = await this.authService.login(validated.email, validated.password, ipAddress, userAgent)
 
     // Set refresh token HttpOnly cookie
-    res.cookie("jid", result.refreshToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
-      path: "/api/v1/auth/refresh",
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-    })
+    res.cookie(REFRESH_COOKIE_NAME, result.refreshToken, getRefreshCookieOptions())
 
     return sendSuccess(
       res,
@@ -99,13 +98,7 @@ export class AuthController {
       userAgent
     )
 
-    res.cookie("jid", result.refreshToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
-      path: "/api/v1/auth/refresh",
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-    })
+    res.cookie(REFRESH_COOKIE_NAME, result.refreshToken, getRefreshCookieOptions())
 
     return sendSuccess(
       res,
@@ -118,7 +111,7 @@ export class AuthController {
   }
 
   refresh = async (req: Request, res: Response) => {
-    const token = req.cookies?.jid || req.body?.refreshToken
+    const token = req.cookies?.[REFRESH_COOKIE_NAME] || req.body?.refreshToken
     if (!token) {
       return sendError(res, "Refresh token required", null, 401)
     }
@@ -128,13 +121,7 @@ export class AuthController {
 
     const result = await this.authService.refresh(token, ipAddress, userAgent)
 
-    res.cookie("jid", result.refreshToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
-      path: "/api/v1/auth/refresh",
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-    })
+    res.cookie(REFRESH_COOKIE_NAME, result.refreshToken, getRefreshCookieOptions())
 
     return sendSuccess(
       res,
@@ -147,16 +134,12 @@ export class AuthController {
   }
 
   logout = async (req: Request, res: Response) => {
-    const token = req.cookies?.jid || req.body?.refreshToken
+    const token = req.cookies?.[REFRESH_COOKIE_NAME] || req.body?.refreshToken
     if (token) {
       await this.authService.logout(token)
     }
 
-    res.clearCookie("jid", {
-      path: "/api/v1/auth/refresh",
-      secure: process.env.NODE_ENV === "production",
-      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
-    })
+    res.clearCookie(REFRESH_COOKIE_NAME, getClearRefreshCookieOptions())
 
     return sendSuccess(res, null, "Logged out successfully.")
   }
@@ -222,8 +205,6 @@ export class AuthController {
   forgotPassword = async (req: Request, res: Response) => {
     const validated = forgotPasswordSchema.parse(req.body)
     await this.authService.forgotPassword(validated.email)
-    // Always return a generic success response so we never reveal whether an
-    // email address is registered.
     return sendSuccess(res, { email: validated.email }, "If that email is registered, a password reset link has been sent.")
   }
 
@@ -256,7 +237,11 @@ export class AuthController {
   initiateGoogleOAuth = (req: Request, res: Response) => {
     const role = (req.query.role as string) || "Candidate"
     const { url, state } = getGoogleAuthUrl(role)
-    res.cookie("oauth_state", state, { httpOnly: true, maxAge: 15 * 60 * 1000 })
+    res.cookie("oauth_state", state, {
+      httpOnly: true,
+      secure: env.NODE_ENV !== "development",
+      maxAge: 15 * 60 * 1000,
+    })
     return res.redirect(url)
   }
 
@@ -266,7 +251,6 @@ export class AuthController {
       const state = req.query.state as string
       const savedState = req.cookies?.oauth_state
 
-      // State verification guard
       if (!state || state !== savedState) {
         return sendError(res, "Forbidden: Secure OAuth State parameter mismatch.", null, 403)
       }
@@ -287,13 +271,7 @@ export class AuthController {
         userAgent
       )
 
-      res.cookie("jid", result.refreshToken, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
-        sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
-        path: "/api/v1/auth/refresh",
-        maxAge: 7 * 24 * 60 * 60 * 1000,
-      })
+      res.cookie(REFRESH_COOKIE_NAME, result.refreshToken, getRefreshCookieOptions())
 
       res.clearCookie("oauth_state")
 

@@ -61,10 +61,11 @@ export function JobDetails() {
           title="Opportunity Not Found"
           description="We couldn't locate this job opportunity. It might have expired or been removed by the employer."
           actionLabel="Browse Available Jobs"
+          onActionClick={() => navigate("/candidate/jobs")}
         />
         <div className="mt-4 text-center">
           <button
-            onClick={() => navigate("/jobs")}
+            onClick={() => navigate("/candidate/jobs")}
             className="text-xs font-bold text-[#6B2C91] hover:underline dark:text-pink-200"
           >
             Go Back

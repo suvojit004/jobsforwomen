@@ -36,7 +36,17 @@ export function SkillsSection({
       </div>
 
       <div className="space-y-4">
-        <div className="flex flex-wrap gap-2">
+        {skills.length === 0 && !isEditing ? (
+          <p className="text-xs font-medium text-slate-400 dark:text-slate-500">
+            No skills added yet. Use "Edit Profile" above to showcase what you're great at.
+          </p>
+        ) : (
+        <div className="flex min-w-0 flex-wrap gap-2">
+          {skills.length === 0 && isEditing && (
+            <p className="w-full text-xs font-medium text-slate-400 dark:text-slate-500">
+              No skills added yet -- add your first one below.
+            </p>
+          )}
           {skills.map((skill) => (
             <span
               key={skill}
@@ -56,6 +66,7 @@ export function SkillsSection({
             </span>
           ))}
         </div>
+        )}
 
         {isEditing && (
           <form onSubmit={handleSubmit} className="flex max-w-xs gap-2 pt-2">

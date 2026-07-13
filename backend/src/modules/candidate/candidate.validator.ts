@@ -4,29 +4,24 @@ export const updateCandidateProfileSchema = z.object({
   fullName: z.string().min(2, "Full name must be at least 2 characters").optional(),
   title: z.string().max(100).nullable().optional(),
   bio: z.string().max(500).nullable().optional(),
+  phone: z.string().max(20).nullable().optional(),
+  location: z.string().max(100).nullable().optional(),
+  totalExperience: z.string().max(50).nullable().optional(),
+  careerBreak: z.object({
+    hasBreak: z.boolean(),
+    reason: z.string().optional().nullable(),
+    duration: z.string().optional().nullable(),
+    summary: z.string().optional().nullable(),
+  }).nullable().optional(),
+  preferredLocations: z.array(z.string()).optional(),
+  availability: z.string().max(50).nullable().optional(),
   avatarUrl: z.string().url().nullable().optional(),
   noticePeriod: z.string().nullable().optional(),
   expectedSalary: z.string().nullable().optional(),
   languages: z.array(z.string()).optional(),
   skills: z.array(z.string()).optional(), // Array of skill names
-  experience: z.array(
-    z.object({
-      company: z.string(),
-      role: z.string(),
-      startDate: z.string(),
-      endDate: z.string().nullable(),
-      description: z.string().optional(),
-    })
-  ).optional(),
-  education: z.array(
-    z.object({
-      institution: z.string(),
-      degree: z.string(),
-      fieldOfStudy: z.string().optional(),
-      startDate: z.string(),
-      endDate: z.string().nullable(),
-    })
-  ).optional(),
+  experience: z.array(z.record(z.string(), z.any())).optional(),
+  education: z.array(z.record(z.string(), z.any())).optional(),
   socialLinks: z.array(
     z.object({
       platform: z.string(),
@@ -44,6 +39,15 @@ export const updateCandidateSettingsSchema = z.object({
   showSalary: z.boolean().optional(),
   theme: z.enum(["Light", "Dark", "System"]).optional(),
   emailFormat: z.enum(["HTML", "Text"]).optional(),
+  // Fields actually sent by the candidate Settings page (Notifications +
+  // Security tabs). Previously missing here, so Zod's default "strip unknown
+  // keys" behavior silently dropped every one of these on every save -- the
+  // UI showed "Preferences saved!" but nothing was ever persisted.
+  emailNewJobs: z.boolean().optional(),
+  emailStatusUpdate: z.boolean().optional(),
+  emailInterviews: z.boolean().optional(),
+  emailPlatformNews: z.boolean().optional(),
+  twoFactorEnabled: z.boolean().optional(),
 })
 
 export const reportJobSchema = z.object({

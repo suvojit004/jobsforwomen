@@ -6,6 +6,7 @@ import {
   XCircle,
   type LucideIcon,
 } from "lucide-react"
+import { useNavigate } from "react-router-dom"
 import { Button } from "@/components/ui/button"
 import { DashboardCard } from "@/components/dashboard/DashboardCard"
 import { SectionHeader } from "@/components/dashboard/SectionHeader"
@@ -47,6 +48,7 @@ type ActivityFeedProps = {
 }
 
 export function ActivityFeed({ activities = [] }: ActivityFeedProps) {
+  const navigate = useNavigate()
   return (
     <section>
       <SectionHeader
@@ -57,6 +59,7 @@ export function ActivityFeed({ activities = [] }: ActivityFeedProps) {
             variant="ghost"
             size="sm"
             className="h-7 text-xs text-[#6B2C91] dark:text-pink-200"
+            onClick={() => navigate("/candidate/notifications")}
           >
             View all
           </Button>

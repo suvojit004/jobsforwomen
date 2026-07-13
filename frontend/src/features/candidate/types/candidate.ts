@@ -49,6 +49,7 @@ export interface ExtendedCandidate {
     name: string
     uploadDate: string
     verified: boolean
+    url: string
   }
   education: Education[]
   workExperience: WorkExperience[]

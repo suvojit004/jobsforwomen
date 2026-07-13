@@ -49,12 +49,13 @@ export function Settings() {
   const [notifSuccess, setNotifSuccess] = useState(false)
 
   // Privacy states
-  const [profileVisibility, setProfileVisibility] = useState("public")
+  const [profileVisibility, setProfileVisibility] = useState("Public")
   const [indexSearch, setIndexSearch] = useState(true)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [deleteConfirmText, setDeleteConfirmText] = useState("")
   const [deletePassword, setDeletePassword] = useState("")
   const [deleteError, setDeleteError] = useState("")
+  const [privacySuccess, setPrivacySuccess] = useState(false)
 
   useEffect(() => {
     async function loadData() {
@@ -75,6 +76,7 @@ export function Settings() {
           setEmailInterviews(!!setts.emailInterviews)
           setEmailPlatformNews(!!setts.emailPlatformNews)
           setTwoFactor(!!setts.twoFactorEnabled)
+          setProfileVisibility(setts.profileVisibility || "Public")
         }
       } catch (err) {
         console.error("Failed to load settings data", err)
@@ -117,6 +119,33 @@ export function Settings() {
       setTimeout(() => setPasswordSuccess(false), 3000)
     } catch (err: any) {
       setPasswordError(err?.message || "Failed to change password. Please check your current password.")
+    }
+  }
+
+  // 2FA is displayed inside the Security tab's password-change form, but that
+  // form's password fields are `required` -- so a user who only wants to
+  // toggle 2FA (without also changing their password) could never actually
+  // submit it. Persist the toggle immediately on change instead of waiting
+  // for that form's submit.
+  const handleToggleTwoFactor = async (checked: boolean) => {
+    const previous = twoFactor
+    setTwoFactor(checked)
+    try {
+      await candidateApi.updateSettings({ twoFactorEnabled: checked })
+    } catch (err) {
+      console.error("Failed to update two-factor authentication setting", err)
+      setTwoFactor(previous)
+    }
+  }
+
+  const handlePrivacySubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    try {
+      await candidateApi.updateSettings({ profileVisibility })
+      setPrivacySuccess(true)
+      setTimeout(() => setPrivacySuccess(false), 3000)
+    } catch (err) {
+      console.error("Failed to update privacy settings", err)
     }
   }
 
@@ -215,13 +244,22 @@ export function Settings() {
                 {/* Photo trigger */}
                 <div className="flex items-center gap-4 pb-4 border-b border-slate-100 dark:border-slate-800">
                   <div className="size-16 rounded-full bg-gradient-to-br from-pink-100 to-violet-200 text-[#6B2C91] dark:from-pink-500/20 dark:to-violet-500/25 dark:text-pink-100 flex items-center justify-center font-black text-xl select-none">
-                    PS
+                    {fullName
+                      ? fullName.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase()
+                      : "JW"}
                   </div>
                   <div className="space-y-1">
                     <p className="text-xs font-extrabold text-slate-800 dark:text-slate-200">Profile picture</p>
-                    <Button type="button" variant="outline" size="sm" className="h-8 text-xs font-bold gap-1.5">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-8 text-xs font-bold gap-1.5"
+                      disabled
+                      title="Profile photo upload isn't available yet"
+                    >
                       <Upload className="size-3.5" />
-                      Upload Photo
+                      Upload Photo (Coming Soon)
                     </Button>
                   </div>
                 </div>
@@ -242,10 +280,11 @@ export function Settings() {
                     <input
                       type="email"
                       value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      required
-                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6B2C91]/30 dark:border-slate-800 dark:bg-slate-900 dark:text-white"
+                      disabled
+                      title="Contact support to change your account email"
+                      className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400"
                     />
+                    <p className="text-[10px] text-slate-400 dark:text-slate-500">Contact support to change your account email.</p>
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400">Phone Number</label>
@@ -385,7 +424,7 @@ export function Settings() {
                   <input
                     type="checkbox"
                     checked={twoFactor}
-                    onChange={(e) => setTwoFactor(e.target.checked)}
+                    onChange={(e) => handleToggleTwoFactor(e.target.checked)}
                     className="rounded border-slate-350 text-[#6B2C91] focus:ring-[#6B2C91] dark:border-slate-700 dark:bg-slate-950 shrink-0 cursor-pointer"
                   />
                 </div>
@@ -500,7 +539,7 @@ export function Settings() {
                   Privacy Settings
                 </h2>
 
-                <div className="space-y-4">
+                <form onSubmit={handlePrivacySubmit} className="space-y-4">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
                     <div className="space-y-0.5">
                       <p className="text-xs font-extrabold text-slate-800 dark:text-slate-200">Profile Visibility</p>
@@ -511,27 +550,46 @@ export function Settings() {
                       onChange={(e) => setProfileVisibility(e.target.value)}
                       className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6B2C91]/30 dark:border-slate-800 dark:bg-slate-900 dark:text-white font-bold"
                     >
-                      <option value="public">Visible to All Employers</option>
-                      <option value="applied-only">Only Applied Companies</option>
-                      <option value="private">Hidden (Private)</option>
+                      <option value="Public">Visible to All Employers</option>
+                      <option value="RecruitersOnly">Only Recruiters I've Applied To</option>
+                      <option value="Private">Hidden (Private)</option>
                     </select>
                   </div>
 
                   <hr className="border-slate-100 dark:border-slate-800" />
 
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between opacity-60">
                     <div className="space-y-0.5">
-                      <p className="text-xs font-extrabold text-slate-800 dark:text-slate-200">Search Engine Indexing</p>
+                      <p className="text-xs font-extrabold text-slate-800 dark:text-slate-200">
+                        Search Engine Indexing <span className="font-semibold text-slate-400">(Coming Soon)</span>
+                      </p>
                       <p className="text-[11px] text-slate-500">Allow search engine crawlers (Google, Bing) to index your profile.</p>
                     </div>
                     <input
                       type="checkbox"
                       checked={indexSearch}
+                      disabled
+                      title="Not available yet"
                       onChange={(e) => setIndexSearch(e.target.checked)}
-                      className="rounded border-slate-300 text-[#6B2C91] focus:ring-[#6B2C91] dark:border-slate-700 dark:bg-slate-950 cursor-pointer"
+                      className="rounded border-slate-300 text-[#6B2C91] focus:ring-[#6B2C91] dark:border-slate-700 dark:bg-slate-950 cursor-not-allowed"
                     />
                   </div>
-                </div>
+
+                  <div className="flex items-center gap-3 pt-2">
+                    <Button
+                      type="submit"
+                      className="bg-[#6B2C91] text-white hover:bg-[#5a237b] h-9 px-6 font-extrabold text-xs dark:bg-pink-600 dark:hover:bg-pink-700"
+                    >
+                      Save Privacy Settings
+                    </Button>
+                    {privacySuccess && (
+                      <span className="text-xs text-emerald-600 font-extrabold flex items-center gap-1">
+                        <Check className="size-4 stroke-[3]" />
+                        Preferences saved!
+                      </span>
+                    )}
+                  </div>
+                </form>
               </DashboardCard>
 
               {/* Danger Zone: Delete Account */}

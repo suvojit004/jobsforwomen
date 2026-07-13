@@ -3,9 +3,10 @@ import { DashboardCard } from "@/components/dashboard/DashboardCard"
 
 type ProfileStrengthCardProps = {
   completion?: number
+  onComplete?: () => void
 }
 
-export function ProfileStrengthCard({ completion = 0 }: ProfileStrengthCardProps) {
+export function ProfileStrengthCard({ completion = 0, onComplete }: ProfileStrengthCardProps) {
   const percentage = completion
   const remaining = 100 - percentage
 
@@ -53,7 +54,7 @@ export function ProfileStrengthCard({ completion = 0 }: ProfileStrengthCardProps
       <p className="mt-3 max-w-44 text-xs leading-5 text-slate-600 dark:text-slate-300">
         Only {remaining}% left to unlock Premium Job Recommendations.
       </p>
-      <Button className="mt-4 w-full bg-[#6B2C91] hover:bg-[#5a237b]">
+      <Button className="mt-4 w-full bg-[#6B2C91] hover:bg-[#5a237b]" onClick={onComplete}>
         Complete Profile
       </Button>
       <p className="mt-3 text-[11px] leading-4 text-slate-500 dark:text-slate-400">

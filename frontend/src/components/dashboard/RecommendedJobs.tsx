@@ -1,3 +1,4 @@
+import { useNavigate } from "react-router-dom"
 import { Button } from "@/components/ui/button"
 import { JobCard } from "@/components/dashboard/JobCard"
 import { SectionHeader } from "@/components/dashboard/SectionHeader"
@@ -19,6 +20,7 @@ export function RecommendedJobs({
   onSave,
   onApply,
 }: RecommendedJobsProps) {
+  const navigate = useNavigate()
   return (
     <section>
       <SectionHeader
@@ -29,6 +31,7 @@ export function RecommendedJobs({
             variant="ghost"
             size="sm"
             className="h-7 text-xs text-[#6B2C91] dark:text-pink-200"
+            onClick={() => navigate("/candidate/jobs")}
           >
             View all jobs
           </Button>
@@ -48,7 +51,7 @@ export function RecommendedJobs({
           ))}
         </div>
       ) : (
-        <NoRecommendedJobsState />
+        <NoRecommendedJobsState onActionClick={() => navigate("/candidate/jobs")} />
       )}
     </section>
   )

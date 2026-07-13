@@ -17,10 +17,13 @@ export function Profile() {
     isEditing,
     editingData,
     isLoading,
+    saveError,
+    refreshProfile,
     startEditing,
     cancelChanges,
     saveChanges,
     updatePersonalInfo,
+    updateCareerBreak,
     updatePreferences,
     addWorkExperience,
     updateWorkExperience,
@@ -60,6 +63,12 @@ export function Profile() {
           Manage your personal information, work history, and preferences.
         </p>
       </div>
+
+      {saveError && (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-2.5 text-xs font-bold text-red-700 dark:border-red-900/40 dark:bg-red-950/20 dark:text-red-300">
+          {saveError}
+        </div>
+      )}
 
       {/* Header Info */}
       <ProfileHeader
@@ -118,8 +127,12 @@ export function Profile() {
           />
 
           {/* Reused Dashboard Components */}
-          <CareerBreakCard careerBreak={currentData.careerBreak} />
-          <ResumeCard resume={currentData.resume} />
+          <CareerBreakCard
+            careerBreak={currentData.careerBreak}
+            isEditing={isEditing}
+            onChange={updateCareerBreak}
+          />
+          <ResumeCard resume={currentData.resume} onChanged={refreshProfile} />
         </div>
       </div>
     </motion.div>

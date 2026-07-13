@@ -3,12 +3,24 @@ import apiClient from "@/api/client"
 export const candidateApi = {
   async getProfile() {
     const res = await apiClient.get("/api/v1/candidates/profile")
-    return res?.data?.candidate || res?.data
+    return res?.data?.profile || res?.data
   },
 
   async updateProfile(profileData: any) {
     const res = await apiClient.put("/api/v1/candidates/profile", profileData)
-    return res?.data?.candidate || res?.data
+    return res?.data?.profile || res?.data
+  },
+
+  async uploadResume(file: File) {
+    const formData = new FormData()
+    formData.append("resume", file)
+    const res = await apiClient.post("/api/v1/candidates/resume", formData)
+    return res?.data?.profile || res?.data
+  },
+
+  async deleteResume() {
+    const res = await apiClient.delete("/api/v1/candidates/resume")
+    return res?.data?.profile || res?.data
   },
 
   async getSettings() {

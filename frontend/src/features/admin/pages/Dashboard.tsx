@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react"
-import { useNavigate } from "react-router-dom"
+import { Link, useNavigate } from "react-router-dom"
 import {
   Users,
   BriefcaseBusiness,
@@ -52,6 +52,13 @@ export function Dashboard() {
   const [candidates, setCandidates] = useState<any[]>([])
   const [jobs, setJobs] = useState<any[]>([])
   const [audits, setAudits] = useState<any[]>([])
+  // Real platform-wide counts, computed from the *full* lists before they get
+  // sliced down to a 5-row preview below. The tab badges and KPI tiles
+  // previously showed hardcoded numbers (e.g. "Pending (10)", "24,685
+  // Candidates") completely disconnected from any real data.
+  const [companyStatusCounts, setCompanyStatusCounts] = useState({ pending: 0, approved: 0, rejected: 0 })
+  const [jobStatusCounts, setJobStatusCounts] = useState({ all: 0, reported: 0, removed: 0 })
+  const [candidateStats, setCandidateStats] = useState({ total: 0, newThisWeek: 0, active: 0, inactive: 0 })
   const [applicationFunnel, setApplicationFunnel] = useState<{ name: string; value: number; percent: string }[]>([])
   const [departmentDistribution, setDepartmentDistribution] = useState<{ name: string; value: number; color: string; max: number }[]>([])
   const [userGrowth, setUserGrowth] = useState<{ day: string; Users: number }[]>([])
@@ -127,6 +134,29 @@ export function Dashboard() {
         setDepartmentDistribution(analytics.departmentDistribution || [])
         setUserGrowth(analytics.userGrowth || [])
 
+        // Real per-status counts computed from the full (unsliced) lists --
+        // the tab badges below previously showed fixed numbers regardless of
+        // what was actually in the database.
+        const pendingStatuses = new Set(["pending", "pending_verification", "submitted", "under_review", "draft", "info_requested"])
+        setCompanyStatusCounts({
+          pending: (companyList || []).filter((c: any) => pendingStatuses.has(c.status)).length,
+          approved: (companyList || []).filter((c: any) => c.status === "approved").length,
+          rejected: (companyList || []).filter((c: any) => c.status === "rejected").length,
+        })
+        setJobStatusCounts({
+          all: (jobsList || []).length,
+          reported: (jobsList || []).filter((j: any) => !!j.reported).length,
+          removed: (jobsList || []).filter((j: any) => j.status === "archived").length,
+        })
+
+        const oneWeekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000
+        setCandidateStats({
+          total: candidateUsers.length,
+          newThisWeek: candidateUsers.filter((u: any) => u.createdAt && new Date(u.createdAt).getTime() >= oneWeekAgo).length,
+          active: candidateUsers.filter((u: any) => u.status === "Active").length,
+          inactive: candidateUsers.filter((u: any) => u.status !== "Active").length,
+        })
+
         setCompanies((companyList || []).slice(0, 5).map((c: any) => ({
           id: c.id,
           name: c.name,
@@ -147,7 +177,12 @@ export function Dashboard() {
           id: j.id,
           title: j.title,
           company: j.company?.name || "Unknown Company",
-          status: j.status === "approved" ? "Active" : "Reported"
+          // Job has real `reported` (boolean) and `status` (archived, etc.)
+          // fields -- previously this collapsed every non-"approved" status
+          // into "Reported" and never produced "Removed" at all, so the
+          // Removed tab below could never show anything even when jobs had
+          // actually been archived.
+          status: j.status === "archived" ? "Removed" : j.reported ? "Reported" : j.status === "approved" ? "Active" : "Other"
         })))
 
         setAudits((auditList || []).slice(0, 4).map((a: any) => ({
@@ -203,6 +238,17 @@ export function Dashboard() {
     return true
   })
 
+  // Real "last 7 days" range instead of a hardcoded, permanently stale date
+  // string (previously always showed "12 May 2025 - 18 May 2025" no matter
+  // what today's actual date was).
+  const last7DaysLabel = (() => {
+    const end = new Date()
+    const start = new Date()
+    start.setDate(end.getDate() - 6)
+    const fmt = (d: Date) => d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })
+    return `${fmt(start)} - ${fmt(end)}`
+  })()
+
   if (isLoading) {
     return <div className="p-8 text-center text-sm font-bold text-[#6B2C91]">Loading admin console...</div>
   }
@@ -230,7 +276,7 @@ export function Dashboard() {
         <div className="flex items-center gap-2 shrink-0">
           <Calendar className="size-4 text-slate-400" />
           <span className="text-xs font-bold text-slate-700 dark:text-slate-350 border border-slate-200 bg-white px-3 py-1.5 rounded-lg dark:border-slate-800 dark:bg-slate-900">
-            12 May 2025 - 18 May 2025
+            {last7DaysLabel}
           </span>
         </div>
       </div>
@@ -244,14 +290,11 @@ export function Dashboard() {
           </div>
           <div>
             <h3 className="text-2xl font-black text-slate-900 dark:text-white leading-none">
-              {metrics?.companies || 2458}
+              {metrics?.companies ?? 0}
             </h3>
             <p className="text-[11px] font-bold text-slate-500 dark:text-slate-400 mt-1">
               Total Companies
             </p>
-            <span className="text-[9px] font-black text-emerald-600 dark:text-emerald-400 flex items-center gap-0.5 mt-0.5">
-              ↑ 12.3% <span className="font-semibold text-slate-405 dark:text-slate-500">from last week</span>
-            </span>
           </div>
         </DashboardCard>
 
@@ -262,14 +305,11 @@ export function Dashboard() {
           </div>
           <div>
             <h3 className="text-2xl font-black text-slate-900 dark:text-white leading-none">
-              {metrics?.jobs || 5784}
+              {metrics?.jobs ?? 0}
             </h3>
             <p className="text-[11px] font-bold text-slate-500 dark:text-slate-400 mt-1">
               Total Jobs
             </p>
-            <span className="text-[9px] font-black text-emerald-600 dark:text-emerald-400 flex items-center gap-0.5 mt-0.5">
-              ↑ 18.7% <span className="font-semibold text-slate-405 dark:text-slate-500">from last week</span>
-            </span>
           </div>
         </DashboardCard>
 
@@ -280,14 +320,11 @@ export function Dashboard() {
           </div>
           <div>
             <h3 className="text-2xl font-black text-slate-900 dark:text-white leading-none">
-              {metrics?.candidates || 24685}
+              {metrics?.candidates ?? 0}
             </h3>
             <p className="text-[11px] font-bold text-slate-500 dark:text-slate-400 mt-1">
               Total Candidates
             </p>
-            <span className="text-[9px] font-black text-emerald-600 dark:text-emerald-400 flex items-center gap-0.5 mt-0.5">
-              ↑ 15.2% <span className="font-semibold text-slate-405 dark:text-slate-500">from last week</span>
-            </span>
           </div>
         </DashboardCard>
 
@@ -298,14 +335,11 @@ export function Dashboard() {
           </div>
           <div>
             <h3 className="text-2xl font-black text-slate-900 dark:text-white leading-none">
-              {metrics?.applications || 12392}
+              {metrics?.applications ?? 0}
             </h3>
             <p className="text-[11px] font-bold text-slate-500 dark:text-slate-400 mt-1">
               Total Applications
             </p>
-            <span className="text-[9px] font-black text-emerald-600 dark:text-emerald-400 flex items-center gap-0.5 mt-0.5">
-              ↑ 20.1% <span className="font-semibold text-slate-405 dark:text-slate-500">from last week</span>
-            </span>
           </div>
         </DashboardCard>
       </div>
@@ -319,9 +353,9 @@ export function Dashboard() {
             <h4 className="text-xs font-black text-slate-900 uppercase dark:text-white">
               Company Approvals
             </h4>
-            <a href="/admin/company-approvals" className="text-[10px] font-black text-[#6B2C91] dark:text-pink-300 hover:underline">
+            <Link to="/admin/company-approvals" className="text-[10px] font-black text-[#6B2C91] dark:text-pink-300 hover:underline">
               View all
-            </a>
+            </Link>
           </div>
 
           {/* Interactive filter tabs */}
@@ -335,7 +369,7 @@ export function Dashboard() {
                   : "border-transparent text-slate-405 dark:text-slate-500"
               )}
             >
-              Pending (10)
+              Pending ({companyStatusCounts.pending})
             </button>
             <button
               onClick={() => setCompanyTab("approved")}
@@ -346,7 +380,7 @@ export function Dashboard() {
                   : "border-transparent text-slate-405 dark:text-slate-500"
               )}
             >
-              Approved (120)
+              Approved ({companyStatusCounts.approved})
             </button>
             <button
               onClick={() => setCompanyTab("rejected")}
@@ -357,7 +391,7 @@ export function Dashboard() {
                   : "border-transparent text-slate-405 dark:text-slate-500"
               )}
             >
-              Rejected (15)
+              Rejected ({companyStatusCounts.rejected})
             </button>
           </div>
 
@@ -423,9 +457,9 @@ export function Dashboard() {
             </table>
           </div>
 
-          <a href="/admin/company-approvals" className="text-[10px] font-black text-[#6B2C91] dark:text-pink-300 flex items-center gap-1 mt-2 hover:underline">
+          <Link to="/admin/company-approvals" className="text-[10px] font-black text-[#6B2C91] dark:text-pink-300 flex items-center gap-1 mt-2 hover:underline">
             View all pending companies →
-          </a>
+          </Link>
         </DashboardCard>
 
         {/* Column 2: Candidate Information */}
@@ -434,27 +468,28 @@ export function Dashboard() {
             <h4 className="text-xs font-black text-slate-900 uppercase dark:text-white">
               Candidate Information
             </h4>
-            <a href="/admin/candidate-management" className="text-[10px] font-black text-[#6B2C91] dark:text-pink-300 hover:underline">
+            <Link to="/admin/candidate-management" className="text-[10px] font-black text-[#6B2C91] dark:text-pink-300 hover:underline">
               View all
-            </a>
+            </Link>
           </div>
 
-          {/* KPI Mini-Tiles */}
+          {/* KPI Mini-Tiles -- real counts computed from the full candidate
+              list (see candidateStats above), not fixed placeholder numbers. */}
           <div className="grid grid-cols-4 gap-2">
             <div className="bg-purple-50/50 p-2 rounded-xl dark:bg-slate-950/20 text-center space-y-1">
-              <span className="text-xs font-black text-[#6B2C91] dark:text-pink-300">24,685</span>
+              <span className="text-xs font-black text-[#6B2C91] dark:text-pink-300">{candidateStats.total.toLocaleString()}</span>
               <p className="text-[8px] font-bold text-slate-400 uppercase tracking-tight">Candidates</p>
             </div>
             <div className="bg-emerald-50/50 p-2 rounded-xl dark:bg-slate-950/20 text-center space-y-1">
-              <span className="text-xs font-black text-emerald-600 dark:text-emerald-400">3,120</span>
+              <span className="text-xs font-black text-emerald-600 dark:text-emerald-400">{candidateStats.newThisWeek.toLocaleString()}</span>
               <p className="text-[8px] font-bold text-slate-400 uppercase tracking-tight">New</p>
             </div>
             <div className="bg-blue-50/50 p-2 rounded-xl dark:bg-slate-950/20 text-center space-y-1">
-              <span className="text-xs font-black text-blue-600 dark:text-blue-300">18,564</span>
+              <span className="text-xs font-black text-blue-600 dark:text-blue-300">{candidateStats.active.toLocaleString()}</span>
               <p className="text-[8px] font-bold text-slate-400 uppercase tracking-tight">Active</p>
             </div>
             <div className="bg-pink-50/50 p-2 rounded-xl dark:bg-slate-950/20 text-center space-y-1">
-              <span className="text-xs font-black text-pink-600 dark:text-pink-300">2,121</span>
+              <span className="text-xs font-black text-pink-600 dark:text-pink-300">{candidateStats.inactive.toLocaleString()}</span>
               <p className="text-[8px] font-bold text-slate-400 uppercase tracking-tight">Inactive</p>
             </div>
           </div>
@@ -504,9 +539,9 @@ export function Dashboard() {
                       </span>
                     </td>
                     <td className="py-2.5 pl-2 text-right">
-                      <a href="/admin/candidate-management" className="text-[#6B2C91] dark:text-pink-300 font-black text-[10px] hover:underline">
+                      <Link to="/admin/candidate-management" className="text-[#6B2C91] dark:text-pink-300 font-black text-[10px] hover:underline">
                         View
-                      </a>
+                      </Link>
                     </td>
                   </tr>
                 ))}
@@ -514,9 +549,9 @@ export function Dashboard() {
             </table>
           </div>
 
-          <a href="/admin/candidate-management" className="text-[10px] font-black text-[#6B2C91] dark:text-pink-300 flex items-center gap-1 mt-2 hover:underline">
+          <Link to="/admin/candidate-management" className="text-[10px] font-black text-[#6B2C91] dark:text-pink-300 flex items-center gap-1 mt-2 hover:underline">
             View all candidates →
-          </a>
+          </Link>
         </DashboardCard>
 
         {/* Column 3: Job Moderation */}
@@ -525,9 +560,9 @@ export function Dashboard() {
             <h4 className="text-xs font-black text-slate-900 uppercase dark:text-white">
               Job Moderation
             </h4>
-            <a href="/admin/job-moderation" className="text-[10px] font-black text-[#6B2C91] dark:text-pink-300 hover:underline">
+            <Link to="/admin/job-moderation" className="text-[10px] font-black text-[#6B2C91] dark:text-pink-300 hover:underline">
               View all
-            </a>
+            </Link>
           </div>
 
           {/* Tabs */}
@@ -541,7 +576,7 @@ export function Dashboard() {
                   : "border-transparent text-slate-405 dark:text-slate-500"
               )}
             >
-              All Jobs (1,248)
+              All Jobs ({jobStatusCounts.all.toLocaleString()})
             </button>
             <button
               onClick={() => setJobTab("reported")}
@@ -552,7 +587,7 @@ export function Dashboard() {
                   : "border-transparent text-slate-405 dark:text-slate-500"
               )}
             >
-              Reported (12)
+              Reported ({jobStatusCounts.reported})
             </button>
             <button
               onClick={() => setJobTab("removed")}
@@ -563,7 +598,7 @@ export function Dashboard() {
                   : "border-transparent text-slate-405 dark:text-slate-500"
               )}
             >
-              Removed (45)
+              Removed ({jobStatusCounts.removed})
             </button>
           </div>
 
@@ -619,9 +654,9 @@ export function Dashboard() {
             </table>
           </div>
 
-          <a href="/admin/job-moderation" className="text-[10px] font-black text-[#6B2C91] dark:text-pink-300 flex items-center gap-1 mt-2 hover:underline">
+          <Link to="/admin/job-moderation" className="text-[10px] font-black text-[#6B2C91] dark:text-pink-300 flex items-center gap-1 mt-2 hover:underline">
             View all jobs →
-          </a>
+          </Link>
         </DashboardCard>
 
       </div>
@@ -724,9 +759,9 @@ export function Dashboard() {
               ))
             )}
           </div>
-          <a href="/admin/activity-logs" className="text-[9px] font-black text-[#6B2C91] dark:text-pink-300 hover:underline">
+          <Link to="/admin/activity-logs" className="text-[9px] font-black text-[#6B2C91] dark:text-pink-300 hover:underline">
             View all activities →
-          </a>
+          </Link>
         </DashboardCard>
 
         {/* Widget 4: Company Details Overview */}
@@ -772,9 +807,9 @@ export function Dashboard() {
               </tbody>
             </table>
           </div>
-          <a href="/admin/company-details" className="text-[9px] font-black text-[#6B2C91] dark:text-pink-300 hover:underline">
+          <Link to="/admin/company-details" className="text-[9px] font-black text-[#6B2C91] dark:text-pink-300 hover:underline">
             View all companies →
-          </a>
+          </Link>
         </DashboardCard>
 
         {/* Widget 5: User Growth Line Area Chart */}

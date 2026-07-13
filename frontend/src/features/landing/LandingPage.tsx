@@ -410,8 +410,16 @@ export function LandingPage() {
             <div>
               <h4 className="text-white font-bold text-sm mb-4">Legal</h4>
               <ul className="space-y-2 text-xs">
-                <li><a href="#" className="hover:text-white">Privacy Policy</a></li>
-                <li><a href="#" className="hover:text-white">Terms of Use</a></li>
+                <li>
+                  <span className="cursor-default text-slate-500" title="Not published yet">
+                    Privacy Policy (Coming Soon)
+                  </span>
+                </li>
+                <li>
+                  <span className="cursor-default text-slate-500" title="Not published yet">
+                    Terms of Use (Coming Soon)
+                  </span>
+                </li>
               </ul>
             </div>
           </div>

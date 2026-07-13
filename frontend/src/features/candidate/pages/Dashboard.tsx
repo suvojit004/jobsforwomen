@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
+import { useNavigate } from "react-router-dom"
 import { ActivityFeed } from "@/components/dashboard/ActivityFeed"
 import { CandidateInformationCard } from "@/components/dashboard/CandidateInformationCard"
 import { CareerBreakCard } from "@/components/dashboard/CareerBreakCard"
@@ -13,8 +14,53 @@ import { CandidateJobsApi, mapApiApplication } from "../services/jobsApi"
 import type { ExtendedJob } from "@/types/job"
 import type { Activity } from "@/types/dashboard"
 
+// Maps the raw candidate profile API response into the shape this dashboard's
+// cards expect. Mirrors useProfile.ts's mapProfileToState -- kept in sync
+// deliberately, since both read the same /api/v1/candidates/profile response.
+// Previously this dashboard used several wrong/hardcoded values: `location`
+// was pulled from `bio`, `experience` from `noticePeriod`, `availability` and
+// `profileCompletion` were hardcoded constants, and `careerBreak`/`resume`
+// were entirely fake data shown to every candidate regardless of what they'd
+// actually entered.
+function mapDashboardProfile(prof: any, fallbackName?: string, fallbackEmail?: string) {
+  const resumeMeta = prof?.resumeMetadata || {}
+  return {
+    fullName: prof?.fullName || fallbackName || "Candidate",
+    role: prof?.title || "Professional",
+    location: prof?.location || "Not Specified",
+    email: prof?.user?.email || fallbackEmail || "",
+    phone: prof?.phone || "Not Specified",
+    experience: prof?.totalExperience || "Not Specified",
+    currentCtc: prof?.expectedSalary || "Not Specified",
+    expectedCtc: prof?.expectedSalary || "Not Specified",
+    availability: prof?.availability || "Immediate",
+    noticePeriod: prof?.noticePeriod || "Not Specified",
+    profileCompletion: prof?.profileCompletePercent ?? 0,
+    skills: (prof?.skills || []).map((s: any) => s.skill?.name || s.name || s),
+    languages: prof?.languages?.length ? prof.languages : ["English"],
+    socialLinks: prof?.socialLinks || [],
+    careerBreak: prof?.careerBreak || {
+      hasBreak: false,
+      reason: "",
+      duration: "",
+      summary: "",
+    },
+    resume: {
+      name: prof?.resumeUrl
+        ? resumeMeta.originalName || prof.resumeUrl.split("/").pop() || "Resume"
+        : "",
+      uploadDate: resumeMeta.uploadedAt
+        ? new Date(resumeMeta.uploadedAt).toLocaleDateString()
+        : "",
+      verified: !!prof?.resumeUrl,
+      url: prof?.resumeUrl || "",
+    },
+  }
+}
+
 export function Dashboard() {
   const { user } = useAuth()
+  const navigate = useNavigate()
   const name = user?.fullName?.split(" ")[0] || "Candidate"
 
   const [profile, setProfile] = useState<any>(null)
@@ -25,45 +71,22 @@ export function Dashboard() {
   const [activities, setActivities] = useState<Activity[]>([])
   const [isLoading, setIsLoading] = useState(true)
 
+  const refreshProfile = useCallback(async () => {
+    const prof = await candidateApi.getProfile()
+    setProfile(mapDashboardProfile(prof, user?.fullName, user?.email))
+    return prof
+  }, [user])
+
   useEffect(() => {
     async function loadData() {
       try {
-        const [prof, apps, recs, saved] = await Promise.all([
-          candidateApi.getProfile(),
+        const [, apps, recs, saved] = await Promise.all([
+          refreshProfile(),
           CandidateJobsApi.getApplications(),
           CandidateJobsApi.getRecommendations(),
           CandidateJobsApi.getSavedJobs(),
         ])
 
-        const extendedProfile = {
-          fullName: prof?.fullName || user?.fullName || "Candidate",
-          role: prof?.title || "Professional",
-          location: prof?.bio || "Not Specified",
-          email: user?.email || "",
-          phone: prof?.phone || "Not Specified",
-          experience: prof?.noticePeriod || "Not Specified",
-          currentCtc: prof?.expectedSalary || "Not Specified",
-          expectedCtc: prof?.expectedSalary || "Not Specified",
-          availability: "Immediate",
-          noticePeriod: prof?.noticePeriod || "Immediate",
-          profileCompletion: 85,
-          skills: (prof?.skills || []).map((s: any) => s.skill?.name || s.name || s),
-          languages: prof?.languages || ["English"],
-          socialLinks: prof?.socialLinks || [],
-          careerBreak: {
-            hasBreak: true,
-            reason: "Maternity Leave",
-            duration: "2 Years",
-            summary: "Focused on parenting and upskilling in modern technologies."
-          },
-          resume: {
-            name: prof?.resumeUrl ? "Resume_latest.pdf" : "Not Uploaded",
-            uploadDate: "Just now",
-            verified: !!prof?.resumeUrl
-          }
-        }
-
-        setProfile(extendedProfile)
         setApplications(apps.map(mapApiApplication))
         setRecommendedJobs(recs)
         setSavedJobIds(saved.map(s => s.id))
@@ -84,7 +107,7 @@ export function Dashboard() {
       }
     }
     loadData()
-  }, [user])
+  }, [user, refreshProfile])
 
   if (isLoading) {
     return <div className="p-8 text-center text-sm font-bold text-[#6B2C91]">Loading candidate workspace...</div>
@@ -103,14 +126,14 @@ export function Dashboard() {
 
       <section className="grid gap-4 lg:grid-cols-12">
         <div className="lg:col-span-7 2xl:col-span-7">
-          <CandidateInformationCard candidate={profile} />
+          <CandidateInformationCard candidate={profile} onEdit={() => navigate("/candidate/profile")} />
         </div>
         <div className="lg:col-span-5 xl:col-span-2 2xl:col-span-2">
-          <ProfileStrengthCard completion={profile?.profileCompletion} />
+          <ProfileStrengthCard completion={profile?.profileCompletion} onComplete={() => navigate("/candidate/profile")} />
         </div>
         <div className="grid gap-4 lg:col-span-12 xl:col-span-3 2xl:col-span-3">
           <CareerBreakCard careerBreak={profile?.careerBreak} />
-          <ResumeCard resume={profile?.resume} />
+          <ResumeCard resume={profile?.resume} onChanged={refreshProfile} />
         </div>
       </section>
 

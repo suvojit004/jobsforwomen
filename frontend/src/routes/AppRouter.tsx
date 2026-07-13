@@ -9,6 +9,7 @@ import { AdminRoutes } from "./AdminRoutes"
 import { AuthRoutes } from "./AuthRoutes"
 import { ProtectedRoute } from "./ProtectedRoute"
 import { LandingPage } from "@/features/landing/LandingPage"
+import { OAuthCallback } from "@/features/auth/pages/OAuthCallback"
 import { NotFoundPage } from "@/components/shared/errors/NotFoundPage"
 import { UnauthorizedPage } from "@/components/shared/errors/UnauthorizedPage"
 import { ServerErrorPage } from "@/components/shared/errors/ServerErrorPage"
@@ -46,6 +47,12 @@ export function AppRouter() {
       <Route path="/about" element={<Navigate to="/#about" replace />} />
       <Route path="/contact" element={<Navigate to="/#contact" replace />} />
       <Route path="/faq" element={<Navigate to="/#faq" replace />} />
+
+      {/* Google OAuth handoff -- backend's googleCallback redirects here with
+          ?token=<accessToken> after a successful login. Must be registered
+          as its own top-level public route, or it falls through to the
+          catch-all below and silently discards the token. */}
+      <Route path="/oauth/callback" element={<OAuthCallback />} />
 
       {/* Dynamic Role-Based Redirector */}
       <Route path="/dashboard" element={<DashboardRedirect />} />

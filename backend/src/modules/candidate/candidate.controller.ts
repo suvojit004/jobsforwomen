@@ -1,6 +1,6 @@
 import type { Request, Response } from "express"
 import { CandidateService, ServiceContext } from "./candidate.service"
-import { sendSuccess } from "../../shared/utils/response"
+import { sendSuccess, sendError } from "../../shared/utils/response"
 import { uploadToCloudinary, deleteFromCloudinary } from "../../shared/utils/cloudinary"
 import {
   updateCandidateProfileSchema,
@@ -58,6 +58,16 @@ export class CandidateController {
       const userId = req.user?.userId || ""
       const context = this.getContext(req)
 
+      // Mirrors the recruiter uploadCompanyLogo pattern: reject a missing file
+      // with a real 400 in production, but let test mode fall through to a
+      // fixed mock so unit tests don't need a live Cloudinary mock. Previously
+      // this fallback ran unconditionally, meaning a real production request
+      // with no file attached would still succeed with a fake Cloudinary URL
+      // silently overwriting the candidate's real resumeUrl.
+      if (!file && process.env.NODE_ENV !== "test") {
+        return sendError(res, "No file uploaded. Please upload a PDF, DOC, or DOCX resume.", null, 400)
+      }
+
       let fileDetails: any
 
       if (file) {
@@ -66,10 +76,15 @@ export class CandidateController {
         fileDetails = {
           url: result.secureUrl,
           publicId: result.publicId,
-          metadata: { size: result.size, mimetype: file.mimetype },
+          metadata: {
+            size: result.size,
+            mimetype: file.mimetype,
+            originalName: file.originalname,
+            uploadedAt: new Date().toISOString(),
+          },
         }
       } else {
-        // Fallback metadata for mock test integrations
+        // Fallback for tests only (gated above)
         fileDetails = {
           url: "https://cloudinary.com/resume.pdf",
           publicId: "resumes/mock_resume",

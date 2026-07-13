@@ -42,10 +42,20 @@ export function JobModeration() {
         company: j.company?.name || "Unknown Company",
         location: j.location,
         salary: j.salaryDisplay || "N/A",
-        applicantsCount: j.applicants || 0,
+        // Job has no `applicants` field -- the admin listJobs() endpoint
+        // includes a real `_count.applications` instead. This previously
+        // always read `undefined`, showing "0 candidates" for every job.
+        applicantsCount: j._count?.applications ?? 0,
         status: j.status,
-        reported: j.status === "reported",
-        visibility: j.status === "hidden" ? "hidden" : "visible"
+        // `reported`/`visibility` are their own real fields on Job (booleans/
+        // enum), separate from `status`. Previously this compared `status`
+        // against the strings "reported"/"hidden", which are not valid
+        // JobStatus values -- so `reported` was always false (the Reported
+        // Only tab and badge never worked) and `visibility` was always
+        // "visible" (so a hidden job could never be shown as hidden, and the
+        // toggle below could never actually unhide anything).
+        reported: !!j.reported,
+        visibility: j.visibility === "hidden" ? "hidden" : "visible"
       })))
     } catch (err) {
       console.error("Failed to load jobs list:", err)
@@ -61,7 +71,10 @@ export function JobModeration() {
   const handleToggleVisibility = async (jobId: string) => {
     try {
       const jobObj = jobs.find((j) => j.id === jobId)
-      const nextAction = jobObj?.visibility === "visible" ? "hide" : "approve"
+      // "unhide" only restores visibility; it deliberately does not touch
+      // moderation status the way "approve" does on the backend (approve
+      // would also silently flip a paused/closed/flagged job to "approved").
+      const nextAction = jobObj?.visibility === "visible" ? "hide" : "unhide"
       await AdminApi.moderateJob(jobId, nextAction)
       loadJobs()
     } catch (err) {
@@ -81,7 +94,12 @@ export function JobModeration() {
   const handleDelete = async (jobId: string) => {
     if (confirm("Are you sure you want to permanently delete this job listing?")) {
       try {
-        await AdminApi.moderateJob(jobId, "reject", "Administrative deletion")
+        // "reject" only flags + hides the job on the backend -- it does not
+        // delete anything. The real delete action is literally "delete",
+        // which the backend uses to hard-remove the row. Previously this
+        // button claimed to "permanently delete" the listing but silently
+        // left it fully intact in the database, just flagged and hidden.
+        await AdminApi.moderateJob(jobId, "delete", "Administrative deletion")
         loadJobs()
       } catch (err) {
         console.error("Failed to delete job", err)
@@ -144,10 +162,12 @@ export function JobModeration() {
           className={`inline-flex items-center text-[10px] font-black px-2 py-0.5 rounded-full ${
             row.status === "approved"
               ? "bg-emerald-100/60 text-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-350"
-              : "bg-pink-100/60 text-pink-850 dark:bg-pink-950/45 dark:text-pink-300"
+              : row.status === "flagged"
+              ? "bg-pink-100/60 text-pink-850 dark:bg-pink-950/45 dark:text-pink-300"
+              : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400"
           }`}
         >
-          {row.status === "approved" ? "Approved" : "Flagged"}
+          {row.status.replace(/_/g, " ").replace(/^\w/, (c) => c.toUpperCase())}
         </span>
       ),
     },
