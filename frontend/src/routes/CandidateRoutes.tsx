@@ -24,7 +24,7 @@ export function CandidateRoutes() {
       <Route path="notifications" element={<Notifications />} />
       <Route path="messages" element={<Messages />} />
       <Route path="settings" element={<Settings />} />
-      <Route path="*" element={<Navigate to="dashboard" replace />} />
+      <Route path="*" element={<Navigate to="/candidate/dashboard" replace />} />
     </Routes>
   )
 }

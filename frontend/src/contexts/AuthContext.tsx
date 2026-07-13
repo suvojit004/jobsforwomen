@@ -62,6 +62,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     initAuth()
   }, [])
 
+  // apiClient dispatches this exactly once when a refresh genuinely fails
+  // (see handleSessionExpired in api/client.ts) -- it has already cleared
+  // localStorage and disconnected the socket by the time this fires. Clearing
+  // `user` here is what actually ends the session from the app's point of
+  // view: ProtectedRoute reads `isAuthenticated` (derived from `user`) and
+  // declaratively redirects to /auth/login, so navigation stays owned by
+  // React Router instead of apiClient forcing a raw `window.location` change.
+  useEffect(() => {
+    const handleSessionExpired = () => setUser(null)
+    window.addEventListener("auth:session-expired", handleSessionExpired)
+    return () => window.removeEventListener("auth:session-expired", handleSessionExpired)
+  }, [])
+
   const login = async (email: string, password: string): Promise<User> => {
     const res = await apiClient.post("/api/v1/auth/login", { email, password })
     if (!res || !res.success || !res.data) {
@@ -83,6 +96,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       localStorage.removeItem("jwt_token")
       localStorage.removeItem("userRole")
       setUser(null)
+      // A real user-initiated logout should tear down the live socket
+      // connection immediately rather than waiting for the next failed
+      // request to notice the session is gone.
+      import("@/api/socket")
+        .then(({ disconnectSocket }) => disconnectSocket())
+        .catch(() => {})
     }
   }
 

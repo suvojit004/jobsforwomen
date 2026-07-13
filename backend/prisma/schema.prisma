@@ -59,14 +59,14 @@ enum ApplicationStatus {
 }
 
 model User {
-  id               String                    @id @default(uuid())
-  email            String                    @unique
-  passwordHash     String?                   // Nullable for OAuth-only users
-  status           UserStatus                @default(PendingVerification)
-  twoFactorEnabled Boolean                   @default(false)
-  createdAt        DateTime                  @default(now())
-  updatedAt        DateTime                  @updatedAt
-  preferences      Json?                     // Appearance, privacy, email notification settings
+  id               String     @id @default(uuid())
+  email            String     @unique
+  passwordHash     String? // Nullable for OAuth-only users
+  status           UserStatus @default(PendingVerification)
+  twoFactorEnabled Boolean    @default(false)
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+  preferences      Json? // Appearance, privacy, email notification settings
 
   // Relations
   candidateProfile CandidateProfile?
@@ -82,28 +82,28 @@ model User {
   featureFlags     FeatureFlag[]
   oauthAccounts    OAuthAccount[]
   jobReports       JobReport[]
-  
+
   // Invitations
-  createdInvitations Invitation[]            @relation("Inviter")
+  createdInvitations Invitation[] @relation("Inviter")
 }
 
 model OAuthAccount {
   id             String   @id @default(uuid())
   userId         String
   user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  provider       String   // e.g. "google"
-  providerUserId String   // ID from the OAuth provider
+  provider       String // e.g. "google"
+  providerUserId String // ID from the OAuth provider
   createdAt      DateTime @default(now())
 
   @@unique([provider, providerUserId])
 }
 
 model EmailVerification {
-  id        String    @id @default(uuid())
-  email     String    @unique
-  token     String    @unique
-  expiresAt DateTime
-  createdAt DateTime  @default(now())
+  id         String    @id @default(uuid())
+  email      String    @unique
+  token      String    @unique
+  expiresAt  DateTime
+  createdAt  DateTime  @default(now())
   verifiedAt DateTime?
 }
 
@@ -168,45 +168,45 @@ model UserRole {
 }
 
 model CandidateProfile {
-  id             String           @id @default(uuid())
-  userId         String           @unique
-  user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-  fullName       String
-  title          String?
-  bio            String?
-  phone          String?
-  location       String?
-  totalExperience String?
-  careerBreak    Json?
+  id                 String   @id @default(uuid())
+  userId             String   @unique
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  fullName           String
+  title              String?
+  bio                String?
+  phone              String?
+  location           String?
+  totalExperience    String?
+  careerBreak        Json?
   preferredLocations String[]
-  availability   String?
-  avatarUrl      String?
-  resumeUrl      String?
-  resumePublicId String?
-  resumeMetadata Json?            // File type, size details from Cloudinary
-  languages      String[]
-  noticePeriod   String?
-  expectedSalary String?
+  availability       String?
+  avatarUrl          String?
+  resumeUrl          String?
+  resumePublicId     String?
+  resumeMetadata     Json? // File type, size details from Cloudinary
+  languages          String[]
+  noticePeriod       String?
+  expectedSalary     String?
 
-  experience     Json[]           // Array of JobHistory DTOs
-  education      Json[]           // Array of AcademicDegree DTOs
-  socialLinks    Json[]           // Array of Link DTOs
+  experience  Json[] // Array of JobHistory DTOs
+  education   Json[] // Array of AcademicDegree DTOs
+  socialLinks Json[] // Array of Link DTOs
 
   // Relations
-  skills         CandidateSkill[]
-  applications   Application[]
-  savedJobs      SavedJob[]
+  skills       CandidateSkill[]
+  applications Application[]
+  savedJobs    SavedJob[]
 }
 
 model RecruiterProfile {
-  id        String   @id @default(uuid())
-  userId    String   @unique
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id        String  @id @default(uuid())
+  userId    String  @unique
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
   companyId String
-  company   Company  @relation(fields: [companyId], references: [id])
+  company   Company @relation(fields: [companyId], references: [id])
   fullName  String
   phone     String?
-  verified  Boolean  @default(false)
+  verified  Boolean @default(false)
   jobs      Job[]
 }
 
@@ -230,35 +230,35 @@ model Department {
 }
 
 model Company {
-  id                    String                       @id @default(uuid())
-  name                  String                       @unique
+  id                    String        @id @default(uuid())
+  name                  String        @unique
   description           String?
   website               String
   location              String
-  status                CompanyStatus                @default(pending)
+  status                CompanyStatus @default(pending)
   feedback              String?
   logoUrl               String?
   logoPublicId          String?
   logoMetadata          Json?
-  verificationDocuments Json?                        // Array of docs: { url, publicId, size, mimetype, category }
+  verificationDocuments Json? // Array of docs: { url, publicId, size, mimetype, category }
   industryId            String
-  industry              Industry                     @relation(fields: [industryId], references: [id])
-  
+  industry              Industry      @relation(fields: [industryId], references: [id])
+
   // Relations
-  recruiters            RecruiterProfile[]
-  jobs                  Job[]
-  benefits              CompanyBenefit[]
-  history               CompanyVerificationHistory[]
-  invitations           Invitation[]
+  recruiters  RecruiterProfile[]
+  jobs        Job[]
+  benefits    CompanyBenefit[]
+  history     CompanyVerificationHistory[]
+  invitations Invitation[]
 }
 
 model CompanyBenefit {
   id          String    @id @default(uuid())
   companyId   String
   company     Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  benefitName String    // Menstrual Leave Champion, Flexible Returnship, Flexible Hours etc
+  benefitName String // Menstrual Leave Champion, Flexible Returnship, Flexible Hours etc
   verified    Boolean   @default(false)
-  verifiedBy  String?   // Admin username/id
+  verifiedBy  String? // Admin username/id
   verifiedAt  DateTime?
 }
 
@@ -291,54 +291,54 @@ model CandidateSkill {
 }
 
 model JobSkill {
-  id      String   @id @default(uuid())
+  id      String @id @default(uuid())
   jobId   String
-  job     Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  job     Job    @relation(fields: [jobId], references: [id], onDelete: Cascade)
   skillId String
-  skill   Skill    @relation(fields: [skillId], references: [id], onDelete: Cascade)
+  skill   Skill  @relation(fields: [skillId], references: [id], onDelete: Cascade)
 
   @@unique([jobId, skillId])
 }
 
 model Job {
-  id                     String           @id @default(uuid())
+  id                     String        @id @default(uuid())
   title                  String
   location               String
-  type                   String           // Full Time, Part Time
-  workMode               WorkMode         @default(Remote)
+  type                   String // Full Time, Part Time
+  workMode               WorkMode      @default(Remote)
   description            String
   responsibilities       String
   requirements           String
   benefits               String
-  deadline               String           // DD/MM/YYYY
-  menstrualLeaveChampion Boolean          @default(false)
-  flexibleHours          Boolean          @default(false)
-  workFromHome           Boolean          @default(false)
-  status                 JobStatus        @default(approved)
-  reported               Boolean          @default(false)
-  visibility             JobVisibility    @default(visible)
-  featured               Boolean          @default(false)
-  postedOn               DateTime         @default(now())
+  deadline               String // DD/MM/YYYY
+  menstrualLeaveChampion Boolean       @default(false)
+  flexibleHours          Boolean       @default(false)
+  workFromHome           Boolean       @default(false)
+  status                 JobStatus     @default(approved)
+  reported               Boolean       @default(false)
+  visibility             JobVisibility @default(visible)
+  featured               Boolean       @default(false)
+  postedOn               DateTime      @default(now())
 
   // Normalized Salary
-  salaryDisplay          String
-  salaryMin              Int
-  salaryMax              Int
+  salaryDisplay String
+  salaryMin     Int
+  salaryMax     Int
 
   // Normalized References
-  departmentId           String
-  department             Department       @relation(fields: [departmentId], references: [id])
-  recruiterId            String
-  recruiter              RecruiterProfile @relation(fields: [recruiterId], references: [id])
-  companyId              String
-  company                Company          @relation(fields: [companyId], references: [id])
+  departmentId String
+  department   Department       @relation(fields: [departmentId], references: [id])
+  recruiterId  String
+  recruiter    RecruiterProfile @relation(fields: [recruiterId], references: [id])
+  companyId    String
+  company      Company          @relation(fields: [companyId], references: [id])
 
   // Relations
-  skills                 JobSkill[]
-  applications           Application[]
-  savedJobs              SavedJob[]
-  reports                JobReport[]
-  history                JobStatusHistory[]
+  skills       JobSkill[]
+  applications Application[]
+  savedJobs    SavedJob[]
+  reports      JobReport[]
+  history      JobStatusHistory[]
 
   @@index([companyId])
   @@index([recruiterId])
@@ -346,19 +346,19 @@ model Job {
 }
 
 model Application {
-  id          String                     @id @default(uuid())
-  jobId       String
-  job         Job                        @relation(fields: [jobId], references: [id], onDelete: Cascade)
-  candidateId String
-  candidate   CandidateProfile           @relation(fields: [candidateId], references: [id], onDelete: Cascade)
-  status      ApplicationStatus          @default(Applied)
-  appliedOn   DateTime                   @default(now())
+  id              String            @id @default(uuid())
+  jobId           String
+  job             Job               @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  candidateId     String
+  candidate       CandidateProfile  @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  status          ApplicationStatus @default(Applied)
+  appliedOn       DateTime          @default(now())
   offerDetails    String?
   offerReleasedAt DateTime?
 
   // Relations
-  history     ApplicationStatusHistory[]
-  interviews  Interview[]
+  history    ApplicationStatusHistory[]
+  interviews Interview[]
 
   @@index([candidateId])
 }
@@ -368,7 +368,7 @@ model ApplicationStatusHistory {
   applicationId String
   application   Application       @relation(fields: [applicationId], references: [id], onDelete: Cascade)
   status        ApplicationStatus
-  changedBy     String            // RecruiterName, CandidateName, System
+  changedBy     String // RecruiterName, CandidateName, System
   notes         String?
   createdAt     DateTime          @default(now())
 }
@@ -381,7 +381,7 @@ model Interview {
   description   String?
   scheduledAt   DateTime
   durationMins  Int         @default(60)
-  location      String?     // Video link / office address
+  location      String? // Video link / office address
   status        String      @default("Scheduled") // Scheduled, Completed, Cancelled
   createdAt     DateTime    @default(now())
 }
@@ -415,7 +415,7 @@ model Session {
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   ipAddress    String
   userAgent    String
-  deviceType   String?  // Desktop, Mobile, Tablet
+  deviceType   String? // Desktop, Mobile, Tablet
   createdAt    DateTime @default(now())
   lastActiveAt DateTime @default(now())
   revoked      Boolean  @default(false)
@@ -429,7 +429,7 @@ model AuditLog {
   operatorEmail String?
   category      String
   action        String
-  entity        String?  // Job, Company, User etc
+  entity        String? // Job, Company, User etc
   entityId      String?
   oldValue      Json?
   newValue      Json?
@@ -444,13 +444,21 @@ model Notification {
   recipient   User      @relation(fields: [recipientId], references: [id], onDelete: Cascade)
   title       String
   message     String
-  category    String    // Application, Moderation, System
+  category    String // Application, Moderation, System
   priority    String    @default("Medium") // High, Medium, Low
   actionUrl   String?
   metadata    Json?
   read        Boolean   @default(false)
   expiresAt   DateTime?
   createdAt   DateTime  @default(now())
+  // Optional idempotency key for event-driven notifications (job lifecycle
+  // events, etc). Nullable + unique: Postgres treats every NULL as distinct
+  // in a unique index, so notification types that don't set this (chat,
+  // interviews, etc) are completely unaffected, while a retried/duplicated
+  // domain event (e.g. an admin double-clicking "Approve") can safely
+  // attempt to create the same notification twice -- the second insert hits
+  // the unique constraint and is skipped instead of creating a duplicate row.
+  dedupeKey   String?   @unique
 
   @@index([recipientId])
 }
@@ -485,14 +493,14 @@ model Message {
 }
 
 model FeatureFlag {
-  id           String   @id @default(uuid())
-  key          String   @unique // chat_enabled, email_automation etc
-  value        Boolean  @default(false)
-  category     String   // Communication, Platform, Notifications, Analytics, Experimental, Security
-  description  String?
-  updatedById  String?
-  updatedBy    User?    @relation(fields: [updatedById], references: [id], onDelete: SetNull)
-  updatedAt    DateTime @updatedAt
+  id          String   @id @default(uuid())
+  key         String   @unique // chat_enabled, email_automation etc
+  value       Boolean  @default(false)
+  category    String // Communication, Platform, Notifications, Analytics, Experimental, Security
+  description String?
+  updatedById String?
+  updatedBy   User?    @relation(fields: [updatedById], references: [id], onDelete: SetNull)
+  updatedAt   DateTime @updatedAt
 }
 
 model JobReport {
@@ -510,7 +518,7 @@ model JobStatusHistory {
   jobId     String
   job       Job       @relation(fields: [jobId], references: [id], onDelete: Cascade)
   status    JobStatus
-  changedBy String    // RecruiterName, AdminName, System
+  changedBy String // RecruiterName, AdminName, System
   notes     String?
   createdAt DateTime  @default(now())
 }

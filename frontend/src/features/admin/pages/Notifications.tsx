@@ -1,4 +1,5 @@
 import { useState, useTransition } from "react"
+import { useNavigate } from "react-router-dom"
 import { motion } from "framer-motion"
 import { Search, CheckCheck, BellRing, Bell, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -13,12 +14,14 @@ interface AdminNotificationItem {
   category: "Moderation" | "System" | "Verification"
   read: boolean
   time: string
+  actionUrl?: string
 }
 
 
-import { useNotificationContext } from "@/contexts/NotificationContext"
+import { useNotificationContext, isSafeInternalPath } from "@/contexts/NotificationContext"
 
 export function Notifications() {
+  const navigate = useNavigate()
   const {
     notifications: contextNotifications,
     unreadCount,
@@ -45,9 +48,17 @@ export function Notifications() {
       description: n.description,
       category,
       read: n.read,
-      time: n.time
+      time: n.time,
+      actionUrl: n.actionUrl,
     }
   })
+
+  // Fire-and-forget mark-read so a slow/failed API call never blocks the
+  // navigation the user just asked for by clicking the card.
+  const handleItemClick = (n: AdminNotificationItem) => {
+    if (!n.read) handleMarkRead(n.id)
+    if (isSafeInternalPath(n.actionUrl)) navigate(n.actionUrl)
+  }
 
   const filteredNotifications = notifications.filter((n) => {
     if (searchQuery) {
@@ -156,8 +167,10 @@ export function Notifications() {
           filteredNotifications.map((notif) => (
             <DashboardCard
               key={notif.id}
+              onClick={() => handleItemClick(notif)}
               className={cn(
                 "p-4 flex items-start justify-between gap-4 border-l-4 transition-all",
+                notif.actionUrl && "cursor-pointer",
                 notif.read
                   ? "border-l-slate-200 dark:border-l-slate-800"
                   : "border-l-[#6B2C91] dark:border-l-pink-500 bg-[#6B2C91]/5 dark:bg-pink-900/5"
@@ -195,7 +208,10 @@ export function Notifications() {
                   <Button
                     size="sm"
                     variant="ghost"
-                    onClick={() => handleMarkRead(notif.id)}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      handleMarkRead(notif.id)
+                    }}
                     className="h-7 text-[10px] font-bold"
                   >
                     Mark read
@@ -204,7 +220,10 @@ export function Notifications() {
                 <Button
                   size="sm"
                   variant="ghost"
-                  onClick={() => handleDelete(notif.id)}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    handleDelete(notif.id)
+                  }}
                   className="h-7 size-7 p-0 text-slate-400 hover:text-red-500 dark:hover:text-red-400"
                 >
                   <Trash2 className="size-3.5" />

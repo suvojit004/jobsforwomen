@@ -3,7 +3,7 @@ import request from "supertest"
 // Mock Prisma DB Operations inline in factory
 jest.mock("../../shared/database/db", () => {
   const localPrismaMock = {
-    user: { findUnique: jest.fn(), update: jest.fn() },
+    user: { findUnique: jest.fn(), update: jest.fn(), findMany: jest.fn() },
     role: { findUnique: jest.fn() },
     recruiterProfile: { findUnique: jest.fn() },
     company: { findUnique: jest.fn(), update: jest.fn() },
@@ -62,6 +62,7 @@ import env from "../../shared/config/env"
 import { UserStatus, CompanyStatus, JobStatus, ApplicationStatus } from "@prisma/client"
 import prisma from "../../shared/database/db"
 import redis from "../../shared/utils/redis"
+import EventBus from "../../shared/eventBus/eventBus"
 
 const mockPrisma = prisma as any
 const mockRedis = redis as any
@@ -254,6 +255,74 @@ describe("Recruiter Module Integration Tests (Phase 6)", () => {
       expect(res.status).toBe(201)
       expect(res.body.success).toBe(true)
       expect(res.body.data.id).toBe("job-123")
+    })
+
+    it("should notify all active admins when a job is submitted for approval", async () => {
+      mockPrisma.recruiterProfile.findUnique.mockResolvedValue({
+        id: "profile-approved",
+        userId: "rec-approved-id",
+        companyId: "comp-approved",
+        company: { id: "comp-approved", status: CompanyStatus.approved, name: "JFW Tech" },
+      })
+      mockPrisma.department.upsert.mockResolvedValue({ id: "dept-1", name: "Engineering" })
+      mockPrisma.skill.upsert.mockResolvedValue({ id: "skill-1", name: "Node.js" })
+      mockPrisma.job.create.mockResolvedValue({
+        id: "job-submit-1",
+        title: "Node.js Developer",
+        status: JobStatus.pending_approval,
+      })
+      mockPrisma.user.findMany.mockResolvedValue([{ id: "admin-1" }, { id: "admin-2" }])
+      mockPrisma.notification.create.mockImplementation(async ({ data }: any) => ({ id: "notif-" + data.recipientId, ...data }))
+
+      const res = await request(app)
+        .post("/api/v1/recruiters/jobs")
+        .set("Authorization", `Bearer ${approvedRecruiterToken}`)
+        .send({
+          title: "Node.js Developer",
+          location: "Bengaluru, IN",
+          type: "Full-time",
+          workMode: "Hybrid",
+          description: "Build API microservices modules monolith endpoints.",
+          responsibilities: "Write tests compile logic write schemas.",
+          requirements: "Expert knowledge of TypeScript and SQL.",
+          benefits: "Work from home allowance flexible hours.",
+          deadline: "01/10/2026",
+          salaryDisplay: "₹80,000 - ₹120,000 / month",
+          salaryMin: 80000,
+          salaryMax: 120000,
+          experienceMin: 1,
+          experienceMax: 3,
+          departmentName: "Engineering",
+          skills: ["Node.js", "TypeScript"],
+          status: "pending_approval",
+        })
+
+      expect(res.status).toBe(201)
+
+      // The domain event's notification-creation runs as a detached async
+      // EventBus handler -- it isn't awaited by the HTTP response, so the
+      // test has to explicitly wait for it to settle before asserting.
+      await EventBus.allSettled()
+
+      expect(mockPrisma.user.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            status: "Active",
+            roles: { some: { role: { name: { in: ["Admin", "Super Admin"] } } } },
+          }),
+        })
+      )
+      expect(mockPrisma.notification.create).toHaveBeenCalledTimes(2)
+      expect(mockPrisma.notification.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            recipientId: "admin-1",
+            category: "Moderation",
+            actionUrl: "/admin/job-moderation",
+            dedupeKey: "job-submitted:job-submit-1:admin-1",
+          }),
+        })
+      )
     })
 
     it("should duplicate existing job reset to draft status", async () => {

@@ -8,12 +8,17 @@ type NotificationListProps = {
   notifications: NotificationItemType[]
   onMarkRead: (id: string) => void
   onDelete: (id: string) => void
+  // Optional: called when the card itself (not the mark-read/dismiss
+  // buttons) is clicked. The parent page owns navigation since it has
+  // access to useNavigate().
+  onItemClick?: (n: NotificationItemType) => void
 }
 
 export function NotificationList({
   notifications,
   onMarkRead,
   onDelete,
+  onItemClick,
 }: NotificationListProps) {
   // Category helper to render correct icons and colors
   const getCategoryConfig = (category: NotificationItemType["category"]) => {
@@ -71,8 +76,10 @@ export function NotificationList({
               return (
                 <DashboardCard
                   key={n.id}
+                  onClick={onItemClick ? () => onItemClick(n) : undefined}
                   className={cn(
                     "p-4 border transition-all relative overflow-hidden",
+                    onItemClick && "cursor-pointer hover:border-[#6B2C91]/30 dark:hover:border-pink-400/40",
                     n.read
                       ? "border-slate-200/60 dark:border-slate-800"
                       : "border-violet-100 bg-violet-50/10 dark:border-violet-400/20 dark:bg-violet-500/5 shadow-sm"
@@ -117,7 +124,10 @@ export function NotificationList({
                         type="button"
                         variant="ghost"
                         size="icon"
-                        onClick={() => onMarkRead(n.id)}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          onMarkRead(n.id)
+                        }}
                         className="size-7 text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400"
                         title="Mark as read"
                       >
@@ -128,7 +138,10 @@ export function NotificationList({
                       type="button"
                       variant="ghost"
                       size="icon"
-                      onClick={() => onDelete(n.id)}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onDelete(n.id)
+                      }}
                       className="size-7 text-slate-400 hover:text-red-500"
                       title="Dismiss alert"
                     >

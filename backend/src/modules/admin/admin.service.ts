@@ -378,7 +378,14 @@ export class AdminService {
     notes?: string,
     context?: ServiceContext
   ) {
-    const job = await prisma.job.findUnique({ where: { id: jobId } })
+    // Includes recruiter+user and company so the JobApproved/JobRejected
+    // domain events below can carry everything notification.listener.ts
+    // needs (recruiter's real User id, job title, company name) without a
+    // second round-trip query in the listener.
+    const job = await prisma.job.findUnique({
+      where: { id: jobId },
+      include: { recruiter: { include: { user: true } }, company: true },
+    })
     if (!job) {
       throw new Error("Job listing not found")
     }
@@ -398,7 +405,11 @@ export class AdminService {
     } else if (action === "reject") {
       status = JobStatus.flagged
       visibility = JobVisibility.hidden
-      domainEvent = "JobUpdated"
+      // Previously this reused "JobUpdated" -- a generic audit-only event
+      // with no recipient targeting or rejection reason -- so a rejected
+      // recruiter never actually found out their posting was rejected, or
+      // why, outside of manually checking the job's status.
+      domainEvent = "JobRejected"
     } else if (action === "hide") {
       visibility = JobVisibility.hidden
     } else if (action === "unhide") {
@@ -453,8 +464,17 @@ export class AdminService {
     if (domainEvent) {
       EventBus.publish(domainEvent, {
         jobId,
+        jobTitle: job.title,
+        jobLocation: job.location,
         recruiterId: job.recruiterId,
+        // The real recipient for a Notification row must be a User id, not
+        // the RecruiterProfile id -- job.recruiterId (kept above, unchanged,
+        // for the existing audit-log consumers of this event) is the
+        // latter.
+        recruiterUserId: job.recruiter.userId,
+        companyId: job.companyId,
         status,
+        reason: notes,
         context,
       })
     }

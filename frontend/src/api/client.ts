@@ -19,10 +19,25 @@ if (import.meta.env.PROD && !import.meta.env.VITE_API_URL) {
 // Access tokens are short-lived (15m, see backend JWT_ACCESS_EXPIRY). Without
 // this, every request made after the token expires fails with a bare 401 and
 // the user has to manually reload the page to get a new one (which works only
-// because AuthContext re-runs refreshSession() on mount). This dedupes
-// concurrent 401s into a single refresh call and retries the original
-// request once it succeeds.
+// because AuthContext re-runs refreshSession() on mount).
+//
+// Single-flight refresh: `refreshInFlight` is the one in-progress refresh
+// promise, shared by every concurrent caller. Only the *first* 401 actually
+// fires a `POST /auth/refresh`; every other request that 401s while that's
+// pending awaits the same promise (see `if (refreshInFlight) return
+// refreshInFlight` below) instead of firing its own redundant refresh, and
+// each caller then retries its own original request exactly once
+// (`_isRetry` guards against a second retry, and `/api/v1/auth/refresh`
+// itself is in AUTH_ENDPOINTS_NO_RETRY so it can never recursively trigger
+// another refresh attempt on its own failure).
 let refreshInFlight: Promise<boolean> | null = null
+
+// Guards against dispatching the "session expired" event more than once per
+// dead session -- several concurrent requests can all discover the failed
+// refresh at roughly the same time (they all resolve from the same shared
+// `refreshInFlight` promise), and without this they'd each independently
+// clear storage / disconnect the socket / dispatch the event again.
+let sessionExpiredDispatched = false
 
 async function tryRefreshToken(baseURL: string): Promise<boolean> {
   if (refreshInFlight) return refreshInFlight
@@ -39,6 +54,25 @@ async function tryRefreshToken(baseURL: string): Promise<boolean> {
       const token = data?.data?.accessToken
       if (!token) return false
       localStorage.setItem("jwt_token", token)
+      // A new refresh succeeded, so any earlier "session expired" state no
+      // longer applies -- allow it to fire again if a *future* refresh fails.
+      sessionExpiredDispatched = false
+
+      // Keep the Socket.IO connection authenticated with the freshly issued
+      // access token. Without this, the socket keeps using the stale token
+      // it connected with and gets disconnected by the server ("jwt
+      // expired") independently of the REST session having just recovered.
+      // Dynamic import avoids a hard import cycle between this generic API
+      // client and the socket client (which itself doesn't depend on this
+      // module, but keeps the two decoupled).
+      try {
+        const { updateSocketToken } = await import("./socket")
+        updateSocketToken(token)
+      } catch {
+        // Socket module not reachable / no socket connected yet -- not fatal
+        // to the REST refresh succeeding.
+      }
+
       return true
     } catch {
       return false
@@ -57,6 +91,38 @@ const AUTH_ENDPOINTS_NO_RETRY = [
   "/api/v1/auth/register/recruiter",
   "/api/v1/auth/logout",
 ]
+
+// Called exactly once per dead session, right after a refresh attempt has
+// genuinely failed (not on every bare 401 -- that's the distinction the
+// previous version of this file got wrong: its response interceptor
+// pattern-matched on `err.message.includes("401")` for *any* request and
+// hard-redirected via `window.location.href` from inside a generic API
+// client module, with no way for AuthContext to intervene, and no guard
+// against firing repeatedly for concurrent in-flight requests.
+//
+// This module has no router access and shouldn't try to get one -- it just
+// clears local auth state and tells the rest of the app the session is
+// gone. AuthContext listens for this event and clears its `user` state;
+// ProtectedRoute already declaratively redirects to /auth/login whenever
+// `isAuthenticated` is false, so navigation stays owned by React Router /
+// AuthContext instead of a raw `window.location` assignment that would
+// yank the user off *any* page (including public ones) on *any* failing
+// request.
+function handleSessionExpired() {
+  if (sessionExpiredDispatched) return
+  sessionExpiredDispatched = true
+
+  localStorage.removeItem("jwt_token")
+  localStorage.removeItem("userRole")
+
+  import("./socket")
+    .then(({ disconnectSocket }) => disconnectSocket())
+    .catch(() => {
+      // Socket module unreachable -- nothing to disconnect.
+    })
+
+  window.dispatchEvent(new Event("auth:session-expired"))
+}
 
 // Configure client instance
 export const apiClient = {
@@ -112,6 +178,11 @@ export const apiClient = {
         if (refreshed) {
           return this.request<T>(endpoint, options, true)
         }
+        // Refresh genuinely failed (not just "not logged in yet" -- this
+        // endpoint isn't one of the silent auth-bootstrap calls, since those
+        // are excluded by the AUTH_ENDPOINTS_NO_RETRY check above). The
+        // session is dead; handle it exactly once here.
+        handleSessionExpired()
       }
 
       if (!response.ok) {
@@ -170,34 +241,17 @@ apiClient.interceptRequest((config) => {
   return config
 })
 
-// 2. Handle unauthorized response interceptor
-// By the time an error reaches here, request() has already tried a silent
-// token refresh + one retry for 401s (see tryRefreshToken above). If we're
-// still seeing a 401, the session is genuinely dead (refresh token expired,
-// revoked, or user was blocked/suspended) -- send them to login instead of
-// leaving the page silently broken.
-//
-// EXCEPTION: AuthContext calls /api/v1/auth/refresh on every app mount --
-// including the public landing page -- just to silently check "is anyone
-// logged in?". A 401 from that call (or from login/register/logout) just
-// means "not logged in", which is completely normal for an anonymous
-// visitor. It must NOT trigger a hard redirect, or every first-time visitor
-// to "/" gets bounced to /auth/login a moment after the page loads.
-apiClient.interceptResponse(
-  (res) => res,
-  (err) => {
-    const isSilentAuthCheck = err?.endpoint && AUTH_ENDPOINTS_NO_RETRY.includes(err.endpoint)
-    if (err.message?.includes("401") && !isSilentAuthCheck) {
-      console.warn("Authentication failure detected, redirecting to login...")
-      localStorage.removeItem("jwt_token")
-      localStorage.removeItem("userRole")
-      const path = window.location.pathname
-      if (!path.startsWith("/auth/")) {
-        window.location.href = "/auth/login"
-      }
-    }
-    return Promise.reject(err)
-  }
-)
+// 2. Session-expiry handling now happens precisely where the refresh
+// actually fails (see `handleSessionExpired()` call inside `request()`
+// above), not here. This used to be a generic response interceptor that
+// pattern-matched `err.message.includes("401")` for *any* request and
+// hard-redirected via `window.location.href = "/auth/login"` directly --
+// which fired repeatedly for every concurrent failing request, and bypassed
+// AuthContext/React Router entirely (a raw `window.location` assignment
+// does a full page reload, and has no way to respect the "user was on a
+// public page" exception AuthContext already knows about via
+// `isAuthenticated`). Kept as a no-op passthrough so any interceptors
+// registered elsewhere in the future still get a place to plug in.
+apiClient.interceptResponse((res) => res)
 
 export default apiClient

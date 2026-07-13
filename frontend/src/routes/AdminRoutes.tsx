@@ -38,7 +38,7 @@ export function AdminRoutes() {
         <Route path="system-health" element={<SystemHealth />} />
         <Route path="help-support" element={<HelpSupport />} />
         <Route path="logout" element={<Logout />} />
-        <Route path="*" element={<Navigate to="dashboard" replace />} />
+        <Route path="*" element={<Navigate to="/admin/dashboard" replace />} />
       </Routes>
     </Suspense>
   )

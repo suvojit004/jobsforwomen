@@ -13,6 +13,19 @@ export interface NotificationItem {
   read: boolean
   time: string
   dateGroup: "Today" | "Yesterday" | "Earlier"
+  // Backend-generated internal path (see notification.listener.ts's
+  // createAndEmitNotification callers) -- never a full/external URL.
+  actionUrl?: string
+}
+
+// Only ever treat this as a same-app client-side route: it must start with
+// exactly one leading "/" (a bare root-relative path). This rejects
+// protocol-relative ("//evil.com") and absolute ("https://...") strings a
+// future backend bug could otherwise produce, since this value ultimately
+// flows into `navigate()`. Defense in depth -- values in this app already
+// come only from our own backend, never from user input.
+export function isSafeInternalPath(url?: string | null): url is string {
+  return !!url && url.startsWith("/") && !url.startsWith("//")
 }
 
 interface NotificationContextType {
@@ -52,7 +65,8 @@ function mapApiNotification(n: any): NotificationItem {
     category: n.category || "General",
     read: !!n.read,
     time: timeStr,
-    dateGroup
+    dateGroup,
+    actionUrl: n.actionUrl || undefined,
   }
 }
 

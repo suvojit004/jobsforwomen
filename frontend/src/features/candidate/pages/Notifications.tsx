@@ -1,4 +1,5 @@
 import { useState, useTransition } from "react"
+import { useNavigate } from "react-router-dom"
 import { motion } from "framer-motion"
 import { Search, CheckCheck, BellRing } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -6,9 +7,10 @@ import { DashboardCard } from "@/components/dashboard/DashboardCard"
 import { EmptyState } from "@/components/shared/EmptyState"
 import { NotificationList } from "../components/Notifications/NotificationList"
 import { cn } from "@/lib/utils"
-import { useNotificationContext } from "@/contexts/NotificationContext"
+import { useNotificationContext, isSafeInternalPath, type NotificationItem } from "@/contexts/NotificationContext"
 
 export function Notifications() {
+  const navigate = useNavigate()
   const {
     notifications,
     unreadCount,
@@ -17,6 +19,14 @@ export function Notifications() {
     markAllAsRead: handleMarkAllRead,
     deleteNotification: handleDelete,
   } = useNotificationContext()
+
+  // Marking as read is fire-and-forget here -- we don't want a slow/failed
+  // API call to block the navigation the user just asked for by clicking
+  // the card.
+  const handleItemClick = (n: NotificationItem) => {
+    if (!n.read) handleMarkRead(n.id)
+    if (isSafeInternalPath(n.actionUrl)) navigate(n.actionUrl)
+  }
 
   const [categoryFilter, setCategoryFilter] = useState<string>("All")
   const [searchQuery, setSearchQuery] = useState<string>("")
@@ -144,6 +154,7 @@ export function Notifications() {
             notifications={filteredNotifications}
             onMarkRead={handleMarkRead}
             onDelete={handleDelete}
+            onItemClick={handleItemClick}
           />
         ) : (
           <div className="py-12">

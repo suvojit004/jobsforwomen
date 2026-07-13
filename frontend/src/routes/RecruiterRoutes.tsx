@@ -34,7 +34,12 @@ export function RecruiterRoutes() {
       <Route path="settings" element={<Settings />} />
       <Route path="help" element={<Help />} />
       <Route path="logout" element={<Logout />} />
-      <Route path="*" element={<Navigate to="dashboard" replace />} />
+      {/* Absolute path -- verified via react-router's matchRoutes/resolvePath
+          that the relative form ("dashboard") already resolves correctly
+          for direct fallthrough cases (e.g. "/recruiter/jobs"), but an
+          absolute target removes any ambiguity if this route tree is ever
+          nested differently, and matches the other two role routers. */}
+      <Route path="*" element={<Navigate to="/recruiter/dashboard" replace />} />
     </Routes>
   )
 }

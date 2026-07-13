@@ -3,13 +3,12 @@ import request from "supertest"
 // Mock Prisma DB Operations inline in factory
 jest.mock("../../shared/database/db", () => {
   const localPrismaMock = {
-    user: { findUnique: jest.fn(), update: jest.fn() },
+    user: { findUnique: jest.fn(), update: jest.fn(), findMany: jest.fn() },
     role: { findUnique: jest.fn(), findFirst: jest.fn(), findMany: jest.fn(), create: jest.fn(), update: jest.fn(), delete: jest.fn() },
     permission: { findMany: jest.fn() },
     rolePermission: { createMany: jest.fn(), deleteMany: jest.fn() },
     userRole: { deleteMany: jest.fn(), createMany: jest.fn() },
     recruiterProfile: { findUnique: jest.fn(), updateMany: jest.fn() },
-    candidateProfile: { count: jest.fn() },
     company: { findUnique: jest.fn(), update: jest.fn(), count: jest.fn() },
     companyVerificationHistory: { create: jest.fn() },
     industry: { upsert: jest.fn() },
@@ -25,6 +24,9 @@ jest.mock("../../shared/database/db", () => {
     },
     jobStatusHistory: { create: jest.fn() },
     jobReport: { count: jest.fn() },
+    jobSkill: { findMany: jest.fn() },
+    candidateSkill: { findMany: jest.fn() },
+    candidateProfile: { count: jest.fn(), findMany: jest.fn() },
     application: {
       findUnique: jest.fn(),
       findMany: jest.fn(),
@@ -108,6 +110,7 @@ import env from "../../shared/config/env"
 import { UserStatus, CompanyStatus, JobStatus } from "@prisma/client"
 import prisma from "../../shared/database/db"
 import redis from "../../shared/utils/redis"
+import EventBus from "../../shared/eventBus/eventBus"
 
 const mockPrisma = prisma as any
 const mockRedis = redis as any
@@ -211,10 +214,19 @@ describe("Admin Module Integration Tests (Phase 7)", () => {
       })
     })
 
-    it("should flag job and set job visibility to hidden during moderation rejection", async () => {
-      mockPrisma.job.findUnique.mockResolvedValue({ id: "job-999", recruiterId: "rec-1", status: JobStatus.approved })
+    it("should flag job and set job visibility to hidden during moderation rejection, and notify the recruiter with the reason", async () => {
+      mockPrisma.job.findUnique.mockResolvedValue({
+        id: "job-999",
+        title: "Rejected Posting",
+        recruiterId: "rec-1",
+        companyId: "comp-1",
+        status: JobStatus.approved,
+        recruiter: { userId: "rec-user-1" },
+        company: { id: "comp-1", name: "Test Co" },
+      })
       mockPrisma.job.update.mockResolvedValue({ id: "job-999", status: JobStatus.flagged, visibility: "hidden" })
       mockPrisma.jobStatusHistory.create.mockResolvedValue({ id: "hist-2" })
+      mockPrisma.notification.create.mockImplementation(async ({ data }: any) => ({ id: "notif-1", ...data }))
 
       const res = await request(app)
         .post("/api/v1/admins/jobs/job-999/moderate")
@@ -234,6 +246,86 @@ describe("Admin Module Integration Tests (Phase 7)", () => {
             visibility: "hidden",
           }),
         })
+      )
+
+      // Notification creation is dispatched via a detached async EventBus
+      // handler that the HTTP response doesn't wait for.
+      await EventBus.allSettled()
+
+      expect(mockPrisma.notification.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            recipientId: "rec-user-1",
+            title: "Job Posting Rejected",
+            message: expect.stringContaining("Content contains spam."),
+            actionUrl: "/recruiter/jobs/job-999",
+            dedupeKey: "job-rejected:job-999",
+          }),
+        })
+      )
+    })
+
+    it("should approve a job, notify the owning recruiter, and notify only matched active candidates", async () => {
+      mockPrisma.job.findUnique.mockResolvedValue({
+        id: "job-approve-1",
+        title: "React Developer",
+        location: "Bangalore, India",
+        recruiterId: "rec-2",
+        companyId: "comp-2",
+        status: JobStatus.pending_approval,
+        recruiter: { userId: "rec-user-2" },
+        company: { id: "comp-2", name: "Approve Co" },
+      })
+      mockPrisma.job.update.mockResolvedValue({ id: "job-approve-1", status: JobStatus.approved, visibility: "visible" })
+      mockPrisma.jobStatusHistory.create.mockResolvedValue({ id: "hist-3" })
+      mockPrisma.notification.create.mockImplementation(async ({ data }: any) => ({ id: "notif-" + data.recipientId, ...data }))
+
+      // Skill match: job requires skill "react-skill-id"
+      mockPrisma.jobSkill.findMany.mockResolvedValue([{ skillId: "react-skill-id" }])
+      mockPrisma.candidateSkill.findMany.mockResolvedValue([
+        { candidate: { userId: "candidate-skill-match" } },
+      ])
+      // Location match: one candidate's stored location contains the job's location
+      mockPrisma.candidateProfile.findMany.mockResolvedValue([
+        { userId: "candidate-location-match", location: "Bangalore", preferredLocations: [] },
+        { userId: "candidate-skill-match", location: "Remote", preferredLocations: [] }, // also matches by skill -- must be deduped, not notified twice
+        { userId: "candidate-no-match", location: "Delhi", preferredLocations: [] },
+      ])
+
+      const res = await request(app)
+        .post("/api/v1/admins/jobs/job-approve-1/moderate")
+        .set("Authorization", `Bearer ${moderatorToken}`)
+        .send({ action: "approve" })
+
+      expect(res.status).toBe(200)
+      await EventBus.allSettled()
+
+      // Recruiter notified
+      expect(mockPrisma.notification.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            recipientId: "rec-user-2",
+            title: "Job Posting Approved",
+            actionUrl: "/recruiter/jobs/job-approve-1",
+          }),
+        })
+      )
+
+      // Matched candidates notified (skill match + location match), each exactly once
+      expect(mockPrisma.notification.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ recipientId: "candidate-skill-match" }) })
+      )
+      expect(mockPrisma.notification.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ recipientId: "candidate-location-match" }) })
+      )
+      const skillMatchCalls = mockPrisma.notification.create.mock.calls.filter(
+        ([arg]: any) => arg.data.recipientId === "candidate-skill-match"
+      )
+      expect(skillMatchCalls).toHaveLength(1) // deduped, not notified twice for matching both ways
+
+      // Unmatched candidate never notified
+      expect(mockPrisma.notification.create).not.toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ recipientId: "candidate-no-match" }) })
       )
     })
   })

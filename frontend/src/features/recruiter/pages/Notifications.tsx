@@ -1,4 +1,5 @@
 import { useState } from "react"
+import { useNavigate } from "react-router-dom"
 import { motion, AnimatePresence } from "framer-motion"
 import {
   Briefcase,
@@ -20,11 +21,13 @@ interface RecruiterNotification {
   time: string
   type: "application" | "interview" | "system" | "partner"
   read: boolean
+  actionUrl?: string
 }
 
-import { useNotificationContext } from "@/contexts/NotificationContext"
+import { useNotificationContext, isSafeInternalPath } from "@/contexts/NotificationContext"
 
 export function Notifications() {
+  const navigate = useNavigate()
   const {
     notifications: contextNotifications,
     isLoading,
@@ -49,8 +52,16 @@ export function Notifications() {
       time: n.time,
       type,
       read: n.read,
+      actionUrl: n.actionUrl,
     }
   })
+
+  // Fire-and-forget mark-read so a slow/failed API call never blocks the
+  // navigation the user just asked for by clicking the card.
+  const handleItemClick = (n: RecruiterNotification) => {
+    if (!n.read) handleMarkRead(n.id)
+    if (isSafeInternalPath(n.actionUrl)) navigate(n.actionUrl)
+  }
 
   // Clear all notifications
   const handleClearAll = async () => {
@@ -170,8 +181,10 @@ export function Notifications() {
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: 10 }}
                 transition={{ duration: 0.15 }}
+                onClick={() => handleItemClick(item)}
                 className={cn(
                   "p-4 flex items-start gap-4 hover:bg-slate-50/50 dark:hover:bg-slate-800/10 transition-colors group",
+                  item.actionUrl && "cursor-pointer",
                   !item.read && "bg-gradient-to-r from-violet-50/20 to-transparent dark:from-violet-500/5"
                 )}
               >
@@ -207,7 +220,10 @@ export function Notifications() {
                     <Button
                       variant="ghost"
                       size="icon"
-                      onClick={() => handleMarkRead(item.id)}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        handleMarkRead(item.id)
+                      }}
                       className="h-8 w-8 text-slate-400 hover:text-emerald-500"
                       title="Mark as Read"
                     >
@@ -217,7 +233,10 @@ export function Notifications() {
                   <Button
                     variant="ghost"
                     size="icon"
-                    onClick={() => handleClearSingle(item.id)}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      handleClearSingle(item.id)
+                    }}
                     className="h-8 w-8 text-slate-400 hover:text-red-500"
                     title="Dismiss"
                   >

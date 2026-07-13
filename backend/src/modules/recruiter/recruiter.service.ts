@@ -483,6 +483,19 @@ export class RecruiterService {
       newValue: { title: job.title, status: job.status },
     })
 
+    // Only a real submission-for-review should notify admins -- a saveDraft
+    // call reuses this same method with status "draft" and shouldn't page
+    // every admin about a posting the recruiter hasn't finished writing yet.
+    if (job.status === JobStatus.pending_approval) {
+      EventBus.publish("JobSubmittedForApproval", {
+        jobId: job.id,
+        jobTitle: job.title,
+        companyId: profile.companyId,
+        companyName: profile.company.name,
+        context,
+      })
+    }
+
     return job
   }
 
