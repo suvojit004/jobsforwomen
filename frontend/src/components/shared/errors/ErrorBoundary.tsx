@@ -18,15 +18,51 @@ export class ErrorBoundary extends Component<Props, State> {
     error: null,
   }
 
+  private reloadTimeout: any
+
   public static getDerivedStateFromError(error: Error): State {
     return { hasError: true, error }
   }
 
+  public componentDidMount() {
+    this.reloadTimeout = setTimeout(() => {
+      sessionStorage.removeItem("chunk_load_failed_reload")
+    }, 10000)
+  }
+
+  public componentWillUnmount() {
+    if (this.reloadTimeout) {
+      clearTimeout(this.reloadTimeout)
+    }
+  }
+
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error("ErrorBoundary caught an error:", error, errorInfo)
+
+    const errMsg = error.message || ""
+    const errName = error.name || ""
+
+    const isStaleDeploymentError =
+      errMsg.includes("Failed to fetch dynamically imported module") ||
+      errMsg.includes("Importing a module script failed") ||
+      errMsg.includes("Expected a JavaScript-or-Wasm module") ||
+      errMsg.includes("MIME type") ||
+      errName === "ChunkLoadError" ||
+      /Loading chunk .* failed/i.test(errMsg)
+
+    if (isStaleDeploymentError) {
+      const reloadKey = "chunk_load_failed_reload"
+      const hasReloaded = sessionStorage.getItem(reloadKey)
+      if (!hasReloaded) {
+        sessionStorage.setItem(reloadKey, "true")
+        console.warn("MIME type or dynamic module import error detected. Performing one-time page reload to pull the latest deployment assets...")
+        window.location.reload()
+      }
+    }
   }
 
   private handleReset = () => {
+    sessionStorage.removeItem("chunk_load_failed_reload")
     this.setState({ hasError: false, error: null })
     window.location.reload()
   }
