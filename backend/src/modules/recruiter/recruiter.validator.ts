@@ -28,13 +28,26 @@ export const logoMetadataSchema = z.object({
 })
 
 // Company Onboarding Schema
+//
+// This endpoint (POST /company/onboard) is used both for the initial
+// verification wizard AND as the general "Company Profile" edit form
+// (frontend CompanyProfile.tsx) that recruiters revisit any time after
+// approval to update their name/description/perks. verificationDocuments
+// used to be required with min(1) on every call -- so every single profile
+// edit made after the initial onboarding (which never re-collects documents)
+// failed Zod validation with a 400, and the frontend's catch block only
+// console.error'd it, so the recruiter saw no error and no success message.
+// It's now optional; the service only touches stored documents when new
+// ones are actually submitted.
 export const onboardCompanySchema = z.object({
+  name: z.string().min(2, "Company name must be at least 2 characters.").optional(),
+  description: z.string().optional(),
   logo: logoMetadataSchema.optional(),
   website: z.string().url("Invalid website URL"),
   location: z.string().min(2, "Location is required"),
   industryName: z.string().min(2, "Industry is required"),
   claimedPerks: z.array(z.string()).optional(),
-  verificationDocuments: z.array(verificationDocumentSchema).min(1, "At least one verification document is required"),
+  verificationDocuments: z.array(verificationDocumentSchema).optional(),
 })
 
 // Date helper validator: DD/MM/YYYY and in future
@@ -121,6 +134,17 @@ export const releaseOfferSchema = z.object({
 export const recruiterSettingsSchema = z.object({
   realTimeNotifications: z.boolean().optional(),
   emailDigestInterval: z.enum(["Instant", "Daily", "Weekly", "None"]).optional(),
+  // The Settings page (frontend Settings.tsx) also lets a recruiter edit
+  // their name, job title, and phone number, but this endpoint previously
+  // only accepted the two notification-preference fields above -- so those
+  // edits were validated client-side, "saved" with a success banner, and
+  // then silently discarded because the request body fields were never
+  // even sent to the API. fullName/phone are real RecruiterProfile columns;
+  // jobTitle has no dedicated column, so it's stored in the same
+  // preferences JSON blob as the notification settings.
+  fullName: z.string().min(2, "Name must be at least 2 characters.").optional(),
+  phone: z.string().min(8, "Phone number must be at least 8 digits.").optional(),
+  jobTitle: z.string().min(2, "Job title must be at least 2 characters.").optional(),
 })
 
 // Invite Colleague Schema

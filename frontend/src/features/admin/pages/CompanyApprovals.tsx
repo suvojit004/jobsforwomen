@@ -30,6 +30,17 @@ export function CompanyApprovals() {
   const [companies, setCompanies] = useState<AdminCompany[]>([])
   const [searchQuery, setSearchQuery] = useState("")
   const [filterMode, setFilterMode] = useState<"all" | "pending" | "approved" | "info_requested" | "rejected">("all")
+
+  // The real Prisma CompanyStatus enum has 4 distinct "awaiting admin
+  // action" states (pending, pending_verification, submitted, under_review)
+  // -- the same set admin.service.ts's dashboard already groups together as
+  // "pendingCompanies". Previously this page only ever matched the exact
+  // string "pending", so a company that had just completed onboarding (which
+  // recruiter.service.ts sets to "submitted", never "pending") was invisible
+  // under the Pending filter/count and rendered with a blank, unstyled
+  // status badge (no switch case matched "submitted" either).
+  const PENDING_LIKE_STATUSES = ["pending", "pending_verification", "submitted", "under_review"]
+  const isPendingLike = (status: string) => PENDING_LIKE_STATUSES.includes(status)
   const [loading, setLoading] = useState(true)
 
   // Dialog/Modal state
@@ -99,7 +110,7 @@ export function CompanyApprovals() {
     const matchesSearch = c.name.toLowerCase().includes(searchQuery.toLowerCase())
     if (!matchesSearch) return false
 
-    if (filterMode === "pending") return c.status === "pending"
+    if (filterMode === "pending") return isPendingLike(c.status)
     if (filterMode === "approved") return c.status === "approved"
     if (filterMode === "info_requested") return c.status === "info_requested"
     if (filterMode === "rejected") return c.status === "rejected"
@@ -173,6 +184,26 @@ export function CompanyApprovals() {
             badgeStyle = "bg-amber-100/60 text-amber-800 dark:bg-amber-955/30 dark:text-amber-300"
             statusLabel = "Pending Verification"
             break
+          // These 3 statuses didn't have a case at all before, so any
+          // company in one of them (which is most newly-onboarded companies,
+          // since recruiter.service.ts's onboardCompany sets "submitted") got
+          // a blank, unstyled badge with no label.
+          case "submitted":
+            badgeStyle = "bg-amber-100/60 text-amber-800 dark:bg-amber-955/30 dark:text-amber-300"
+            statusLabel = "Submitted for Review"
+            break
+          case "pending_verification":
+            badgeStyle = "bg-amber-100/60 text-amber-800 dark:bg-amber-955/30 dark:text-amber-300"
+            statusLabel = "Pending Verification"
+            break
+          case "under_review":
+            badgeStyle = "bg-amber-100/60 text-amber-800 dark:bg-amber-955/30 dark:text-amber-300"
+            statusLabel = "Under Review"
+            break
+          case "draft":
+            badgeStyle = "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400"
+            statusLabel = "Draft (Not Submitted)"
+            break
           case "info_requested":
             badgeStyle = "bg-blue-100/60 text-blue-800 dark:bg-blue-950/30 dark:text-blue-350"
             statusLabel = "More Info Requested"
@@ -181,6 +212,9 @@ export function CompanyApprovals() {
             badgeStyle = "bg-pink-100/60 text-pink-850 dark:bg-pink-955/35 dark:text-pink-300"
             statusLabel = "Rejected"
             break
+          default:
+            badgeStyle = "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400"
+            statusLabel = row.status
         }
 
         return (
@@ -275,7 +309,7 @@ export function CompanyApprovals() {
           >
             Pending
             <span className="ml-1.5 bg-amber-100 text-amber-700 dark:bg-amber-955/20 dark:text-amber-300 text-[9px] px-1 rounded-full font-black">
-              {companies.filter((c) => c.status === "pending").length}
+              {companies.filter((c) => isPendingLike(c.status)).length}
             </span>
           </Button>
           <Button

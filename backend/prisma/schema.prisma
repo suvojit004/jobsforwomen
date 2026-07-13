@@ -232,6 +232,7 @@ model Department {
 model Company {
   id                    String                       @id @default(uuid())
   name                  String                       @unique
+  description           String?
   website               String
   location              String
   status                CompanyStatus                @default(pending)

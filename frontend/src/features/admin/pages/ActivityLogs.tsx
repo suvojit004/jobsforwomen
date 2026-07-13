@@ -27,14 +27,34 @@ export function ActivityLogs() {
       setLoading(true)
       const data = await AdminApi.getAudits()
       
-      const formattedLogs: AdminAuditLog[] = (data || []).map((a: any) => ({
-        id: a.id,
-        timestamp: a.createdAt ? new Date(a.createdAt).toLocaleString() : "Just now",
-        operator: `Admin (${a.actorId || "System"})`,
-        category: a.category === "RECRUITER" ? "Corporate Perks" : a.category === "JOB" ? "Job Moderation" : "User Management",
-        action: `${a.action.replace(/_/g, " ")} on ${a.entity}`,
-        ipAddress: a.ipAddress || "127.0.0.1"
-      }))
+      // Previously this only ever checked a.category for "RECRUITER" or
+      // "JOB" -- but "JOB" is never actually a real audit category (job
+      // moderation events are logged under category "ADMIN" with
+      // entity "Job"), and two of the six filter tabs on this page
+      // ("Feature Flags", "Security Settings") could never be produced by
+      // this mapping at all, so those tabs always showed zero rows no
+      // matter what had actually happened. The `entity` field the backend
+      // actually records on every audit log row is a reliable signal --
+      // mapped here instead.
+      const formattedLogs: AdminAuditLog[] = (data || []).map((a: any) => {
+        let category = "User Management"
+        if (a.entity === "Job") category = "Job Moderation"
+        else if (a.entity === "Company") category = "Corporate Perks"
+        else if (a.entity === "FeatureFlag") category = "Feature Flags"
+        else if (a.entity === "Role" || a.category === "RBAC") category = "Security Settings"
+
+        return {
+          id: a.id,
+          // The AuditLog model's real column is `timestamp`, not `createdAt`
+          // -- so this previously always fell through to "Just now" for
+          // every row, no matter how old the actual event was.
+          timestamp: a.timestamp ? new Date(a.timestamp).toLocaleString() : "Just now",
+          operator: a.operatorEmail || `System (${a.operatorId || "automated"})`,
+          category,
+          action: `${a.action.replace(/_/g, " ")}${a.entity ? ` on ${a.entity}` : ""}`,
+          ipAddress: a.ipAddress || "Not recorded",
+        }
+      })
 
       setLogs(formattedLogs)
     } catch (err) {

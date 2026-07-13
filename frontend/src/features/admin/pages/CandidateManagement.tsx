@@ -38,9 +38,19 @@ export function CandidateManagement() {
         name: u.fullName || u.email.split("@")[0],
         email: u.email,
         role: u.candidateProfile?.title || "Professional",
-        careerBreak: !!u.candidateProfile?.bio,
+        // careerBreak is a real JSONB field on CandidateProfile (added for
+        // the candidate Profile page's career-break editor) -- this
+        // previously checked `!!candidateProfile?.bio` instead, which just
+        // tests whether the candidate wrote an "About" bio and has nothing
+        // to do with career breaks at all.
+        careerBreak: !!u.candidateProfile?.careerBreak,
         hasResume: !!u.candidateProfile?.resumeUrl,
-        status: u.status === "Active" ? "Active" : "Blocked"
+        // Real UserStatus enum values: PendingVerification, PendingApproval,
+        // Active, Rejected, Suspended, Blocked. Previously every non-Active
+        // status was collapsed into "Blocked" here, so a candidate who
+        // simply hadn't verified their email yet showed up identically to
+        // one an admin had actually blocked.
+        status: u.status,
       })))
     } catch (err) {
       console.error("Failed to load candidates database:", err)
@@ -64,18 +74,20 @@ export function CandidateManagement() {
     }
   }
 
+  const isBlockedLike = (status: string) => status === "Suspended" || status === "Blocked"
+
   // Filter logic
   const filteredCandidates = candidates.filter((c) => {
     const matchesSearch =
       c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       c.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
       c.role.toLowerCase().includes(searchQuery.toLowerCase())
-    
+
     if (!matchesSearch) return false
 
     if (filterMode === "hasResume") return c.hasResume
     if (filterMode === "noResume") return !c.hasResume
-    if (filterMode === "blocked") return c.status === "Blocked"
+    if (filterMode === "blocked") return isBlockedLike(c.status)
     return true
   })
 
@@ -124,17 +136,33 @@ export function CandidateManagement() {
     },
     {
       header: "Status",
-      cell: (row) => (
-        <span
-          className={`inline-flex items-center text-[10px] font-black px-2.5 py-0.5 rounded-full ${
-            row.status === "Active"
-              ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/20 dark:text-emerald-400"
-              : "bg-red-100 text-red-800 dark:bg-red-950/20 dark:text-red-400"
-          }`}
-        >
-          {row.status}
-        </span>
-      ),
+      cell: (row) => {
+        // Every non-Active status used to render as a plain red "Blocked"
+        // pill; now each real UserStatus value gets its own label so an
+        // admin can tell "hasn't verified their email yet" apart from
+        // "I suspended this account".
+        const styles: Record<string, string> = {
+          Active: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/20 dark:text-emerald-400",
+          PendingVerification: "bg-amber-100 text-amber-800 dark:bg-amber-950/20 dark:text-amber-400",
+          PendingApproval: "bg-amber-100 text-amber-800 dark:bg-amber-950/20 dark:text-amber-400",
+          Rejected: "bg-red-100 text-red-800 dark:bg-red-950/20 dark:text-red-400",
+          Suspended: "bg-red-100 text-red-800 dark:bg-red-950/20 dark:text-red-400",
+          Blocked: "bg-red-100 text-red-800 dark:bg-red-950/20 dark:text-red-400",
+        }
+        const labels: Record<string, string> = {
+          PendingVerification: "Pending Email Verification",
+          PendingApproval: "Pending Approval",
+        }
+        return (
+          <span
+            className={`inline-flex items-center text-[10px] font-black px-2.5 py-0.5 rounded-full ${
+              styles[row.status] || "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400"
+            }`}
+          >
+            {labels[row.status] || row.status}
+          </span>
+        )
+      },
     },
     {
       header: "Actions",
@@ -152,7 +180,7 @@ export function CandidateManagement() {
             onClick={() => handleToggleStatus(row.id)}
           >
             <UserX className="size-3 mr-0.5" />
-            {row.status === "Active" ? "Block Candidate" : "Unblock Candidate"}
+            {row.status === "Active" ? "Block Candidate" : "Unblock / Activate"}
           </Button>
         </div>
       ),

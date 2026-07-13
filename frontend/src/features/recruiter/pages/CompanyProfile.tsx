@@ -12,6 +12,7 @@ import {
   FileCheck,
   ArrowRight,
 } from "lucide-react"
+import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { DashboardCard } from "@/components/shared/DashboardCard"
 
@@ -151,6 +152,8 @@ export function CompanyProfile() {
       if (data.childcareSupport) activePerks.push("Childcare Allowance Support")
 
       await RecruiterApi.onboardCompany({
+        name: data.name,
+        description: data.description,
         website: data.website,
         location: data.location,
         industryName: data.industry,
@@ -160,8 +163,13 @@ export function CompanyProfile() {
       setSuccessMsg(true)
       window.scrollTo({ top: 0, behavior: "smooth" })
       setTimeout(() => setSuccessMsg(false), 3000)
-    } catch (err) {
+    } catch (err: any) {
+      // Previously this only logged to the console -- the recruiter saw no
+      // success banner and no error, so "Save Corporate Profile" looked like
+      // a dead button on any failure (e.g. a duplicate company name hitting
+      // the @unique constraint, or a validation error).
       console.error("Failed to save company profile", err)
+      toast.error(err?.message || "Couldn't save company profile. Please try again.")
     }
   }
 

@@ -80,7 +80,11 @@ export function CompanyDetails() {
           company: j.company?.name || "Unknown Company",
           location: j.location,
           salary: j.salaryDisplay || "N/A",
-          applicantsCount: j.applicants || 0,
+          // admin.service.ts's listJobs returns applicant counts under
+          // `_count.applications`, not a flat `applicants` field -- this
+          // always read undefined and fell back to 0, so every job in this
+          // admin view showed "0 Applicants" regardless of its real count.
+          applicantsCount: j._count?.applications || 0,
           status: j.status
         })))
         if (formattedComps.length > 0) {
@@ -103,6 +107,16 @@ export function CompanyDetails() {
   // Real recruiter contacts for the selected company (RecruiterProfile rows),
   // not a fixed name shown for every company regardless of selection.
   const companyRecruiters = selectedCompany?.recruiters || []
+
+  // The "Menstrual Leave Champion" badge previously just checked
+  // status === "approved" -- so *every* approved company was labeled a
+  // Champion regardless of whether it ever claimed that specific perk, and
+  // a company that claimed it but wasn't approved yet was labeled "Standard
+  // Partner". It should reflect the actual claimed benefit.
+  const isMenstrualLeaveChampion =
+    !!selectedCompany &&
+    selectedCompany.status === "approved" &&
+    selectedCompany.claimedPerks.includes("Menstrual Leave Support")
 
   return (
     <div className="space-y-6 select-none animate-fadeIn">
@@ -161,11 +175,11 @@ export function CompanyDetails() {
 
                 <div className="flex items-center gap-2">
                   <span className={`text-[10px] font-black uppercase px-2.5 py-0.5 rounded tracking-wide ${
-                    selectedCompany.status === "approved"
+                    isMenstrualLeaveChampion
                       ? "bg-pink-100 text-pink-700 dark:bg-pink-950/20 dark:text-pink-300"
                       : "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-400"
                   }`}>
-                    {selectedCompany.status === "approved" ? "Menstrual Leave Champion" : "Standard Partner"}
+                    {isMenstrualLeaveChampion ? "Menstrual Leave Champion" : "Standard Partner"}
                   </span>
                 </div>
               </div>

@@ -123,6 +123,22 @@ export function initNotificationListener() {
     })
   })
 
+  // 6b. Admin feature-flag change audits -- a distinct event from the
+  // candidate-settings "FeatureFlagUpdated" above (they used to share the
+  // same event name and got mislabeled as candidate settings updates; see
+  // admin.service.ts's createFeatureFlag/updateFeatureFlag).
+  EventBus.subscribe("AdminFeatureFlagUpdated", (payload: any) => {
+    EventBus.publish("AuditCreated", {
+      ...payload.context,
+      operatorId: payload.adminId,
+      category: "ADMIN",
+      action: "UPDATE_FEATURE_FLAG",
+      entity: "FeatureFlag",
+      entityId: payload.flagId,
+      newValue: { [payload.flagKey]: payload.flagValue },
+    })
+  })
+
   // 7. Login Audit logs dispatch
   EventBus.subscribe("UserLoggedIn", (payload: any) => {
     EventBus.publish("AuditCreated", {

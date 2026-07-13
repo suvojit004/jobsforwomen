@@ -772,9 +772,20 @@ export class AdminService {
 
     await PermissionCacheManager.invalidateAll()
 
-    EventBus.publish("FeatureFlagUpdated", {
-      userId: adminId,
-      settings: { [flag.key]: flag.value },
+    // Previously this reused the same "FeatureFlagUpdated" event name that
+    // candidate.service.ts publishes for candidate settings changes. Both
+    // publishers used the same {userId, settings} shape, so the shared
+    // listener (which is hardcoded to log candidate settings updates) never
+    // errored -- it just silently mislabeled every admin feature-flag
+    // create/update as category "CANDIDATE" / action "UPDATE_SETTINGS" /
+    // entity "User" in the audit log. That's also why the admin Activity
+    // Logs page's "Feature Flags" filter tab always came back empty: no
+    // audit row was ever actually tagged as a feature-flag change.
+    EventBus.publish("AdminFeatureFlagUpdated", {
+      adminId,
+      flagId: flag.id,
+      flagKey: flag.key,
+      flagValue: flag.value,
       context,
     })
 
@@ -800,9 +811,11 @@ export class AdminService {
 
     await PermissionCacheManager.invalidateAll()
 
-    EventBus.publish("FeatureFlagUpdated", {
-      userId: adminId,
-      settings: { [updated.key]: updated.value },
+    EventBus.publish("AdminFeatureFlagUpdated", {
+      adminId,
+      flagId: updated.id,
+      flagKey: updated.key,
+      flagValue: updated.value,
       context,
     })
 

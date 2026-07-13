@@ -13,6 +13,7 @@ import {
   Save,
   Lock,
 } from "lucide-react"
+import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { DashboardCard } from "@/components/shared/DashboardCard"
 import { RecruiterApi } from "../services/recruiterApi"
@@ -64,7 +65,7 @@ export function Settings() {
 
         reset({
           name: profile.fullName || "Recruiter",
-          role: "Recruiter Manager",
+          role: setts.jobTitle || "Recruiter Manager",
           email: user.email || "",
           phone: profile.phone || "",
           notifyNewApp: !!setts.realTimeNotifications,
@@ -82,7 +83,15 @@ export function Settings() {
 
   const onSubmit = async (data: SettingsFormValues) => {
     try {
+      // Previously only the two notification-preference fields were sent
+      // here -- name/role/phone were validated and "saved" with a success
+      // banner but silently discarded, since the backend endpoint had no
+      // fields (or storage) for them at all. Now sent for real; see
+      // recruiter.service.ts's updateSettings.
       await RecruiterApi.updateSettings({
+        fullName: data.name,
+        jobTitle: data.role,
+        phone: data.phone,
         realTimeNotifications: data.notifyNewApp,
         emailDigestInterval: data.notifyWeeklyDigest ? "Weekly" : "Daily"
       })
@@ -91,8 +100,9 @@ export function Settings() {
       setTimeout(() => {
         setSuccessMsg(false)
       }, 1500)
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to update settings", err)
+      toast.error(err?.message || "Couldn't save account settings. Please try again.")
     }
   }
 
@@ -157,7 +167,10 @@ export function Settings() {
               {errors.role && <p className="text-[10px] font-bold text-red-500">{errors.role.message}</p>}
             </div>
 
-            {/* Email Address */}
+            {/* Email Address -- read-only: changing a login email requires a
+                re-verification flow the backend doesn't implement, so this
+                is intentionally disabled rather than silently accepted and
+                discarded like the other fields used to be. */}
             <div className="space-y-1">
               <label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500">Corporate Email</label>
               <div className="relative">
@@ -165,10 +178,11 @@ export function Settings() {
                 <input
                   type="email"
                   {...register("email")}
-                  className="w-full rounded-lg border border-slate-200 bg-white pl-9 pr-3 py-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6B2C91]/30 dark:border-slate-850 dark:bg-slate-900 dark:text-white"
+                  disabled
+                  className="w-full rounded-lg border border-slate-200 bg-slate-50 pl-9 pr-3 py-2 text-xs text-slate-500 cursor-not-allowed focus-visible:outline-none dark:border-slate-850 dark:bg-slate-950 dark:text-slate-400"
                 />
               </div>
-              {errors.email && <p className="text-[10px] font-bold text-red-500">{errors.email.message}</p>}
+              <p className="text-[10px] font-semibold text-slate-400 dark:text-slate-500">Contact support to change your login email.</p>
             </div>
 
             {/* Phone Number */}

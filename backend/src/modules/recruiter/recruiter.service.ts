@@ -252,12 +252,27 @@ export class RecruiterService {
         title: true,
         status: true,
         postedOn: true,
+        workMode: true,
         _count: {
           select: { applications: true },
         },
       },
       orderBy: { postedOn: "desc" },
     })
+
+    // Work mode split across this company's job postings. The frontend
+    // Analytics page previously rendered a hardcoded Remote/Hybrid/On-site
+    // pie chart (24/16/8) for every recruiter regardless of their actual
+    // postings -- computed here from the same jobsPerformance rows above so
+    // it costs no extra query.
+    const workModeCounts: Record<string, number> = {}
+    jobsPerformance.forEach((job) => {
+      workModeCounts[job.workMode] = (workModeCounts[job.workMode] || 0) + 1
+    })
+    const workModeDistribution = Object.entries(workModeCounts).map(([workMode, count]) => ({
+      workMode,
+      count,
+    }))
 
     // Application funnel summary
     const funnelStats = await prisma.application.groupBy({
@@ -295,6 +310,7 @@ export class RecruiterService {
       jobsPerformance,
       applicationFunnel: funnel,
       departmentDistribution,
+      workModeDistribution,
     }
   }
 
@@ -347,13 +363,20 @@ export class RecruiterService {
     const updatedCompany = await prisma.company.update({
       where: { id: company.id },
       data: {
+        name: data.name ?? company.name,
+        description: data.description ?? company.description,
         website: data.website,
         location: data.location,
         industryId: industry.id,
         logoUrl,
         logoPublicId,
         logoMetadata: logoMetadata as any,
-        verificationDocuments: data.verificationDocuments as any,
+        // Only overwrite stored verification documents when new ones are
+        // actually submitted -- this field is now optional (see validator),
+        // so falling back to `undefined` here would previously have wiped
+        // out the company's already-submitted documents on every ordinary
+        // profile edit.
+        verificationDocuments: (data.verificationDocuments as any) ?? (company.verificationDocuments as any),
         status: nextStatus,
       },
     })
@@ -1038,12 +1061,17 @@ export class RecruiterService {
     const defaultPrefs = {
       realTimeNotifications: true,
       emailDigestInterval: "Daily",
+      jobTitle: "Recruiter Manager",
     }
 
     return user.preferences ? { ...defaultPrefs, ...(user.preferences as any) } : defaultPrefs
   }
 
-  async updateSettings(userId: string, preferences: any, context?: ServiceContext) {
+  async updateSettings(userId: string, data: any, context?: ServiceContext) {
+    // fullName/phone live on RecruiterProfile, not the preferences JSON blob
+    // -- split them out before merging the rest into preferences.
+    const { fullName, phone, ...preferences } = data || {}
+
     const current = await this.getSettings(userId)
     const updatedPrefs = { ...current, ...preferences }
 
@@ -1051,6 +1079,16 @@ export class RecruiterService {
       where: { id: userId },
       data: { preferences: updatedPrefs },
     })
+
+    if (fullName !== undefined || phone !== undefined) {
+      await prisma.recruiterProfile.updateMany({
+        where: { userId },
+        data: {
+          ...(fullName !== undefined ? { fullName } : {}),
+          ...(phone !== undefined ? { phone } : {}),
+        },
+      })
+    }
 
     EventBus.publish("AuditCreated", {
       ...context,
