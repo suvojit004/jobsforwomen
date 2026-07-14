@@ -32,6 +32,7 @@ export function BrowseJobs() {
   const [totalPages, setTotalPages] = useState(1)
   const [savedJobs, setSavedJobs] = useState<string[]>([])
   const [appliedJobs, setAppliedJobs] = useState<string[]>([])
+  const [isApplying, setIsApplying] = useState<Record<string, boolean>>({})
 
   const loadJobs = useCallback(async () => {
     setIsLoading(true)
@@ -124,13 +125,16 @@ export function BrowseJobs() {
   }
 
   const handleApplyJob = async (id: string) => {
-    if (appliedJobs.includes(id)) return
+    if (appliedJobs.includes(id) || isApplying[id]) return
+    setIsApplying((prev) => ({ ...prev, [id]: true }))
     try {
       await CandidateJobsApi.applyToJob(id)
       setAppliedJobs((prev) => [...prev, id])
       toast.success("Application submitted successfully.")
     } catch (err: any) {
       toast.error(err?.message || "Couldn't submit your application. Please try again.")
+    } finally {
+      setIsApplying((prev) => ({ ...prev, [id]: false }))
     }
   }
 
@@ -186,6 +190,7 @@ export function BrowseJobs() {
                       job={job}
                       isSaved={savedJobs.includes(job.id)}
                       isApplied={appliedJobs.includes(job.id)}
+                      isLoading={isApplying[job.id]}
                       onSave={handleSaveJob}
                       onApply={handleApplyJob}
                     />

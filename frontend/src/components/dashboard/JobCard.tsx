@@ -12,6 +12,7 @@ type JobCardProps = {
   job: Job
   isSaved?: boolean
   isApplied?: boolean
+  isLoading?: boolean
   onSave?: (id: string) => void
   onApply?: (id: string) => void
 }
@@ -20,6 +21,7 @@ function JobCardComponent({
   job,
   isSaved = false,
   isApplied = false,
+  isLoading = false,
   onSave,
   onApply,
 }: JobCardProps) {
@@ -91,10 +93,10 @@ function JobCardComponent({
             {job.location} · {job.experience}
           </p>
         </div>
-        <motion.div whileHover={isApplied ? {} : { scale: 1.04 }} whileTap={isApplied ? {} : { scale: 0.97 }}>
+        <motion.div whileHover={(isApplied || isLoading) ? {} : { scale: 1.04 }} whileTap={(isApplied || isLoading) ? {} : { scale: 0.97 }}>
           <Button
             onClick={() => onApply?.(job.id)}
-            disabled={isApplied}
+            disabled={isApplied || isLoading}
             className={cn(
               "h-9 w-full px-5 font-extrabold sm:w-auto transition-colors",
               isApplied
@@ -102,7 +104,7 @@ function JobCardComponent({
                 : "bg-[#6B2C91] text-white hover:bg-[#5a237b]"
             )}
           >
-            {isApplied ? "Applied" : "Apply Now"}
+            {isLoading ? "Applying..." : isApplied ? "Applied" : "Apply Now"}
           </Button>
         </motion.div>
       </div>

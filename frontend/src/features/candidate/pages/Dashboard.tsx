@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react"
 import { useNavigate } from "react-router-dom"
+import { toast } from "sonner"
 import { ActivityFeed } from "@/components/dashboard/ActivityFeed"
 import { CandidateInformationCard } from "@/components/dashboard/CandidateInformationCard"
 import { CareerBreakCard } from "@/components/dashboard/CareerBreakCard"
@@ -59,8 +60,53 @@ export function Dashboard() {
   const [recommendedJobs, setRecommendedJobs] = useState<ExtendedJob[]>([])
   const [savedJobIds, setSavedJobIds] = useState<string[]>([])
   const [appliedJobIds, setAppliedJobIds] = useState<string[]>([])
+  const [isApplying, setIsApplying] = useState<Record<string, boolean>>({})
   const [activities, setActivities] = useState<Activity[]>([])
   const [isLoading, setIsLoading] = useState(true)
+
+  const handleSaveJob = async (id: string) => {
+    const wasSaved = savedJobIds.includes(id)
+    setSavedJobIds((prev) => (wasSaved ? prev.filter((sId) => sId !== id) : [...prev, id]))
+    try {
+      if (wasSaved) {
+        await CandidateJobsApi.unsaveJob(id)
+        toast.success("Job removed from saved jobs.")
+      } else {
+        await CandidateJobsApi.saveJob(id)
+        toast.success("Job saved successfully.")
+      }
+    } catch (err: any) {
+      setSavedJobIds((prev) => (wasSaved ? [...prev, id] : prev.filter((sId) => sId !== id)))
+      toast.error(err?.message || "Couldn't update saved jobs. Please try again.")
+    }
+  }
+
+  const handleApplyJob = async (id: string) => {
+    if (appliedJobIds.includes(id) || isApplying[id]) return
+    setIsApplying((prev) => ({ ...prev, [id]: true }))
+    try {
+      await CandidateJobsApi.applyToJob(id)
+      setAppliedJobIds((prev) => [...prev, id])
+      toast.success("Application submitted successfully.")
+      
+      const apps = await CandidateJobsApi.getApplications()
+      setApplications(apps.map(mapApiApplication))
+      setAppliedJobIds(apps.map((a: any) => a.jobId))
+
+      const mappedActivities: Activity[] = apps.map((app: any) => ({
+        id: app.id,
+        title: `Application ${app.status}`,
+        description: `You applied to ${app.job?.title || "Untitled Role"} at ${app.job?.company?.name || "Unknown Company"}`,
+        time: "Just now",
+        type: app.status === "Rejected" ? "rejected" : "submitted"
+      }))
+      setActivities(mappedActivities)
+    } catch (err: any) {
+      toast.error(err?.message || "Couldn't submit your application. Please try again.")
+    } finally {
+      setIsApplying((prev) => ({ ...prev, [id]: false }))
+    }
+  }
 
   const refreshProfile = useCallback(async () => {
     const prof = await candidateApi.getProfile()
@@ -136,6 +182,8 @@ export function Dashboard() {
             jobs={recommendedJobs}
             savedJobs={savedJobIds}
             appliedJobs={appliedJobIds}
+            onSave={handleSaveJob}
+            onApply={handleApplyJob}
           />
           <MyApplications applications={applications} />
         </div>
