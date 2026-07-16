@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react"
-import { Search, FileText } from "lucide-react"
+import { useState, useEffect, useRef } from "react"
+import { Search, FileText, ChevronLeft, ChevronRight } from "lucide-react"
 import { DataTable } from "@/components/shared/DataTable"
 import type { ColumnDef } from "@/components/shared/DataTable"
 import { Input } from "@/components/ui/input"
@@ -16,79 +16,98 @@ interface AdminAuditLog {
   ipAddress: string
 }
 
+const CATEGORIES = [
+  "All",
+  "User Management",
+  "Job Moderation",
+  "Corporate Perks",
+  "Feature Flags",
+  "Security Settings",
+]
+
+const PAGE_SIZE = 20
+// A short, deliberate delay before the search box triggers a real backend
+// request. Without this, every keystroke would fire its own paginated
+// Prisma query -- this is a minimal, local debounce (a plain setTimeout in
+// an effect), not a new state-management dependency.
+const SEARCH_DEBOUNCE_MS = 400
+
 export function ActivityLogs() {
   const [logs, setLogs] = useState<AdminAuditLog[]>([])
-  const [searchQuery, setSearchQuery] = useState("")
+  const [searchInput, setSearchInput] = useState("")
+  const [debouncedSearch, setDebouncedSearch] = useState("")
   const [activeCategory, setActiveCategory] = useState<string>("All")
+  const [page, setPage] = useState(1)
+  const [totalPages, setTotalPages] = useState(1)
+  const [totalItems, setTotalItems] = useState(0)
   const [loading, setLoading] = useState(true)
+  const requestIdRef = useRef(0)
 
-  const loadLogs = async () => {
-    try {
-      setLoading(true)
-      const data = await AdminApi.getAudits()
-      
-      // Previously this only ever checked a.category for "RECRUITER" or
-      // "JOB" -- but "JOB" is never actually a real audit category (job
-      // moderation events are logged under category "ADMIN" with
-      // entity "Job"), and two of the six filter tabs on this page
-      // ("Feature Flags", "Security Settings") could never be produced by
-      // this mapping at all, so those tabs always showed zero rows no
-      // matter what had actually happened. The `entity` field the backend
-      // actually records on every audit log row is a reliable signal --
-      // mapped here instead.
-      const formattedLogs: AdminAuditLog[] = (data || []).map((a: any) => {
-        let category = "User Management"
-        if (a.entity === "Job") category = "Job Moderation"
-        else if (a.entity === "Company") category = "Corporate Perks"
-        else if (a.entity === "FeatureFlag") category = "Feature Flags"
-        else if (a.entity === "Role" || a.category === "RBAC") category = "Security Settings"
+  // Debounce the search box: only commit to `debouncedSearch` (which
+  // actually triggers a fetch) after the admin stops typing for a moment.
+  useEffect(() => {
+    const handle = setTimeout(() => setDebouncedSearch(searchInput), SEARCH_DEBOUNCE_MS)
+    return () => clearTimeout(handle)
+  }, [searchInput])
 
-        return {
-          id: a.id,
-          // The AuditLog model's real column is `timestamp`, not `createdAt`
-          // -- so this previously always fell through to "Just now" for
-          // every row, no matter how old the actual event was.
-          timestamp: a.timestamp ? new Date(a.timestamp).toLocaleString() : "Just now",
-          operator: a.operatorEmail || `System (${a.operatorId || "automated"})`,
-          category,
-          action: `${a.action.replace(/_/g, " ")}${a.entity ? ` on ${a.entity}` : ""}`,
-          ipAddress: a.ipAddress || "Not recorded",
-        }
-      })
-
-      setLogs(formattedLogs)
-    } catch (err) {
-      console.error("Failed to fetch audit trails:", err)
-    } finally {
-      setLoading(false)
-    }
-  }
+  // Any filter change resets back to page 1 -- staying on, say, page 4 of
+  // an old filter while switching categories would otherwise silently show
+  // "no results" even when the new filter has plenty of matches.
+  useEffect(() => {
+    setPage(1)
+  }, [debouncedSearch, activeCategory])
 
   useEffect(() => {
+    // CONFIRMED BUG (fixed here, Final Implementation Pass Part 2): every
+    // filter here -- category tab, search box, and page number -- now
+    // becomes a real GET /admins/audits request with real query parameters,
+    // answered by a real Prisma `where`/`skip`/`take` query (see
+    // admin.service.ts's getAuditLogs and AdminApi.getAudits). Previously
+    // this fetched one fixed page of up to 500 rows once, and every filter
+    // change only re-filtered that same in-memory array in React.
+    const thisRequestId = ++requestIdRef.current
+    async function loadLogs() {
+      try {
+        setLoading(true)
+        const { auditLogs, pagination } = await AdminApi.getAudits({
+          page,
+          limit: PAGE_SIZE,
+          search: debouncedSearch || undefined,
+          uiCategory: activeCategory,
+        })
+        // Guard against a slower, stale request resolving after a newer one
+        // (e.g. rapidly clicking between category tabs) and clobbering the
+        // page with out-of-date results.
+        if (thisRequestId !== requestIdRef.current) return
+
+        const formattedLogs: AdminAuditLog[] = (auditLogs || []).map((a: any) => {
+          let category = "User Management"
+          if (a.entity === "Job") category = "Job Moderation"
+          else if (a.entity === "Company") category = "Corporate Perks"
+          else if (a.entity === "FeatureFlag") category = "Feature Flags"
+          else if (a.entity === "Role" || a.category === "RBAC") category = "Security Settings"
+
+          return {
+            id: a.id,
+            timestamp: a.timestamp ? new Date(a.timestamp).toLocaleString() : "Just now",
+            operator: a.operatorEmail || `System (${a.operatorId || "automated"})`,
+            category,
+            action: `${a.action.replace(/_/g, " ")}${a.entity ? ` on ${a.entity}` : ""}`,
+            ipAddress: a.ipAddress || "Not recorded",
+          }
+        })
+
+        setLogs(formattedLogs)
+        setTotalPages(pagination?.totalPages || 1)
+        setTotalItems(pagination?.totalItems || 0)
+      } catch (err) {
+        console.error("Failed to fetch audit trails:", err)
+      } finally {
+        if (thisRequestId === requestIdRef.current) setLoading(false)
+      }
+    }
     loadLogs()
-  }, [])
-
-  const categories = [
-    "All",
-    "User Management",
-    "Job Moderation",
-    "Corporate Perks",
-    "Feature Flags",
-    "Security Settings",
-  ]
-
-  // Filter logs
-  const filteredLogs = logs.filter((log) => {
-    const matchesSearch =
-      log.operator.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      log.action.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      log.ipAddress.includes(searchQuery)
-
-    const matchesCategory =
-      activeCategory === "All" || log.category === activeCategory
-
-    return matchesSearch && matchesCategory
-  })
+  }, [page, debouncedSearch, activeCategory])
 
   const columns: ColumnDef<AdminAuditLog>[] = [
     {
@@ -165,7 +184,7 @@ export function ActivityLogs() {
       {/* Filter Options & Search */}
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex flex-wrap gap-1.5">
-          {categories.map((cat) => (
+          {CATEGORIES.map((cat) => (
             <Button
               key={cat}
               variant={activeCategory === cat ? "default" : "outline"}
@@ -182,8 +201,8 @@ export function ActivityLogs() {
           <Input
             type="search"
             placeholder="Search by action, operator or IP..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
             className="pl-9 text-xs h-9 rounded-lg border-slate-200 bg-white focus-visible:ring-[#6B2C91]/25 dark:border-slate-800 dark:bg-slate-900"
           />
         </div>
@@ -199,11 +218,44 @@ export function ActivityLogs() {
             </p>
           </div>
         ) : (
-          <DataTable
-            columns={columns}
-            data={filteredLogs}
-            emptyMessage="No matching activity log records found."
-          />
+          <>
+            <DataTable
+              columns={columns}
+              data={logs}
+              emptyMessage="No matching activity log records found."
+            />
+            {/* Real server-side pagination -- replaces the previous
+                fetch-500-then-filter-locally approach. */}
+            <div className="flex items-center justify-between border-t border-slate-100 dark:border-slate-800 mt-2 pt-3">
+              <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+                {totalItems > 0
+                  ? `Page ${page} of ${totalPages} · ${totalItems} total record${totalItems === 1 ? "" : "s"}`
+                  : "No records"}
+              </span>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 gap-1 text-[10px] font-bold"
+                  disabled={page <= 1}
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                >
+                  <ChevronLeft className="size-3.5" />
+                  Previous
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 gap-1 text-[10px] font-bold"
+                  disabled={page >= totalPages}
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                >
+                  Next
+                  <ChevronRight className="size-3.5" />
+                </Button>
+              </div>
+            </div>
+          </>
         )}
       </DashboardCard>
     </div>

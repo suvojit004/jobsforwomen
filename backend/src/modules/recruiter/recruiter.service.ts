@@ -714,16 +714,41 @@ export class RecruiterService {
     let nextStatus = job.status
     let domainEventName = ""
 
+    // CONFIRMED PRODUCTION BUG (fixed here): "resume" previously set
+    // status straight to `approved` unconditionally, with no check on the
+    // job's current status. That meant a recruiter could call
+    // resume/Activate on a job that was still `pending_approval` (never
+    // reviewed) or `flagged` (rejected) and the backend would happily mark
+    // it `approved` -- silently bypassing admin moderation and making an
+    // unreviewed/rejected job candidate-visible. Moderation approval
+    // (`status -> approved`, plus approvedAt/approvedBy) is an admin-only
+    // transition owned by admin.service.ts's moderateJob(); this recruiter
+    // action must only be able to re-activate a job admin already approved
+    // and the recruiter themselves previously paused.
     if (action === "submit") {
+      if (job.status !== JobStatus.draft && job.status !== JobStatus.flagged) {
+        throw new Error(`Invalid status transition: cannot submit a job for approval from state: ${job.status}`)
+      }
       nextStatus = JobStatus.pending_approval
       domainEventName = "JobUpdated"
     } else if (action === "pause") {
+      if (job.status !== JobStatus.approved) {
+        throw new Error(`Invalid status transition: only an approved, active job can be paused (current state: ${job.status})`)
+      }
       nextStatus = JobStatus.paused
       domainEventName = "JobPaused"
     } else if (action === "resume") {
+      if (job.status !== JobStatus.paused) {
+        throw new Error(
+          `Invalid status transition: cannot activate a job that has not been approved by an admin (current state: ${job.status}). Pending or rejected jobs must complete admin moderation first.`
+        )
+      }
       nextStatus = JobStatus.approved
       domainEventName = "JobResumed"
     } else if (action === "close") {
+      if (job.status !== JobStatus.approved && job.status !== JobStatus.paused) {
+        throw new Error(`Invalid status transition: cannot close a job from state: ${job.status}`)
+      }
       nextStatus = JobStatus.closed
       domainEventName = "JobClosed"
     } else {
@@ -970,7 +995,10 @@ export class RecruiterService {
       applicationId,
       candidateId: app.candidateId,
       candidateUserId: app.candidate.userId,
+      candidateName: app.candidate.fullName,
       jobId: app.jobId,
+      jobTitle: app.job.title,
+      recruiterUserId: userId,
       scheduledAt: scheduledAt.toISOString(),
       location: data.location,
       context,

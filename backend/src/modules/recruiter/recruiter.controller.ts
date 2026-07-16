@@ -105,12 +105,21 @@ export class RecruiterController {
     return sendSuccess(res, null, "Job deleted successfully.")
   }
 
-  lifecycleJob = async (req: Request, res: Response) => {
-    const action = req.params.action as string
-    const userId = req.user?.userId || ""
-    const context = this.getContext(req)
-    const result = await this.service.lifecycleJob(req.params.id as string, userId, action, context)
-    return sendSuccess(res, result, `Job progressed successfully via action: ${action}.`)
+  lifecycleJob = async (req: Request, res: Response, next: any) => {
+    // Previously had no try/catch: Express 4 does not auto-catch rejected
+    // promises from async route handlers, so any business error thrown by
+    // service.lifecycleJob() (e.g. rejecting Activate on a job that was
+    // never admin-approved) became an unhandled promise rejection instead
+    // of a JSON error response -- the request would just hang.
+    try {
+      const action = req.params.action as string
+      const userId = req.user?.userId || ""
+      const context = this.getContext(req)
+      const result = await this.service.lifecycleJob(req.params.id as string, userId, action, context)
+      return sendSuccess(res, result, `Job progressed successfully via action: ${action}.`)
+    } catch (err: any) {
+      next(err)
+    }
   }
 
   getCompanyApplications = async (req: Request, res: Response) => {
@@ -236,6 +245,22 @@ export class RecruiterController {
     const { content } = req.body
     const result = await ConversationService.sendMessage(req.params.id as string, userId, content)
     return sendSuccess(res, result, "Message sent successfully.")
+  }
+
+  markConversationAsRead = async (req: Request, res: Response) => {
+    const userId = req.user?.userId || ""
+    const result = await ConversationService.markConversationAsRead(req.params.id as string, userId)
+    return sendSuccess(res, result, "Conversation marked as read.")
+  }
+
+  // CONFIRMED CRITICAL BUG (fixed here): mirrors candidate.controller.ts's
+  // startConversation -- see ConversationService.getOrCreateForApplication.
+  // Lets a recruiter open (or resume) a chat with the candidate who applied
+  // to one of their jobs directly from the Applicants pipeline.
+  startConversation = async (req: Request, res: Response) => {
+    const userId = req.user?.userId || ""
+    const conversation = await ConversationService.getOrCreateForApplication(req.params.id as string, userId)
+    return sendSuccess(res, { conversation }, "Conversation ready.", 201)
   }
 
   uploadCompanyLogo = async (req: Request, res: Response, next: any) => {

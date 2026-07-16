@@ -43,6 +43,7 @@ router.get("/applications", requireApprovedCompany, controller.getCompanyApplica
 router.put("/applications/:id/status", requireApprovedCompany, requireOwnership("Application"), controller.progressApplicant)
 router.post("/applications/:id/interview", requireApprovedCompany, requireOwnership("Application"), controller.scheduleInterview)
 router.post("/applications/:id/offer", requireApprovedCompany, requireOwnership("Application"), controller.releaseOffer)
+router.post("/applications/:id/conversation", requireApprovedCompany, requireOwnership("Application"), controller.startConversation)
 // Team management (Requires approved company)
 router.get("/team", requireApprovedCompany, controller.getTeam)
 router.post("/team/invite", requireApprovedCompany, controller.inviteColleague)
@@ -58,5 +59,6 @@ router.delete("/notifications/:id", controller.deleteNotification)
 router.get("/conversations", controller.getConversations)
 router.get("/conversations/:id/messages", controller.getMessages)
 router.post("/conversations/:id/messages", controller.sendMessage)
+router.put("/conversations/:id/read", controller.markConversationAsRead)
 
 export default router

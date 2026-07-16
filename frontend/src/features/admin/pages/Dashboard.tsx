@@ -25,14 +25,6 @@ import { AdminApi } from "../services/adminApi"
 
 const APPLICATIONS_COLORS = ["#6B2C91", "#EC4899", "#3B82F6", "#10B981"]
 
-// Defends the dashboard's loading state against any single request that
-// hangs indefinitely (rather than cleanly rejecting). Promise.all/allSettled
-// only resolve once every input promise *settles* -- if one of them never
-// resolves or rejects (e.g. a backend call blocked on a slow/unreachable
-// external service), the whole page is stuck on "Loading..." forever,
-// because `finally` can't run until the awaited Promise.all() itself
-// settles. Racing each call against a timeout guarantees it always settles
-// one way or another within a bounded time.
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   return Promise.race([
     promise,
@@ -52,10 +44,6 @@ export function Dashboard() {
   const [candidates, setCandidates] = useState<any[]>([])
   const [jobs, setJobs] = useState<any[]>([])
   const [audits, setAudits] = useState<any[]>([])
-  // Real platform-wide counts, computed from the *full* lists before they get
-  // sliced down to a 5-row preview below. The tab badges and KPI tiles
-  // previously showed hardcoded numbers (e.g. "Pending (10)", "24,685
-  // Candidates") completely disconnected from any real data.
   const [companyStatusCounts, setCompanyStatusCounts] = useState({ pending: 0, approved: 0, rejected: 0 })
   const [jobStatusCounts, setJobStatusCounts] = useState({ all: 0, reported: 0, removed: 0 })
   const [candidateStats, setCandidateStats] = useState({ total: 0, newThisWeek: 0, active: 0, inactive: 0 })
@@ -67,16 +55,12 @@ export function Dashboard() {
 
   useEffect(() => {
     async function loadData() {
-      // Promise.allSettled + a per-call timeout means: (a) one failing or
-      // hanging widget can never block the rest of the dashboard from
-      // rendering, and (b) `finally` below is guaranteed to run within
-      // ~15s no matter what any individual backend call does.
       const [dashResult, userResult, companyResult, jobsResult, auditResult] = await Promise.allSettled([
         withTimeout(AdminApi.getDashboard(), 15000, "Dashboard metrics"),
         withTimeout(AdminApi.getUsers(), 15000, "User list"),
         withTimeout(AdminApi.getCompanies(), 15000, "Company list"),
         withTimeout(AdminApi.getJobs(), 15000, "Job list"),
-        withTimeout(AdminApi.getAudits(), 15000, "Audit log"),
+        withTimeout(AdminApi.getAudits({ limit: 4 }), 15000, "Audit log"),
       ])
 
       try {
@@ -106,7 +90,7 @@ export function Dashboard() {
           failures.push("Jobs")
         }
 
-        const auditList = auditResult.status === "fulfilled" ? (auditResult.value || []) : []
+        const auditList = auditResult.status === "fulfilled" ? (auditResult.value?.auditLogs || []) : []
         if (auditResult.status === "rejected") {
           console.error("Failed to load audit log", auditResult.reason)
           failures.push("Activity log")
@@ -118,25 +102,17 @@ export function Dashboard() {
           u.roles?.some((r: any) => r.role?.name === "Candidate")
         )
 
-        // Real counts only -- this previously fell back to large hardcoded
-        // numbers (2458 companies, 5784 jobs, 24685 candidates, and an
-        // unconditional fake 12392 applications) whenever the real count was
-        // 0, which is exactly the case for a fresh/empty platform: a brand
-        // new install would show fabricated activity instead of true zeros.
         const analytics = dash?.analytics || {}
         setMetrics({
-          companies: companyList.length,
-          jobs: jobsList.length,
-          candidates: candidateUsers.length,
+          companies: analytics.totalCompanies ?? companyList.length,
+          jobs: analytics.totalJobs ?? jobsList.length,
+          candidates: analytics.totalCandidates ?? candidateUsers.length,
           applications: analytics.applicationVolume ?? 0,
         })
         setApplicationFunnel(analytics.applicationFunnel || [])
         setDepartmentDistribution(analytics.departmentDistribution || [])
         setUserGrowth(analytics.userGrowth || [])
 
-        // Real per-status counts computed from the full (unsliced) lists --
-        // the tab badges below previously showed fixed numbers regardless of
-        // what was actually in the database.
         const pendingStatuses = new Set(["pending", "pending_verification", "submitted", "under_review", "draft", "info_requested"])
         setCompanyStatusCounts({
           pending: (companyList || []).filter((c: any) => pendingStatuses.has(c.status)).length,
@@ -177,18 +153,10 @@ export function Dashboard() {
           id: j.id,
           title: j.title,
           company: j.company?.name || "Unknown Company",
-          // Job has real `reported` (boolean) and `status` (archived, etc.)
-          // fields -- previously this collapsed every non-"approved" status
-          // into "Reported" and never produced "Removed" at all, so the
-          // Removed tab below could never show anything even when jobs had
-          // actually been archived.
           status: j.status === "archived" ? "Removed" : j.reported ? "Reported" : j.status === "approved" ? "Active" : "Other"
         })))
 
         setAudits((auditList || []).slice(0, 4).map((a: any) => ({
-          // AuditLog has no `actorId` field -- it's `operatorEmail`/`operatorId`.
-          // The previous code always rendered "by User undefined" for every
-          // single real audit row.
           title: `${a.action.replace(/_/g, " ")} on ${a.entity || "record"}`,
           actor: a.operatorEmail ? `by ${a.operatorEmail}` : "by System"
         })))
@@ -224,23 +192,18 @@ export function Dashboard() {
     }
   }
 
-  // Filtered Company Approvals based on selected tab
   const displayCompanies = companies.filter((c) => {
     if (companyTab === "pending") return c.status === "pending" || c.status === "draft" || c.status === "submitted"
     if (companyTab === "approved") return c.status === "approved"
     return c.status === "rejected"
   })
 
-  // Filtered Job Moderation based on selected tab
   const displayJobs = jobs.filter((j) => {
     if (jobTab === "reported") return j.status === "Reported"
     if (jobTab === "removed") return j.status === "Removed"
     return true
   })
 
-  // Real "last 7 days" range instead of a hardcoded, permanently stale date
-  // string (previously always showed "12 May 2025 - 18 May 2025" no matter
-  // what today's actual date was).
   const last7DaysLabel = (() => {
     const end = new Date()
     const start = new Date()
@@ -263,7 +226,6 @@ export function Dashboard() {
         </div>
       )}
 
-      {/* Date and Dashboard Overview Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-xl font-black text-slate-900 dark:text-white">
@@ -281,9 +243,7 @@ export function Dashboard() {
         </div>
       </div>
 
-      {/* Top Statistics Cards Row */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {/* Card 1: Total Companies */}
         <DashboardCard className="p-4 flex items-center gap-4 hover:border-purple-300 dark:hover:border-purple-900 hover:-translate-y-0.5 transition-all">
           <div className="p-3 rounded-xl bg-purple-550/10 text-[#6B2C91] dark:bg-purple-950/30 dark:text-pink-300">
             <Building className="size-6" />
@@ -298,7 +258,6 @@ export function Dashboard() {
           </div>
         </DashboardCard>
 
-        {/* Card 2: Total Jobs */}
         <DashboardCard className="p-4 flex items-center gap-4 hover:border-pink-300 dark:hover:border-pink-900 hover:-translate-y-0.5 transition-all">
           <div className="p-3 rounded-xl bg-pink-500/10 text-pink-600 dark:bg-pink-950/30 dark:text-pink-300">
             <BriefcaseBusiness className="size-6" />
@@ -313,7 +272,6 @@ export function Dashboard() {
           </div>
         </DashboardCard>
 
-        {/* Card 3: Total Candidates */}
         <DashboardCard className="p-4 flex items-center gap-4 hover:border-blue-300 dark:hover:border-blue-900 hover:-translate-y-0.5 transition-all">
           <div className="p-3 rounded-xl bg-blue-500/10 text-blue-600 dark:bg-blue-950/30 dark:text-blue-300">
             <Users className="size-6" />
@@ -328,7 +286,6 @@ export function Dashboard() {
           </div>
         </DashboardCard>
 
-        {/* Card 4: Total Applications */}
         <DashboardCard className="p-4 flex items-center gap-4 hover:border-emerald-300 dark:hover:border-emerald-900 hover:-translate-y-0.5 transition-all">
           <div className="p-3 rounded-xl bg-emerald-500/10 text-emerald-600 dark:bg-emerald-950/30 dark:text-emerald-300">
             <ShieldCheck className="size-6" />
@@ -344,10 +301,8 @@ export function Dashboard() {
         </DashboardCard>
       </div>
 
-      {/* Row 1 Grid: Company Approvals, Candidate Info, Job Moderation */}
       <div className="grid gap-6 xl:grid-cols-3">
-        
-        {/* Column 1: Company Approvals Table */}
+
         <DashboardCard className="p-5 flex flex-col justify-between space-y-4">
           <div className="flex justify-between items-center">
             <h4 className="text-xs font-black text-slate-900 uppercase dark:text-white">
@@ -358,7 +313,6 @@ export function Dashboard() {
             </Link>
           </div>
 
-          {/* Interactive filter tabs */}
           <div className="flex border-b border-slate-100 dark:border-slate-800 text-[10px] font-black">
             <button
               onClick={() => setCompanyTab("pending")}
@@ -395,7 +349,6 @@ export function Dashboard() {
             </button>
           </div>
 
-          {/* Mini DataTable */}
           <div className="overflow-x-auto">
             <table className="w-full text-left text-[11px] border-collapse font-semibold">
               <thead>
@@ -462,7 +415,6 @@ export function Dashboard() {
           </Link>
         </DashboardCard>
 
-        {/* Column 2: Candidate Information */}
         <DashboardCard className="p-5 flex flex-col justify-between space-y-4">
           <div className="flex justify-between items-center">
             <h4 className="text-xs font-black text-slate-900 uppercase dark:text-white">
@@ -473,8 +425,6 @@ export function Dashboard() {
             </Link>
           </div>
 
-          {/* KPI Mini-Tiles -- real counts computed from the full candidate
-              list (see candidateStats above), not fixed placeholder numbers. */}
           <div className="grid grid-cols-4 gap-2">
             <div className="bg-purple-50/50 p-2 rounded-xl dark:bg-slate-950/20 text-center space-y-1">
               <span className="text-xs font-black text-[#6B2C91] dark:text-pink-300">{candidateStats.total.toLocaleString()}</span>
@@ -494,14 +444,12 @@ export function Dashboard() {
             </div>
           </div>
 
-          {/* Recent registered heading */}
           <div>
             <h5 className="text-[10px] font-black text-slate-405 uppercase tracking-widest">
               Recent Registered Candidates
             </h5>
           </div>
 
-          {/* Candidates table */}
           <div className="overflow-x-auto">
             <table className="w-full text-left text-[11px] border-collapse font-semibold">
               <thead>
@@ -554,7 +502,6 @@ export function Dashboard() {
           </Link>
         </DashboardCard>
 
-        {/* Column 3: Job Moderation */}
         <DashboardCard className="p-5 flex flex-col justify-between space-y-4">
           <div className="flex justify-between items-center">
             <h4 className="text-xs font-black text-slate-900 uppercase dark:text-white">
@@ -565,7 +512,6 @@ export function Dashboard() {
             </Link>
           </div>
 
-          {/* Tabs */}
           <div className="flex border-b border-slate-100 dark:border-slate-800 text-[10px] font-black">
             <button
               onClick={() => setJobTab("all")}
@@ -602,7 +548,6 @@ export function Dashboard() {
             </button>
           </div>
 
-          {/* Job listings table */}
           <div className="overflow-x-auto">
             <table className="w-full text-left text-[11px] border-collapse font-semibold">
               <thead>
@@ -661,10 +606,8 @@ export function Dashboard() {
 
       </div>
 
-      {/* Row 2 Grid: 5 Column Layout (Desktop side-by-side widgets) */}
       <div className="grid gap-6 grid-cols-1 md:grid-cols-2 lg:grid-cols-5">
-        
-        {/* Widget 1: Applications by Status (Donut Chart) */}
+
         <DashboardCard className="p-4 flex flex-col justify-between space-y-3 h-full">
           <h5 className="text-[11px] font-black text-slate-900 dark:text-white uppercase tracking-wider">
             Applications by Status
@@ -708,7 +651,6 @@ export function Dashboard() {
           )}
         </DashboardCard>
 
-        {/* Widget 2: Top Job Categories (Progress Indicators) */}
         <DashboardCard className="p-4 flex flex-col justify-between space-y-3 h-full">
           <h5 className="text-[11px] font-black text-slate-900 dark:text-white uppercase tracking-wider">
             Top Job Categories
@@ -738,7 +680,6 @@ export function Dashboard() {
           </div>
         </DashboardCard>
 
-        {/* Widget 3: Recent Activities Feed */}
         <DashboardCard className="p-4 flex flex-col justify-between space-y-3 h-full">
           <h5 className="text-[11px] font-black text-slate-900 dark:text-white uppercase tracking-wider">
             Recent Activities
@@ -764,7 +705,6 @@ export function Dashboard() {
           </Link>
         </DashboardCard>
 
-        {/* Widget 4: Company Details Overview */}
         <DashboardCard className="p-4 flex flex-col justify-between space-y-3 h-full">
           <h5 className="text-[11px] font-black text-slate-900 dark:text-white uppercase tracking-wider">
             Company Details Overview
@@ -812,7 +752,6 @@ export function Dashboard() {
           </Link>
         </DashboardCard>
 
-        {/* Widget 5: User Growth Line Area Chart */}
         <DashboardCard className="p-4 flex flex-col justify-between space-y-3 h-full">
           <div>
             <h5 className="text-[11px] font-black text-slate-900 dark:text-white uppercase tracking-wider">

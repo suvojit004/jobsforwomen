@@ -2,11 +2,35 @@ import { useState, useEffect } from "react"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import * as z from "zod"
-import { Settings as SettingsIcon, ShieldAlert, Save, AlertCircle } from "lucide-react"
+import { Settings as SettingsIcon, ShieldAlert, Save, AlertCircle, Lock } from "lucide-react"
 import { DashboardCard } from "@/components/shared/DashboardCard"
 import { Button } from "@/components/ui/button"
 import { AdminApi } from "../services/adminApi"
 
+// CONFIRMED BUG (fixed here, Final Implementation Pass Part 4):
+// `sessionTimeout` and `twoFactorEnabled` used to be real form fields here,
+// persisted via AdminApi.updateSettings() straight into User.preferences --
+// and the save call really did succeed and really did write those values to
+// the database. The bug is that nothing anywhere ever *read* them back at
+// runtime:
+//   - sessionTimeout: JWT access/refresh token lifetimes are fixed,
+//     process-wide values from JWT_ACCESS_EXPIRY/JWT_REFRESH_EXPIRY (see
+//     shared/config/env.ts + shared/utils/token.ts), read once at process
+//     boot. There is no per-user session-timeout concept anywhere in the
+//     auth/session architecture -- implementing this for real would mean
+//     redesigning how tokens are issued and validated (e.g. per-user token
+//     TTLs, or a server-side session/activity-tracking table with its own
+//     invalidation sweep) and would risk invalidating every admin's already
+//     -active refresh session. That's real architecture work outside this
+//     pass, so this field is now honestly disabled rather than pretending to
+//     save a value that changes nothing.
+//   - twoFactorEnabled: there is no OTP/MFA challenge step anywhere in the
+//     login flow (no code-generation, verification endpoint, or second
+//     factor of any kind exists in the auth module). Same treatment as the
+//     mfa_enforced feature flag in Feature Configs -- honestly disabled, not
+//     a rushed implementation.
+// Both fields are removed from the submitted/validated form data entirely so
+// a save can never silently imply either one took effect.
 const adminSettingsSchema = z
   .object({
     name: z.string().min(3, "Name must be at least 3 characters."),
@@ -14,8 +38,6 @@ const adminSettingsSchema = z
     currentPassword: z.string().min(1, "Current password is required to verify changes."),
     newPassword: z.string().optional().or(z.literal("")),
     confirmNewPassword: z.string().optional().or(z.literal("")),
-    sessionTimeout: z.enum(["15m", "30m", "1h", "4h"]),
-    twoFactorEnabled: z.boolean(),
   })
   .refine(
     (data) => {
@@ -63,8 +85,6 @@ export function Settings() {
       currentPassword: "",
       newPassword: "",
       confirmNewPassword: "",
-      sessionTimeout: "30m",
-      twoFactorEnabled: true,
     },
   })
 
@@ -78,8 +98,6 @@ export function Settings() {
           currentPassword: "",
           newPassword: "",
           confirmNewPassword: "",
-          sessionTimeout: setts.sessionTimeout || "30m",
-          twoFactorEnabled: !!setts.twoFactorEnabled,
         })
       } catch (err) {
         console.error("Failed to load settings", err)
@@ -100,8 +118,6 @@ export function Settings() {
       await AdminApi.updateSettings({
         name: values.name,
         email: values.email,
-        sessionTimeout: values.sessionTimeout,
-        twoFactorEnabled: values.twoFactorEnabled,
       })
       setSuccess(true)
       reset({
@@ -132,7 +148,8 @@ export function Settings() {
           Administrative Settings
         </h1>
         <p className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">
-          Configure security protocols, credential authentication, Session timeout limits, and administrator profiles.
+          Update your administrator profile and password. Session timeout and 2FA below are shown for visibility
+          but are not yet backed by real enforcement -- see each control for details.
         </p>
       </div>
 
@@ -283,38 +300,49 @@ export function Settings() {
               </h3>
             </div>
 
-            {/* Session Timeout */}
-            <div className="space-y-1.5">
-              <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400">
+            {/* Session Timeout -- honestly disabled (Final Implementation
+                Pass Part 4). Access/refresh token lifetimes are fixed,
+                process-wide values (JWT_ACCESS_EXPIRY/JWT_REFRESH_EXPIRY),
+                not a per-admin setting; there is no session architecture in
+                place to honor a per-user timeout without redesigning how
+                tokens are issued and invalidated. */}
+            <div className="space-y-1.5 opacity-70">
+              <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400 flex items-center gap-1.5">
+                <Lock className="size-3" />
                 Inactivity Session Timeout
               </label>
               <select
-                {...register("sessionTimeout")}
-                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-[#6B2C91]/30 dark:border-slate-800 dark:bg-slate-950 dark:text-white font-bold"
+                disabled
+                value="30m"
+                title="Not implemented -- token lifetimes are a fixed, process-wide config value, not a per-admin setting"
+                className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs cursor-not-allowed dark:border-slate-800 dark:bg-slate-900 dark:text-slate-500 font-bold"
               >
-                <option value="15m">15 Minutes</option>
-                <option value="30m">30 Minutes</option>
-                <option value="1h">1 Hour</option>
-                <option value="4h">4 Hours</option>
+                <option value="30m">30 Minutes (fixed)</option>
               </select>
+              <p className="text-[9px] font-semibold text-slate-400 dark:text-slate-500">
+                Not implemented -- access tokens expire on a fixed, server-wide schedule. This control has no runtime effect.
+              </p>
             </div>
 
-            {/* 2FA Toggle */}
-            <div className="flex items-center justify-between py-2 border-t border-slate-100 dark:border-slate-850">
+            {/* 2FA Toggle -- honestly disabled. No OTP/MFA challenge exists
+                anywhere in the login flow (same reality as the mfa_enforced
+                feature flag). */}
+            <div className="flex items-center justify-between py-2 border-t border-slate-100 dark:border-slate-850 opacity-70">
               <div className="space-y-0.5">
-                <p className="text-xs font-bold text-slate-900 dark:text-white">Force Two-Factor (2FA)</p>
+                <p className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                  <Lock className="size-3" />
+                  Force Two-Factor (2FA)
+                </p>
                 <p className="text-[10px] text-slate-450 dark:text-slate-500 leading-normal max-w-[200px]">
-                  Enforces secondary verification checks on admin operations logins.
+                  Not implemented -- there is no MFA challenge step in the login flow yet. This control has no runtime effect.
                 </p>
               </div>
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input
-                  type="checkbox"
-                  {...register("twoFactorEnabled")}
-                  className="sr-only peer"
-                />
-                <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-slate-750 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all dark:border-slate-600 peer-checked:bg-[#6B2C91] dark:peer-checked:bg-pink-650"></div>
-              </label>
+              <div
+                className="relative inline-flex items-center cursor-not-allowed"
+                title="Not implemented -- no MFA challenge exists in the login flow"
+              >
+                <div className="w-9 h-5 bg-slate-150 rounded-full dark:bg-slate-800 border border-slate-200 dark:border-slate-700 relative after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-slate-350 dark:after:bg-slate-600 after:rounded-full after:h-4 after:w-4" />
+              </div>
             </div>
           </div>
 

@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
+import { useSearchParams } from "react-router-dom"
 import { motion } from "framer-motion"
 import { ConversationList } from "../components/Messages/ConversationList"
 import { ChatWindow } from "../components/Messages/ChatWindow"
@@ -10,6 +11,12 @@ import { useAuth } from "@/hooks/useAuth"
 
 export function Messages() {
   const { user } = useAuth()
+  // Supports deep-linking here from "Message Recruiter" on the Applications
+  // page (?conversation=<id>) after a brand-new conversation is created --
+  // without this, a freshly-started conversation had no way to actually be
+  // opened; the page would just fall back to selecting the first item.
+  const [searchParams] = useSearchParams()
+  const deepLinkedConversationId = searchParams.get("conversation")
   // The real signed-in user id, used to tell "my" messages apart from the
   // other party's. Previously this compared against
   // localStorage.getItem("user_id"), a key nothing in the app ever sets --
@@ -23,6 +30,11 @@ export function Messages() {
   const [isLoading, setIsLoading] = useState(true)
 
   const activeConversation = conversations.find((c) => c.id === activeId) || conversations[0]
+  // Final Implementation Pass, Part 11: dedup guard so a duplicate/replayed
+  // socket "notification" event for the same message can never increment an
+  // inactive conversation's unread badge twice. A plain ref-backed Set is
+  // enough here -- no new state-management dependency needed.
+  const seenIncomingMessageIds = useRef<Set<string>>(new Set())
 
   useEffect(() => {
     async function loadConversations() {
@@ -43,13 +55,20 @@ export function Messages() {
             lastMessageTime: c.messages?.[0]?.timestamp
               ? new Date(c.messages[0].timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
               : "Today",
-            unreadCount: 0,
+            // CONFIRMED BUG (fixed here, Final Implementation Pass Part 11):
+            // this was a hardcoded 0 -- the sidebar/nav badge never reflected
+            // real unread state. ConversationService.getConversations() now
+            // computes a real server-side count (messages from the other
+            // participant with readAt still null).
+            unreadCount: c.unreadCount ?? 0,
             online: true,
             thread: [],
           }
         })
         setConversations(formatted)
-        if (formatted.length > 0) {
+        if (deepLinkedConversationId && formatted.some((c: any) => c.id === deepLinkedConversationId)) {
+          setActiveId(deepLinkedConversationId)
+        } else if (formatted.length > 0) {
           setActiveId(formatted[0].id)
         }
       } catch (err) {
@@ -75,6 +94,22 @@ export function Messages() {
         setConversations((prev) =>
           prev.map((c) => (c.id === activeId ? { ...c, thread: formattedMsgs } : c))
         )
+
+        // Final Implementation Pass, Part 5: mark received-unread messages
+        // as read once their conversation is actually opened. The server
+        // verifies participant membership and only touches messages sent by
+        // the OTHER participant, so this can never mark the candidate's own
+        // outgoing messages as read. Reconciling the local badge to 0
+        // immediately (rather than waiting for a full conversations refetch)
+        // is what keeps it in sync with Part 11's real unread counts.
+        try {
+          await candidateApi.markConversationAsRead(activeId)
+          setConversations((prev) =>
+            prev.map((c) => (c.id === activeId ? { ...c, unreadCount: 0 } : c))
+          )
+        } catch (err) {
+          console.error("Failed to mark conversation as read", err)
+        }
       } catch (err) {
         console.error("Failed to load messages", err)
       }
@@ -97,7 +132,23 @@ export function Messages() {
 
     const handleNotification = (data: any) => {
       if (data.type === "message" || data.type === "MESSAGE") {
-        if (data.conversationId && data.conversationId !== activeId) return
+        // CONFIRMED BUG (fixed here, Final Implementation Pass Part 11): a
+        // message notification for a conversation OTHER than the one
+        // currently open used to be silently dropped entirely -- the
+        // sidebar's unread badge never moved for background conversations,
+        // only updating (to a stale value) on the next full page reload.
+        if (data.conversationId && data.conversationId !== activeId) {
+          if (data.messageId) {
+            if (seenIncomingMessageIds.current.has(data.messageId)) return
+            seenIncomingMessageIds.current.add(data.messageId)
+          }
+          setConversations((prev) =>
+            prev.map((c) =>
+              c.id === data.conversationId ? { ...c, unreadCount: (c.unreadCount || 0) + 1 } : c
+            )
+          )
+          return
+        }
         async function reloadMessages() {
           const msgs = await candidateApi.getMessages(activeId)
           const formattedMsgs: Message[] = msgs.map((m: any) => ({

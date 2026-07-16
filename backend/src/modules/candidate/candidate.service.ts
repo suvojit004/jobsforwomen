@@ -325,7 +325,7 @@ export class CandidateService {
 
     const job = await prisma.job.findUnique({
       where: { id: jobId },
-      include: { recruiter: { include: { user: true } } },
+      include: { recruiter: { include: { user: true } }, company: true },
     })
     if (!job) {
       throw new Error("Job posting not found")
@@ -364,6 +364,7 @@ export class CandidateService {
       candidateName: candidate.fullName,
       jobId,
       jobTitle: job.title,
+      companyName: job.company.name,
       recruiterUserId: job.recruiter.userId,
       context,
     })
@@ -700,6 +701,10 @@ export class CandidateService {
     return ConversationService.sendMessage(conversationId, senderId, content)
   }
 
+  async markConversationAsRead(conversationId: string, userId: string) {
+    return ConversationService.markConversationAsRead(conversationId, userId)
+  }
+
   // ==========================================
   // CONSOLIDATED DASHBOARD & ANALYTICS
   // ==========================================
@@ -769,7 +774,7 @@ export class CandidateService {
 
     const appCount = await prisma.application.count({ where: { candidateId: candidate.id } })
     const savedCount = await prisma.savedJob.count({ where: { candidateId: candidate.id } })
-    
+
     const interviewCount = await prisma.interview.count({
       where: {
         application: { candidateId: candidate.id },

@@ -38,6 +38,8 @@ const envSchema = z.object({
   // SMTP_USER so this feature works out of the box without a new required env var.
   SUPPORT_EMAIL: z.string().optional(),
 
+  RESEND_API_KEY: z.string().optional(),
+
   PROFILE_COMPLETION_THRESHOLD: z.coerce.number().default(70),
 
   GOOGLE_CLIENT_ID: z.string().min(1),

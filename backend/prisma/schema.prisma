@@ -436,6 +436,16 @@ model AuditLog {
   ipAddress     String?
   browser       String?
   device        String?
+
+  // Added for the Activity Logs real server-side pagination/filtering pass
+  // (Final Implementation Pass, Part 2): admin.service.ts's getAuditLogs()
+  // now always orders by timestamp desc and frequently filters by
+  // category/entity/operatorId, so these keep those queries index-backed
+  // instead of falling back to a full table scan as the table grows.
+  @@index([timestamp])
+  @@index([category])
+  @@index([entity])
+  @@index([operatorId])
 }
 
 model Notification {
@@ -468,6 +478,24 @@ model Conversation {
   createdAt    DateTime                  @default(now())
   participants ConversationParticipant[]
   messages     Message[]
+
+  // Final Implementation Pass, Part 10: concurrency hardening for
+  // ConversationService.getOrCreateForApplication(). Previously two
+  // near-simultaneous requests for the same candidate+recruiter pair could
+  // both pass a racy findFirst() check before either had committed its
+  // create(), silently splitting that pair's message history across two
+  // Conversation rows. participantsKey is a deterministic, sorted
+  // "candidateUserId:recruiterUserId" identity for the two-party
+  // relationship this schema models (see ConversationService.pairKey()),
+  // backed by a real Postgres UNIQUE constraint so the create half of the
+  // service's upsert() can never succeed twice for the same pair. Nullable
+  // because pre-existing rows are backfilled best-effort in the migration
+  // for this column -- any true legacy duplicate pairs are intentionally
+  // left unkeyed rather than merged (merging conversation/message history
+  // is a distinct, higher-risk operation this fix does not attempt).
+  // Postgres allows multiple NULLs under a UNIQUE constraint, so those rows
+  // don't block anything.
+  participantsKey String? @unique
 }
 
 model ConversationParticipant {
@@ -488,8 +516,20 @@ model Message {
   senderId       String
   content        String
   timestamp      DateTime     @default(now())
+  // Final Implementation Pass, Part 5: persistent message read state.
+  // `message:read` was previously an ephemeral Socket.IO broadcast only --
+  // nothing was ever written to the database, so a page refresh (or a
+  // recipient who was offline when the event fired) lost all read-state
+  // information permanently. Conversations in this schema are strictly
+  // two-party (see ConversationService.getOrCreateForApplication -- always
+  // exactly one candidate + one recruiter), so a single `readAt` timestamp
+  // per message is sufficient; a group-conversation read-receipt-per-user
+  // join table would be over-engineering for a relationship this schema
+  // doesn't model.
+  readAt         DateTime?
 
   @@index([conversationId])
+  @@index([conversationId, senderId, readAt])
 }
 
 model FeatureFlag {

@@ -68,6 +68,20 @@ export const candidateApi = {
     return res?.data
   },
 
+  async markConversationAsRead(conversationId: string) {
+    const res = await apiClient.put(`/api/v1/candidates/conversations/${conversationId}/read`, {})
+    return res?.data
+  },
+
+  // CONFIRMED BUG (fixed here): there was previously no way to create a
+  // conversation from the Candidate side at all -- Messages.tsx could only
+  // ever list conversations that already existed. This finds-or-creates the
+  // conversation tied to a specific job application.
+  async startConversation(applicationId: string) {
+    const res = await apiClient.post(`/api/v1/candidates/applications/${applicationId}/conversation`, {})
+    return res?.data?.conversation || res?.data
+  },
+
   async changePassword(currentPassword: string, newPassword: string) {
     const res = await apiClient.put("/api/v1/auth/change-password", { currentPassword, newPassword })
     return res?.data

@@ -1,12 +1,27 @@
 import { Server, Socket } from "socket.io"
 import type { Server as HttpServer } from "http"
 import jwt from "jsonwebtoken"
+import { createAdapter } from "@socket.io/redis-adapter"
 import env from "../config/env"
 import { logger } from "../utils/logger"
 import redis from "../utils/redis"
 import prisma from "../database/db"
 
 export let io: Server
+
+// Final Implementation Pass, Part 6: tracks whether Socket.IO is actually
+// running with the Redis adapter attached (real cross-instance fanout) or
+// has fallen back to Socket.IO's default in-memory adapter. Exposed so
+// System Health can report the real state instead of assuming Redis is
+// wired up just because REDIS_URL is set.
+//  - "redis": adapter attached successfully -- events fan out across all
+//    server instances via Upstash Redis pub/sub.
+//  - "memory": intentionally not attached (test mode) -- single-process
+//    in-memory fanout only, which is fine for a Jest run.
+//  - "error": Redis was expected to back the adapter (non-test mode) but
+//    the client was unavailable or attaching failed -- production is
+//    silently running single-instance-only fanout.
+export let socketAdapterStatus: "redis" | "memory" | "error" = "memory"
 
 // Observable performance metrics in-memory hook
 export const socketMetrics = {
@@ -54,6 +69,68 @@ export function initSocket(server: HttpServer) {
       skipMiddlewares: true,
     },
   })
+
+  // Final Implementation Pass, Part 6: Socket.IO Redis adapter.
+  //
+  // CONFIRMED GAP (fixed here): Socket.IO defaults to an in-memory adapter,
+  // which only fans events out (io.of(...).to(room).emit(...), the personal
+  // user:{userId} room used by sendRealTimeNotification, typing/message:read
+  // broadcasts, etc.) to sockets connected to *this specific process*. The
+  // moment this app runs as more than one instance (Render autoscaling, or
+  // any multi-dyno/multi-pod deployment), a message sent by a user connected
+  // to instance A would never reach a recipient connected to instance B --
+  // every broadcast above would silently miss part of production traffic
+  // with no error, no log, just events that never arrive on the other side.
+  //
+  // Investigated compatibility before implementing: the existing `redis`
+  // client (shared/utils/redis.ts, ioredis, already pointed at Upstash via
+  // REDIS_URL for the permission cache and presence tracking) is exactly the
+  // client type @socket.io/redis-adapter expects -- it accepts a pub/sub
+  // pair of either ioredis or node-redis v4 clients. Upstash's Redis
+  // offering as configured here uses the `rediss://` TCP endpoint (distinct
+  // from their separate HTTP-only REST API), which implements the standard
+  // Redis wire protocol including PUBLISH/SUBSCRIBE/PSUBSCRIBE -- so there is
+  // no provider-side incompatibility blocking this. Result: IMPLEMENTED.
+  //
+  // Skipped in test mode: Jest's socket-related tests run against a bare
+  // in-process HTTP server with no real Redis connection available, and
+  // don't exercise cross-instance fanout, so forcing a live Redis
+  // subscription there would only add flakiness for no test value.
+  if (env.NODE_ENV !== "test") {
+    if (redis) {
+      try {
+        const pubClient = redis.duplicate()
+        const subClient = redis.duplicate()
+
+        // ioredis emits an unhandled "error" event (which crashes the
+        // process if nothing is listening) on connection failure -- these
+        // mirror the same graceful-degradation logging already used on the
+        // base `redis` client in shared/utils/redis.ts.
+        pubClient.on("error", (err: Error) => {
+          logger.warn(`[SocketIO:RedisAdapter] pubClient error: ${err.message}`)
+        })
+        subClient.on("error", (err: Error) => {
+          logger.warn(`[SocketIO:RedisAdapter] subClient error: ${err.message}`)
+        })
+
+        io.adapter(createAdapter(pubClient, subClient))
+        socketAdapterStatus = "redis"
+        logger.info(
+          "[SocketIO] Redis adapter attached -- events now fan out across all server instances via Upstash Redis pub/sub."
+        )
+      } catch (err: any) {
+        socketAdapterStatus = "error"
+        logger.error(
+          `[SocketIO] Failed to attach Redis adapter -- falling back to in-memory adapter (no cross-instance fanout): ${err.message}`
+        )
+      }
+    } else {
+      socketAdapterStatus = "error"
+      logger.error(
+        "[SocketIO] Redis client unavailable -- Socket.IO running with in-memory adapter only (no cross-instance fanout)."
+      )
+    }
+  }
 
   // Handshake Authentication Middleware
   const authMiddleware = (socket: Socket, next: (err?: Error) => void) => {
@@ -254,4 +331,7 @@ export default {
   initSocket,
   sendRealTimeNotification,
   socketMetrics,
+  get socketAdapterStatus() {
+    return socketAdapterStatus
+  },
 }

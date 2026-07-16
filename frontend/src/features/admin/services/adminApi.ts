@@ -16,9 +16,41 @@ export const AdminApi = {
     return res?.data || {}
   },
 
-  async getAudits() {
-    const res = await apiClient.get("/api/v1/admins/audits")
-    return res?.data?.auditLogs || res?.data || []
+  async getAudits(params: {
+    page?: number
+    limit?: number
+    search?: string
+    uiCategory?: string
+    action?: string
+    entity?: string
+    startDate?: string
+    endDate?: string
+  } = {}) {
+    // CONFIRMED BUG (fixed here, Final Implementation Pass Part 2): this
+    // used to unconditionally fetch a single fixed page of up to 500 rows
+    // and let the Activity Logs page filter/paginate that one page entirely
+    // in React -- an admin searching for or filtering to something older
+    // than the last 500 audit events would see zero results even though
+    // matching rows existed further back. Every filter argument here now
+    // becomes a real query parameter that GET /admins/audits (and the real
+    // Prisma `where`/`skip`/`take` behind it) uses to run a fresh,
+    // server-side paginated query -- the frontend never filters a partial
+    // dataset locally anymore.
+    const qs = new URLSearchParams()
+    qs.set("page", String(params.page ?? 1))
+    qs.set("limit", String(params.limit ?? 20))
+    if (params.search) qs.set("search", params.search)
+    if (params.uiCategory && params.uiCategory !== "All") qs.set("uiCategory", params.uiCategory)
+    if (params.action) qs.set("action", params.action)
+    if (params.entity) qs.set("entity", params.entity)
+    if (params.startDate) qs.set("startDate", params.startDate)
+    if (params.endDate) qs.set("endDate", params.endDate)
+
+    const res = await apiClient.get(`/api/v1/admins/audits?${qs.toString()}`)
+    return {
+      auditLogs: res?.data?.auditLogs || [],
+      pagination: res?.data?.pagination || { currentPage: 1, totalPages: 1, totalItems: 0, limit: params.limit ?? 20 },
+    }
   },
 
   async getCompanies() {
@@ -37,7 +69,13 @@ export const AdminApi = {
   },
 
   async moderateJob(jobId: string, action: string, reason?: string) {
-    const res = await apiClient.post(`/api/v1/admins/jobs/${jobId}/moderate`, { action, reason })
+    // CONFIRMED BUG (fixed here): moderateJobSchema (backend
+    // admin.validator.ts) only recognizes a `notes` field -- it was sending
+    // `reason`, which Zod's .parse() silently strips as an unrecognized key.
+    // Every rejection reason and the "Administrative deletion" delete note
+    // was therefore always discarded before it ever reached
+    // jobStatusHistory.notes or the JobRejected notification's message.
+    const res = await apiClient.post(`/api/v1/admins/jobs/${jobId}/moderate`, { action, notes: reason })
     return res?.data
   },
 
@@ -58,8 +96,13 @@ export const AdminApi = {
   },
 
   async getFeatureFlags() {
+    // CONFIRMED BUG (fixed here): the backend wraps this response as
+    // { flags: [...] } (see admin.controller.ts's getFeatureFlags), not
+    // { featureFlags: [...] }. That key never matched, so this always fell
+    // through to `res?.data`, which is the wrapper object itself -- not an
+    // array -- silently breaking every caller that expected a flags array.
     const res = await apiClient.get("/api/v1/admins/feature-flags")
-    return res?.data?.featureFlags || res?.data || []
+    return res?.data?.flags || []
   },
 
   async createFeatureFlag(payload: any) {
@@ -83,7 +126,17 @@ export const AdminApi = {
   },
 
   async updateSettings(payload: any) {
-    const res = await apiClient.put("/api/v1/admins/settings", payload)
+    // CONFIRMED BUG (fixed here, Final Implementation Pass Part 4): the
+    // backend's updateAdminSettings controller reads `req.body.preferences`
+    // (see admin.controller.ts), but this was sending the payload flat as
+    // the request body itself -- so `req.body.preferences` was always
+    // `undefined`, and Prisma treats an `undefined` field value as "leave
+    // unchanged." The endpoint returned 200 and the frontend showed "Profile
+    // and security preferences successfully updated!" on every save, but no
+    // admin name/email/preference change was ever actually written to the
+    // database. Wrapping the payload under `preferences` is what the
+    // backend has always expected.
+    const res = await apiClient.put("/api/v1/admins/settings", { preferences: payload })
     return res?.data?.settings || res?.data || {}
   },
 

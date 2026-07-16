@@ -1,6 +1,6 @@
 import { Router } from "express"
 import { AdminController } from "./admin.controller"
-import { authenticateToken } from "../../shared/middleware/auth.middleware"
+import { authenticateToken, requireRole } from "../../shared/middleware/auth.middleware"
 import {
   requireActiveUser,
   requireSuperAdmin,
@@ -10,9 +10,23 @@ import {
 const router = Router()
 const controller = new AdminController()
 
+// CONFIRMED CRITICAL BUG (fixed here): every route below this point used to
+// be reachable by ANY authenticated, active user regardless of role --
+// job moderation, user suspend/ban, company verification, and admin
+// invitations only ever checked authenticateToken + requireActiveUser. The
+// service layer fetches `admin`/`adminId` purely for audit attribution
+// (e.g. `admin?.email`), it never actually verifies the caller holds an
+// admin-tier role. A logged-in Candidate or Recruiter JWT could call
+// POST /admins/jobs/:id/moderate, PUT /admins/users/:id/status,
+// POST /admins/companies/:id/verify, etc. directly and it would succeed.
+// This restores the access levels the route comments already documented
+// but never enforced.
+const ADMIN_TIER_ROLES = ["Admin", "Super Admin", "Moderator", "Support Executive"]
+
 // Enforce authentication & active check for all administration endpoints
 router.use(authenticateToken)
 router.use(requireActiveUser)
+router.use(requireRole(ADMIN_TIER_ROLES))
 
 // General Admin Search & Dashboard metrics (Admin, Super Admin, Moderator, Support)
 router.get("/dashboard", controller.getDashboard)
@@ -35,18 +49,21 @@ router.post("/companies/:id/verify", controller.verifyCompany)
 router.get("/jobs", controller.listJobs)
 router.post("/jobs/:id/moderate", controller.moderateJob)
 
-// User Management (Admin, Super Admin)
+// User Management (Admin, Super Admin only -- Moderator/Support Executive
+// can view/moderate content but must not be able to suspend/ban accounts
+// or trigger administrative actions like forced password resets)
+const USER_MGMT_ROLES = ["Admin", "Super Admin"]
 router.get("/users", controller.listUsers)
-router.put("/users/:id/status", controller.updateUserStatus)
-router.put("/recruiters/:id/verify", controller.verifyRecruiter)
-router.post("/users/:id/action/:action", controller.userAdministrativeAction)
+router.put("/users/:id/status", requireRole(USER_MGMT_ROLES), controller.updateUserStatus)
+router.put("/recruiters/:id/verify", requireRole(USER_MGMT_ROLES), controller.verifyRecruiter)
+router.post("/users/:id/action/:action", requireRole(USER_MGMT_ROLES), controller.userAdministrativeAction)
 
-// Employee invitations (Admin, Super Admin)
-router.get("/invitations", controller.listInvitations)
-router.post("/invitations", controller.inviteEmployee)
-router.post("/invitations/:id/resend", controller.resendInvitation)
-router.post("/invitations/:id/cancel", controller.cancelInvitation)
-router.post("/invitations/:id/expire", controller.expireInvitation)
+// Employee invitations (Admin, Super Admin only)
+router.get("/invitations", requireRole(USER_MGMT_ROLES), controller.listInvitations)
+router.post("/invitations", requireRole(USER_MGMT_ROLES), controller.inviteEmployee)
+router.post("/invitations/:id/resend", requireRole(USER_MGMT_ROLES), controller.resendInvitation)
+router.post("/invitations/:id/cancel", requireRole(USER_MGMT_ROLES), controller.cancelInvitation)
+router.post("/invitations/:id/expire", requireRole(USER_MGMT_ROLES), controller.expireInvitation)
 
 // High Privilege Role & Permission Administration (Enforces Super Admin Safeguards)
 router.get("/rbac", controller.getRBACData)

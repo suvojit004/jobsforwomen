@@ -4,6 +4,7 @@ import env from "../config/env"
 import { logger } from "../utils/logger"
 import EmailService from "../utils/email"
 import prisma from "../database/db"
+import { isFeatureEnabled } from "../utils/featureFlags"
 
 const isTest = process.env.NODE_ENV === "test"
 
@@ -15,6 +16,15 @@ export const queues: Record<string, Queue | any> = {}
 export const workers: Record<string, Worker | any> = {}
 
 const queueNames = ["email", "notifications", "audit", "cleanup", "reports"]
+
+// Final Implementation Pass, Part 7: a real, separate BullMQ queue that
+// holds jobs which have exhausted all retry attempts. Deliberately never
+// given a Worker (see bottom of this file) -- it exists purely as a
+// durable, inspectable holding area for failed jobs, not something that
+// gets auto-processed. That also happens to be what fully prevents
+// recursive DLQ handling: since nothing ever consumes this queue, a job
+// placed here can never itself "fail" and re-trigger dead-letter logic.
+const DEAD_LETTER_QUEUE_NAME = "dead-letter"
 
 const defaultJobOptions = {
   attempts: 3,
@@ -29,6 +39,47 @@ export const queueMetrics = {
   activeJobs: 0,
   completedJobs: 0,
   failedJobs: 0,
+}
+
+// In test / no-Redis mode there is no real BullMQ queue to query job counts
+// from, so the mock dead-letter "queue" below just tracks entries here.
+// Exported (test-only usage) so tests can assert on exactly what got
+// recorded and reset state between runs.
+export const mockDeadLetterJobs: Array<{
+  originalQueue: string
+  jobName: string
+  data: any
+  failureReason: string
+  attemptsMade: number
+  failedAt: string
+}> = []
+
+// Strips likely-sensitive fields (password reset tokens, invitation tokens,
+// etc.) out of a failed job's payload before it's persisted to the
+// dead-letter queue or the AuditLog -- job.data for things like
+// "sendPasswordReset" legitimately contains a raw token, and a failed-job
+// record is not the place for that to end up sitting in Redis/DB indefinitely.
+const SENSITIVE_KEY_PATTERN = /password|token|secret|apikey|api_key|authorization|otp\b/i
+
+// Exported for direct unit testing: the "failed" worker-event handler that
+// normally invokes this only gets attached when `!isTest && redisConnection`
+// (see registerWorker below), so under Jest (NODE_ENV=test) that code path
+// never runs at all -- exporting these lets Part 7's tests exercise the
+// sanitization and dead-letter-push logic directly rather than only being
+// able to test it via a live BullMQ worker this sandbox can't run anyway.
+export function sanitizeJobData(data: any): any {
+  if (!data || typeof data !== "object") return data
+  const clone: any = Array.isArray(data) ? [] : {}
+  for (const [key, value] of Object.entries(data)) {
+    if (SENSITIVE_KEY_PATTERN.test(key)) {
+      clone[key] = "[REDACTED]"
+    } else if (value && typeof value === "object") {
+      clone[key] = sanitizeJobData(value)
+    } else {
+      clone[key] = value
+    }
+  }
+  return clone
 }
 
 // Initialize queues
@@ -54,8 +105,103 @@ queueNames.forEach((name) => {
   }
 })
 
+// The dead-letter queue is initialized separately from the loop above --
+// it deliberately has no defaultJobOptions (retries/backoff are meaningless
+// for a queue nothing ever processes) and, unlike the others, its mock-mode
+// stand-in actually records entries (into mockDeadLetterJobs) instead of
+// just logging, so getDeadLetterQueueStats() has something real to count in
+// tests / when Redis isn't configured.
+if (!isTest && redisConnection) {
+  queues[DEAD_LETTER_QUEUE_NAME] = new Queue(DEAD_LETTER_QUEUE_NAME, {
+    connection: redisConnection as any,
+  })
+} else {
+  queues[DEAD_LETTER_QUEUE_NAME] = {
+    add: async (_jobName: string, data: any) => {
+      mockDeadLetterJobs.push(data)
+      return { id: `mock-dlq-${Date.now()}` }
+    },
+  }
+}
+
+// Moves a permanently-failed job into the dead-letter queue, preserving the
+// original queue name, job name, sanitized data, failure reason, and
+// attemptsMade -- everything an operator needs to understand what failed
+// and decide whether to manually replay it. Guards explicitly against
+// recursion (see DEAD_LETTER_QUEUE_NAME comment above) even though no
+// worker is ever attached to this queue, as defense in depth against a
+// future code change accidentally adding one.
+export async function pushToDeadLetterQueue(originalQueueName: string, job: Job, err: Error) {
+  if (originalQueueName === DEAD_LETTER_QUEUE_NAME) {
+    logger.error(
+      `[DLQ] Refusing to recurse -- a failure was reported from the dead-letter queue itself (job ${job.id}).`
+    )
+    return
+  }
+
+  try {
+    const dlq = queues[DEAD_LETTER_QUEUE_NAME]
+    if (!dlq) return
+    await dlq.add("failed-job", {
+      originalQueue: originalQueueName,
+      jobName: job.name,
+      data: sanitizeJobData(job.data),
+      failureReason: err.message,
+      attemptsMade: job.attemptsMade,
+      failedAt: new Date().toISOString(),
+    })
+    logger.warn(
+      `[DLQ] Job ${job.id} ("${job.name}" on queue "${originalQueueName}") exhausted all retry attempts and was moved to the dead-letter queue.`
+    )
+  } catch (dlqErr: any) {
+    logger.error(`[DLQ] Failed to record dead-letter entry for job ${job.id}: ${dlqErr.message}`)
+  }
+}
+
+// Real pending-count read for System Health -- queries actual BullMQ job
+// counts (waiting/delayed/active -- a dead-letter job is never "completed"
+// in the processed sense since nothing consumes this queue) rather than
+// exposing an in-memory counter that would reset on every server restart.
+export async function getDeadLetterQueueStats(): Promise<{ pendingCount: number }> {
+  if (!isTest && redisConnection) {
+    try {
+      const dlq = queues[DEAD_LETTER_QUEUE_NAME]
+      const counts = await dlq.getJobCounts("wait", "delayed", "active", "paused")
+      const pendingCount = Object.values(counts).reduce((sum: number, c: any) => sum + (c || 0), 0)
+      return { pendingCount }
+    } catch (err: any) {
+      logger.error(`[DLQ] Failed to fetch dead-letter queue counts: ${err.message}`)
+      return { pendingCount: 0 }
+    }
+  }
+  return { pendingCount: mockDeadLetterJobs.length }
+}
+
+// CONFIRMED ENFORCEMENT (fixed here): the "email_automation" feature flag
+// was fully real and DB-persisted but nothing ever read it -- every
+// EmailListener subscriber called addJob("email", ...) unconditionally
+// regardless of the flag's value. This is the single chokepoint every
+// outbound email funnels through, so gating it here covers the whole
+// EventBus -> EmailListener -> BullMQ -> Resend chain without touching
+// each of the 9 individual listener subscriptions.
+//
+// Account-security transactional mail (email verification, password reset)
+// is intentionally exempt: the seeded flag description is "Automates
+// welcome and status updates mailing queues" -- an admin turning off
+// automated status-update email blasts must not also silently lock users
+// out of verifying their account or resetting a forgotten password.
+const SECURITY_CRITICAL_EMAIL_JOBS = new Set(["sendWelcome", "sendPasswordReset"])
+
 export async function addJob(queueName: string, jobName: string, data: any) {
   try {
+    if (queueName === "email" && !SECURITY_CRITICAL_EMAIL_JOBS.has(jobName)) {
+      const automationEnabled = await isFeatureEnabled("email_automation")
+      if (!automationEnabled) {
+        logger.info(`[Queue] Skipped email job "${jobName}" -- email_automation feature flag is disabled.`)
+        return null
+      }
+    }
+
     const queue = queues[queueName]
     if (queue) {
       return await queue.add(jobName, data)
@@ -216,11 +362,20 @@ if (!isTest && redisConnection) {
       { connection: redisConnection as any }
     )
 
-    // DLQ Fallback logger on exhausting max attempts
+    // Final Implementation Pass, Part 7: real dead-letter queue. Previously
+    // this only wrote an AuditLog row labeled "QUEUE_JOB_FAILED_DLQ" -- there
+    // was no actual DLQ (no queue, no table) anywhere to inspect, replay, or
+    // even count; the label was aspirational, not real. This now also pushes
+    // the failed job into a genuine, separate BullMQ queue (see
+    // pushToDeadLetterQueue above) that preserves queue name/job name/
+    // sanitized data/failure reason/attemptsMade. The AuditLog write is kept
+    // (now storing sanitized data too, not a raw token dump) so the event
+    // still surfaces in the Admin Activity Log for visibility.
     workers[name].on("failed", (job: Job | undefined, err: Error) => {
       logger.error(`[Worker:${name}] Job ${job?.id} failed: ${err.message}`)
       if (job && job.attemptsMade >= (job.opts.attempts || 3)) {
-        // Enqueue DLQ log into platform Audit logs
+        pushToDeadLetterQueue(name, job, err)
+
         prisma.auditLog.create({
           data: {
             category: "SYSTEM",
@@ -232,7 +387,7 @@ if (!isTest && redisConnection) {
               jobName: job.name,
               error: err.message,
               attempts: job.attemptsMade,
-              data: job.data,
+              data: sanitizeJobData(job.data),
             },
             timestamp: new Date(),
           },
@@ -256,4 +411,5 @@ export default {
   workers,
   addJob,
   queueMetrics,
+  getDeadLetterQueueStats,
 }

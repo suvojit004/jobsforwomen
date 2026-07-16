@@ -49,6 +49,7 @@ router.delete("/notifications/:id", controller.deleteNotification)
 router.get("/conversations", controller.getConversations)
 router.get("/conversations/:id/messages", controller.getMessages)
 router.post("/conversations/:id/messages", controller.sendMessage)
+router.put("/conversations/:id/read", controller.markConversationAsRead)
 
 // Jobs Discovery & Reporting
 router.get("/jobs", controller.getJobs)
@@ -60,5 +61,6 @@ router.get("/applications", controller.getApplications)
 router.get("/applications/:id", requireOwnership("Application"), controller.getApplicationDetails)
 router.post("/jobs/:jobId/apply", requireVerifiedEmail, requireProfileCompleted, controller.applyToJob)
 router.post("/applications/:id/withdraw", requireOwnership("Application"), controller.withdrawApplication)
+router.post("/applications/:id/conversation", requireOwnership("Application"), controller.startConversation)
 
 export default router

@@ -338,6 +338,20 @@ export const RecruiterApi = {
     return res?.data
   },
 
+  async markConversationAsRead(conversationId: string) {
+    const res = await apiClient.put(`/api/v1/recruiters/conversations/${conversationId}/read`, {})
+    return res?.data
+  },
+
+  // CONFIRMED BUG (fixed here): mirrors candidateApi.startConversation --
+  // there was previously no way to create a conversation from the
+  // Recruiter side either. Finds-or-creates the conversation tied to a
+  // specific application so a recruiter can message the applicant.
+  async startConversation(applicationId: string) {
+    const res = await apiClient.post(`/api/v1/recruiters/applications/${applicationId}/conversation`, {})
+    return res?.data?.conversation || res?.data
+  },
+
   async getTeam() {
     const res = await apiClient.get("/api/v1/recruiters/team")
     return res?.data || { members: [], invitations: [], companyName: "" }

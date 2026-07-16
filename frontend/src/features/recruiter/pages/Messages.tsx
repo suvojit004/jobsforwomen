@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react"
+import { useSearchParams } from "react-router-dom"
 import { motion } from "framer-motion"
 import {
   Search,
@@ -40,6 +41,11 @@ export function Messages() {
   // so it was always null, and every message (including the recruiter's own)
   // was misattributed to the candidate.
   const currentUserId = user?.id
+  // Supports deep-linking here from "Message Candidate" on the Applicants /
+  // CandidatePreview pages (?conversation=<id>) after a brand-new
+  // conversation is created -- see candidate Messages.tsx for the same fix.
+  const [searchParams] = useSearchParams()
+  const deepLinkedConversationId = searchParams.get("conversation")
   const [conversations, setConversations] = useState<RecruiterConversation[]>([])
   const [activeId, setActiveId] = useState<string>("")
   const [inputText, setInputText] = useState("")
@@ -50,6 +56,10 @@ export function Messages() {
 
   const activeConversation = conversations.find((c) => c.id === activeId) || conversations[0]
   const threadEndRef = useRef<HTMLDivElement>(null)
+  // Final Implementation Pass, Part 11: dedup guard so a duplicate/replayed
+  // socket "notification" event for the same message can never increment an
+  // inactive conversation's unread badge twice.
+  const seenIncomingMessageIds = useRef<Set<string>>(new Set())
 
   useEffect(() => {
     async function loadConversations() {
@@ -70,13 +80,18 @@ export function Messages() {
             lastMessageTime: c.messages?.[0]?.timestamp
               ? new Date(c.messages[0].timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
               : "Today",
-            unreadCount: 0,
+            // CONFIRMED BUG (fixed here, Final Implementation Pass Part 11):
+            // this was a hardcoded 0. ConversationService.getConversations()
+            // now computes a real server-side unread count.
+            unreadCount: c.unreadCount ?? 0,
             online: true,
             thread: [],
           }
         })
         setConversations(formatted)
-        if (formatted.length > 0) {
+        if (deepLinkedConversationId && formatted.some((c: any) => c.id === deepLinkedConversationId)) {
+          setActiveId(deepLinkedConversationId)
+        } else if (formatted.length > 0) {
           setActiveId(formatted[0].id)
         }
       } catch (err) {
@@ -102,6 +117,20 @@ export function Messages() {
         setConversations((prev) =>
           prev.map((c) => (c.id === activeId ? { ...c, thread: formattedMsgs } : c))
         )
+
+        // Final Implementation Pass, Part 5: mark received-unread messages
+        // as read once their conversation is actually opened. The server
+        // verifies participant membership and only touches messages sent by
+        // the OTHER participant, so this can never mark the recruiter's own
+        // outgoing messages as read.
+        try {
+          await RecruiterApi.markConversationAsRead(activeId)
+          setConversations((prev) =>
+            prev.map((c) => (c.id === activeId ? { ...c, unreadCount: 0 } : c))
+          )
+        } catch (err) {
+          console.error("Failed to mark conversation as read", err)
+        }
       } catch (err) {
         console.error("Failed to load messages", err)
       }
@@ -124,7 +153,22 @@ export function Messages() {
 
     const handleNotification = (data: any) => {
       if (data.type === "message" || data.type === "MESSAGE") {
-        if (data.conversationId && data.conversationId !== activeId) return
+        // CONFIRMED BUG (fixed here, Final Implementation Pass Part 11): a
+        // message notification for a conversation OTHER than the one
+        // currently open used to be silently dropped -- the sidebar's
+        // unread badge never moved for background conversations.
+        if (data.conversationId && data.conversationId !== activeId) {
+          if (data.messageId) {
+            if (seenIncomingMessageIds.current.has(data.messageId)) return
+            seenIncomingMessageIds.current.add(data.messageId)
+          }
+          setConversations((prev) =>
+            prev.map((c) =>
+              c.id === data.conversationId ? { ...c, unreadCount: (c.unreadCount || 0) + 1 } : c
+            )
+          )
+          return
+        }
         async function reloadMessages() {
           const msgs = await RecruiterApi.getMessages(activeId)
           const formattedMsgs: ChatMessage[] = msgs.map((m: any) => ({

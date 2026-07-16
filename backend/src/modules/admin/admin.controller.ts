@@ -12,6 +12,7 @@ import {
   roleSchema,
   updateRoleSchema,
   supportTicketSchema,
+  auditLogsQuerySchema,
 } from "./admin.validator"
 import { CompanyStatus, UserStatus } from "@prisma/client"
 
@@ -291,7 +292,15 @@ export class AdminController {
 
   getAuditLogs = async (req: Request, res: Response, next: any) => {
     try {
-      const result = await this.service.getAuditLogs(req.query)
+      // CONFIRMED BUG (fixed here): this used to hand req.query straight to
+      // the service untouched -- page/limit arrived as raw strings (fine,
+      // since parseInt() was applied downstream), but there was no
+      // validation at all on the free-form fields, and no schema documenting
+      // what the endpoint actually accepts. auditLogsQuerySchema now coerces
+      // and bounds every param (e.g. limit capped at 200) before it reaches
+      // the database layer.
+      const validated = auditLogsQuerySchema.parse(req.query)
+      const result = await this.service.getAuditLogs(validated)
       return sendSuccess(res, result, "Audit logs fetched successfully.")
     } catch (err: any) {
       next(err)

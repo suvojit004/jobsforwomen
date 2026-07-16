@@ -10,6 +10,11 @@ import env from "../../shared/config/env"
 import { verifyCloudinaryConnection, runOrphanAssetCleanup } from "../../shared/utils/cloudinary"
 import { io as socketIo } from "../../shared/socket/socket"
 import { createAuditLog } from "../../shared/utils/audit"
+import { invalidateFeatureFlagCache } from "../../shared/utils/featureFlags"
+import { queueMetrics, getDeadLetterQueueStats } from "../../shared/queue/queue"
+import { socketMetrics } from "../../shared/socket/socket"
+import { cloudinaryMetrics } from "../../shared/utils/cloudinary"
+import { emailMetrics } from "../../shared/utils/email"
 
 export interface ServiceContext {
   operatorId?: string
@@ -44,7 +49,10 @@ export class AdminService {
       redisStatus = "DOWN"
     }
 
-    // Real SMTP check
+    // Real email-transport check (Resend HTTPS API -- see verifyEmailTransport()
+    // in shared/utils/email.ts; env var names RESEND_API_KEY/SMTP_PASS/SMTP_FROM
+    // are kept from the pre-migration SMTP config for backward compatibility,
+    // but no SMTP protocol connection is made anywhere in this codebase)
     let emailStatus = "DOWN"
     try {
       emailStatus = (await verifyEmailTransport()) ? "UP" : "DOWN"
@@ -64,6 +72,19 @@ export class AdminService {
     // io instance (initSocket() ran during boot), not just an assumption.
     const socketStatus = socketIo ? "UP" : "DOWN"
 
+    // Final Implementation Pass, Part 7: real dead-letter queue depth.
+    // Previously there was no DLQ at all (see queue.ts) -- this reads the
+    // actual pending count off the real BullMQ dead-letter queue.
+    const deadLetterStats = await getDeadLetterQueueStats()
+
+    // CONFIRMED GAP (fixed here): the raw top-level GET /health endpoint
+    // (app.ts) already exposed real BullMQ queue counts, real connected
+    // Socket.IO counts, and real Cloudinary/email delivery metrics -- but
+    // the Admin-facing System Health page (this endpoint) never surfaced
+    // any of it, so the UI's "queue depth / failed jobs / active socket
+    // connections" story was simply missing rather than fake. This reuses
+    // the exact same in-memory metrics objects the /health endpoint reads,
+    // no new tracking is introduced.
     return {
       database: dbStatus,
       redis: redisStatus,
@@ -73,6 +94,100 @@ export class AdminService {
       apiUptime: Math.floor(process.uptime()),
       memoryUsage: process.memoryUsage(),
       cpuUsage: process.cpuUsage(),
+      queues: {
+        activeJobs: queueMetrics.activeJobs,
+        completedJobs: queueMetrics.completedJobs,
+        failedJobs: queueMetrics.failedJobs,
+        deadLetterPendingCount: deadLetterStats.pendingCount,
+      },
+      sockets: {
+        connectedCandidates: socketMetrics.connectedCandidates,
+        connectedRecruiters: socketMetrics.connectedRecruiters,
+        connectedAdmins: socketMetrics.connectedAdmins,
+        messagesSec: socketMetrics.messagesSec,
+        notificationsSec: socketMetrics.notificationsSec,
+      },
+      emailDelivery: {
+        sent: emailMetrics.sent,
+        failed: emailMetrics.failed,
+      },
+      storageMetrics: {
+        uploadCount: cloudinaryMetrics.uploadCount,
+        deleteCount: cloudinaryMetrics.deleteCount,
+        averageLatencyMs: Math.round(cloudinaryMetrics.averageLatencyMs),
+        retryCount: cloudinaryMetrics.retryCount,
+      },
+      // Final Implementation Pass, Part 8: metric semantics.
+      //
+      // CONFIRMED GAP (fixed here): every numeric field above was presented
+      // to the frontend with no indication of what kind of number it is.
+      // That matters because most of them (queueMetrics, emailMetrics,
+      // cloudinaryMetrics -- all plain in-memory objects, see their
+      // respective modules) silently reset to zero on every server
+      // restart/redeploy. An admin glancing at "Failed Jobs: 0" right after
+      // a deploy could easily read that as "nothing has ever failed" when
+      // it actually means "nothing has failed *since this process booted a
+      // minute ago*". Explicitly classifying each field lets the frontend
+      // label them honestly instead of presenting all numbers as equally
+      // durable.
+      //
+      //   CURRENT_STATE            -- reflects live, queryable truth right
+      //                                now (a fresh check/read on every
+      //                                call); either isn't a counter at all,
+      //                                or (deadLetterPendingCount) is a real
+      //                                count against Redis-durable BullMQ
+      //                                state that survives a restart.
+      //   PROCESS_LIFETIME_COUNTER -- an in-memory counter that resets to 0
+      //                                on every server restart/redeploy; a
+      //                                real accumulation, but only since
+      //                                this process last started (see
+      //                                processStartedAt below), not an
+      //                                all-time total.
+      //   PERSISTENT_HISTORICAL_METRIC -- would be a running total backed by
+      //                                a database/persistent store that
+      //                                survives restarts. None of the
+      //                                current System Health numbers are
+      //                                backed this way -- this category
+      //                                exists in the classification so that
+      //                                gap is explicit rather than silently
+      //                                implied to already be covered.
+      metricSemantics: {
+        currentState: [
+          "database",
+          "redis",
+          "email",
+          "storage",
+          "socketio",
+          "apiUptime",
+          "memoryUsage",
+          "queues.activeJobs",
+          "queues.deadLetterPendingCount",
+          "sockets.connectedCandidates",
+          "sockets.connectedRecruiters",
+          "sockets.connectedAdmins",
+          "sockets.messagesSec",
+          "sockets.notificationsSec",
+        ],
+        processLifetimeCounter: [
+          "cpuUsage",
+          "queues.completedJobs",
+          "queues.failedJobs",
+          "emailDelivery.sent",
+          "emailDelivery.failed",
+          "storageMetrics.uploadCount",
+          "storageMetrics.deleteCount",
+          "storageMetrics.averageLatencyMs",
+          "storageMetrics.retryCount",
+        ],
+        persistentHistoricalMetric: [],
+        note:
+          "PROCESS_LIFETIME_COUNTER fields reset to 0 on every server restart or redeploy -- they count events since processStartedAt, not all-time totals. No field currently qualifies as PERSISTENT_HISTORICAL_METRIC (a database-backed running total that survives restarts); adding one would require a new persisted counter, not just relabeling an existing in-memory value.",
+      },
+      // The wall-clock moment this process actually booted, so the frontend
+      // can show "counters reset when the server last restarted at <time>"
+      // context next to the process-lifetime numbers above instead of just
+      // a bare uptime duration.
+      processStartedAt: new Date(Date.now() - process.uptime() * 1000).toISOString(),
     }
   }
 
@@ -186,8 +301,8 @@ export class AdminService {
 
     // NOTE: this used to call `await this.getSystemHealth()` here and embed
     // the result as `systemHealthSummary` below. That method makes real,
-    // uncached network calls on every invocation (SMTP transporter.verify(),
-    // a live Cloudinary ping) with no timeout. If either of those hosts is
+    // uncached network calls on every invocation (verifyEmailTransport()'s
+    // Resend config check, a live Cloudinary ping) with no timeout. If either of those hosts is
     // slow or unreachable, the awaited call never settles, so this entire
     // getDashboard() promise never resolves -- the Express response is never
     // sent, and the frontend's Promise.all() for the dashboard hangs forever
@@ -655,7 +770,7 @@ export class AdminService {
     context?: ServiceContext
   ) {
     const admin = await prisma.user.findUnique({ where: { id: adminId } })
-    
+
     // Check if role exists
     const role = await prisma.role.findFirst({ where: { name: roleName } })
     if (!role) {
@@ -787,6 +902,7 @@ export class AdminService {
     })
 
     await PermissionCacheManager.invalidateAll()
+    invalidateFeatureFlagCache(flag.key)
 
     // Previously this reused the same "FeatureFlagUpdated" event name that
     // candidate.service.ts publishes for candidate settings changes. Both
@@ -826,6 +942,7 @@ export class AdminService {
     })
 
     await PermissionCacheManager.invalidateAll()
+    invalidateFeatureFlagCache(updated.key)
 
     EventBus.publish("AdminFeatureFlagUpdated", {
       adminId,
@@ -839,18 +956,78 @@ export class AdminService {
   }
 
   async deleteFeatureFlag(adminId: string, flagId: string, context?: ServiceContext) {
-    await prisma.featureFlag.delete({ where: { id: flagId } })
+    const deleted = await prisma.featureFlag.delete({ where: { id: flagId } })
     await PermissionCacheManager.invalidateAll()
+    invalidateFeatureFlagCache(deleted.key)
     return { success: true }
   }
 
   // ==========================================
   // REPORTS GENERATION
   // ==========================================
+  // CONFIRMED BUG (fixed here): the CSV export always produced the exact
+  // same 4-column summary row (candidate/recruiter/job totals) no matter
+  // which of the 4 report cards was clicked on the Reports & Analytics
+  // page -- "Candidates Directory", "Employers & Recruiters", and "Job
+  // Listings Audit" all promise a real per-record directory in their UI
+  // description, but `type` was only ever used to label the filename. This
+  // now generates a real row-per-record CSV for candidates/recruiters/jobs,
+  // and keeps the aggregate summary only for the "analytics" card.
+  private csvEscape(value: any): string {
+    const str = value === null || value === undefined ? "" : String(value)
+    if (str.includes(",") || str.includes("\"") || str.includes("\n")) {
+      return `"${str.replace(/"/g, '""')}"`
+    }
+    return str
+  }
+
+  private toCsv(headers: string[], rows: any[][]): string {
+    const lines = [headers.join(",")]
+    for (const row of rows) {
+      lines.push(row.map((cell) => this.csvEscape(cell)).join(","))
+    }
+    return lines.join("\n")
+  }
+
   async getReports(type: string) {
     const candidatesCount = await prisma.candidateProfile.count()
     const recruitersCount = await prisma.recruiterProfile.count()
     const totalJobs = await prisma.job.count()
+
+    // Real last-6-month Applications vs Hired (Selected) trend, computed
+    // from actual Application rows -- previously the "Sourcing & Hires
+    // Trends" chart on the frontend rendered a hardcoded 6-entry array
+    // (Jan-Jun with fixed numbers) regardless of real platform activity.
+    const now = new Date()
+    const monthlyTrend: { month: string; applications: number; hired: number }[] = []
+    for (let i = 5; i >= 0; i--) {
+      const start = new Date(now.getFullYear(), now.getMonth() - i, 1)
+      const end = new Date(now.getFullYear(), now.getMonth() - i + 1, 1)
+      const [applications, hired] = await Promise.all([
+        prisma.application.count({ where: { appliedOn: { gte: start, lt: end } } }),
+        prisma.application.count({
+          where: { appliedOn: { gte: start, lt: end }, status: ApplicationStatus.Hired },
+        }),
+      ])
+      monthlyTrend.push({
+        month: start.toLocaleString("en-US", { month: "short" }),
+        applications,
+        hired,
+      })
+    }
+
+    // Real application-to-interview conversion rate, computed from actual
+    // ApplicationStatus counts (previously a hardcoded "24.5%" constant).
+    const totalApplications = await prisma.application.count()
+    const interviewedOrBeyond = await prisma.application.count({
+      where: {
+        status: {
+          in: [ApplicationStatus.InterviewScheduled, ApplicationStatus.OfferReleased, ApplicationStatus.Hired],
+        },
+      },
+    })
+    const applicationToInterviewRate =
+      totalApplications > 0 ? Math.round((interviewedOrBeyond / totalApplications) * 1000) / 10 : 0
 
     const reportData = {
       reportType: type,
@@ -861,16 +1038,72 @@ export class AdminService {
         recruitersCount,
         totalJobs,
       },
+      monthlyTrend,
+      applicationToInterviewRate,
     }
 
-    const mockCsvContent = `Report Type,Generated At,Total Candidates,Total Recruiters,Total Jobs\n${type},${reportData.generatedAt},${candidatesCount},${recruitersCount},${totalJobs}`
-    const base64Buffer = Buffer.from(mockCsvContent).toString("base64")
+    let csvContent: string
+    let filename: string
+
+    if (type === "candidates") {
+      const rows = await prisma.candidateProfile.findMany({
+        include: { user: true, skills: { include: { skill: true } } },
+      })
+      csvContent = this.toCsv(
+        ["Full Name", "Email", "Location", "Total Experience", "Account Status", "Skills", "Joined On"],
+        rows.map((c) => [
+          c.fullName,
+          c.user.email,
+          c.location || "",
+          c.totalExperience || "",
+          c.user.status,
+          c.skills.map((s) => s.skill.name).join("; "),
+          c.user.createdAt.toISOString().slice(0, 10),
+        ])
+      )
+      filename = "Candidates_Directory_Report.csv"
+    } else if (type === "recruiters") {
+      const rows = await prisma.recruiterProfile.findMany({
+        include: { user: true, company: true },
+      })
+      csvContent = this.toCsv(
+        ["Full Name", "Email", "Company", "Company Status", "Verified", "Account Status"],
+        rows.map((r) => [r.fullName, r.user.email, r.company.name, r.company.status, r.verified ? "Yes" : "No", r.user.status])
+      )
+      filename = "Recruiters_Partner_Report.csv"
+    } else if (type === "jobs") {
+      const rows = await prisma.job.findMany({
+        include: { company: true, _count: { select: { applications: true } } },
+      })
+      csvContent = this.toCsv(
+        ["Title", "Company", "Location", "Status", "Visibility", "Reported", "Applications", "Posted On"],
+        rows.map((j) => [
+          j.title,
+          j.company.name,
+          j.location,
+          j.status,
+          j.visibility,
+          j.reported ? "Yes" : "No",
+          j._count.applications,
+          j.postedOn.toISOString().slice(0, 10),
+        ])
+      )
+      filename = "JobListings_Platform_Report.csv"
+    } else {
+      csvContent = this.toCsv(
+        ["Report Type", "Generated At", "Total Candidates", "Total Recruiters", "Total Jobs", "Application-to-Interview Rate %"],
+        [[type, reportData.generatedAt, candidatesCount, recruitersCount, totalJobs, applicationToInterviewRate]]
+      )
+      filename = "JobsForWomen_System_Analytics.csv"
+    }
+
+    const base64Buffer = Buffer.from(csvContent).toString("base64")
 
     return {
       reportData,
       exportFile: {
         mimetype: "text/csv",
-        filename: `platform_report_${type}.csv`,
+        filename,
         content: base64Buffer,
       },
     }
@@ -879,32 +1112,107 @@ export class AdminService {
   // ==========================================
   // AUDIT LOG INSPECTOR
   // ==========================================
-  async getAuditLogs(filters: any) {
-    const page = parseInt(filters.page) || 1
-    const limit = parseInt(filters.limit) || 20
+  // CONFIRMED BUG (fixed here, Final Implementation Pass Part 2): this
+  // already had real Prisma pagination (skip/take/count), which the prior
+  // audit pass didn't need to touch -- but it only supported exact-match
+  // `category`/`action`/`operatorEmail`/`entity` filters. The Activity Logs
+  // UI's five category tabs (User Management / Job Moderation / Corporate
+  // Perks / Feature Flags / Security Settings) were being re-derived from
+  // `entity`/`category` in the browser AFTER fetching a fixed page of up to
+  // 500 rows, and there was no free-text search or date-range filter at all
+  // server-side -- so every filter the UI offered only ever operated on
+  // whatever happened to be in that one fetched page, not the real table.
+  // `uiCategory` now performs that same tab-to-filter mapping once, here, so
+  // the frontend can ask for a tab directly and get a real, fully paginated
+  // Prisma query back for it.
+  async getAuditLogs(filters: {
+    page: number
+    limit: number
+    search?: string
+    action?: string
+    category?: string
+    entity?: string
+    uiCategory?: string
+    operatorId?: string
+    startDate?: Date
+    endDate?: Date
+  }) {
+    const page = filters.page || 1
+    const limit = filters.limit || 50
     const skip = (page - 1) * limit
 
-    const where: any = {}
-    if (filters.category) where.category = filters.category
-    if (filters.action) where.action = filters.action
-    if (filters.operatorEmail) where.operatorEmail = filters.operatorEmail
-    if (filters.entity) where.entity = filters.entity
+    const and: any[] = []
 
-    const logs = await prisma.auditLog.findMany({
-      where,
-      orderBy: { timestamp: "desc" },
-      skip,
-      take: limit,
-    })
+    if (filters.category) and.push({ category: filters.category })
+    if (filters.action) and.push({ action: { contains: filters.action, mode: "insensitive" } })
+    if (filters.entity) and.push({ entity: filters.entity })
+    if (filters.operatorId) and.push({ operatorId: filters.operatorId })
 
-    const totalCount = await prisma.auditLog.count({ where })
+    if (filters.startDate || filters.endDate) {
+      const timestampRange: any = {}
+      if (filters.startDate) timestampRange.gte = filters.startDate
+      if (filters.endDate) timestampRange.lte = filters.endDate
+      and.push({ timestamp: timestampRange })
+    }
+
+    // Mirrors the tab labels the Activity Logs page has always shown. Kept
+    // in one place (here) instead of duplicated in the frontend so the tab
+    // an admin clicks and the rows the backend returns can never disagree.
+    if (filters.uiCategory) {
+      switch (filters.uiCategory) {
+        case "Job Moderation":
+          and.push({ entity: "Job" })
+          break
+        case "Corporate Perks":
+          and.push({ entity: "Company" })
+          break
+        case "Feature Flags":
+          and.push({ entity: "FeatureFlag" })
+          break
+        case "Security Settings":
+          and.push({ OR: [{ entity: "Role" }, { category: "RBAC" }] })
+          break
+        case "User Management":
+          and.push({
+            AND: [
+              { entity: { notIn: ["Job", "Company", "FeatureFlag", "Role"] } },
+              { category: { not: "RBAC" } },
+            ],
+          })
+          break
+      }
+    }
+
+    if (filters.search) {
+      and.push({
+        OR: [
+          { action: { contains: filters.search, mode: "insensitive" } },
+          { operatorEmail: { contains: filters.search, mode: "insensitive" } },
+          { ipAddress: { contains: filters.search, mode: "insensitive" } },
+          { entity: { contains: filters.search, mode: "insensitive" } },
+        ],
+      })
+    }
+
+    const where = and.length > 0 ? { AND: and } : {}
+
+    const [logs, totalCount] = await Promise.all([
+      prisma.auditLog.findMany({
+        where,
+        orderBy: { timestamp: "desc" },
+        skip,
+        take: limit,
+      }),
+      prisma.auditLog.count({ where }),
+    ])
 
     return {
       auditLogs: logs,
       pagination: {
         currentPage: page,
-        totalPages: Math.ceil(totalCount / limit),
+        totalPages: Math.max(1, Math.ceil(totalCount / limit)),
         totalItems: totalCount,
+        limit,
       },
     }
   }
@@ -925,7 +1233,7 @@ export class AdminService {
 
   async createRole(adminId: string, data: any, context?: ServiceContext) {
     const admin = await prisma.user.findUnique({ where: { id: adminId } })
-    
+
     // Create Role and its Permission mapping
     const role = await prisma.role.create({
       data: {
@@ -965,7 +1273,7 @@ export class AdminService {
 
   async updateRole(adminId: string, roleId: string, data: any, context?: ServiceContext) {
     const admin = await prisma.user.findUnique({ where: { id: adminId } })
-    
+
     const role = await prisma.role.findUnique({ where: { id: roleId } })
     if (!role) {
       throw new Error("Role profile not found")
@@ -1221,7 +1529,7 @@ export class AdminService {
   // ==========================================
   // SUPPORT TICKET SUBMISSION
   // ==========================================
-  // Sends a real email to the support inbox via the existing SMTP-backed
+  // Sends a real email to the support inbox via the existing Resend-backed
   // EmailService, and logs a real audit entry. Previously the frontend's
   // "Contact Support" form was a pure setTimeout that always claimed
   // "Your issue ticket has been filed successfully!" with no backend call

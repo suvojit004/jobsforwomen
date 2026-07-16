@@ -15,25 +15,31 @@ import { Logo } from "@/components/shared/Logo"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 
-const sidebarItems = [
-  { label: "Dashboard", icon: Home, href: "/dashboard" },
-  { label: "Profile", icon: UserRound, href: "/profile" },
-  { label: "Browse Jobs", icon: BriefcaseBusiness, href: "/jobs" },
-  { label: "My Applications", icon: Bookmark, href: "/applications" },
-  { label: "Saved Jobs", icon: Bookmark, href: "/saved-jobs" },
-  { label: "Notifications", icon: Bell, href: "/notifications", badge: "3" },
-  { label: "Messages", icon: MessageSquare, href: "/messages" },
-  { label: "Settings", icon: Settings, href: "/settings" },
-  { label: "Help", icon: CircleHelp, href: "/help" },
-  { label: "Logout", icon: LogOut, href: "/logout" },
-]
-
 export type SidebarItem = {
   label: string
   icon: React.ComponentType<{ className?: string }>
   href: string
   badge?: string
 }
+
+const sidebarItems: SidebarItem[] = [
+  { label: "Dashboard", icon: Home, href: "/dashboard" },
+  { label: "Profile", icon: UserRound, href: "/profile" },
+  { label: "Browse Jobs", icon: BriefcaseBusiness, href: "/jobs" },
+  { label: "My Applications", icon: Bookmark, href: "/applications" },
+  { label: "Saved Jobs", icon: Bookmark, href: "/saved-jobs" },
+  // No hardcoded badge here: every real caller of <Sidebar> passes a real
+  // `menuItems` prop with a live unread count (see CandidateLayout,
+  // RecruiterLayout, AdminLayout), so this array is only ever a fallback
+  // default. A hardcoded "3" here would be exactly the kind of fake-success
+  // placeholder this codebase has been repeatedly audited to remove --
+  // better to show no badge at all than a fabricated one.
+  { label: "Notifications", icon: Bell, href: "/notifications" },
+  { label: "Messages", icon: MessageSquare, href: "/messages" },
+  { label: "Settings", icon: Settings, href: "/settings" },
+  { label: "Help", icon: CircleHelp, href: "/help" },
+  { label: "Logout", icon: LogOut, href: "/logout" },
+]
 
 type SidebarProps = {
   onNavigate?: () => void

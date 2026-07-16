@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import {
   Download,
   LineChart,
@@ -18,19 +18,35 @@ import {
 import { DashboardCard } from "@/components/shared/DashboardCard"
 import { Button } from "@/components/ui/button"
 import apiClient from "@/api/client"
-
-const monthlyReportsData = [
-  { month: "Jan", Applications: 120, Hired: 18 },
-  { month: "Feb", Applications: 190, Hired: 32 },
-  { month: "Mar", Applications: 320, Hired: 45 },
-  { month: "Apr", Applications: 480, Hired: 78 },
-  { month: "May", Applications: 610, Hired: 92 },
-  { month: "Jun", Applications: 780, Hired: 130 },
-]
+import { AdminApi } from "../services/adminApi"
 
 export function ReportsAnalytics() {
   const [downloading, setDownloading] = useState<string | null>(null)
   const [exportError, setExportError] = useState("")
+
+  // CONFIRMED BUG (fixed here): this chart used to render a hardcoded
+  // 6-entry array (Jan-Jun with fixed numbers, never changing regardless of
+  // real platform activity). It now loads GET /api/v1/admins/reports,
+  // which computes a real last-6-months Applications-vs-Hired trend from
+  // actual Application rows (see admin.service.ts's getReports).
+  const [monthlyTrend, setMonthlyTrend] = useState<{ month: string; applications: number; hired: number }[]>([])
+  const [interviewRate, setInterviewRate] = useState<number | null>(null)
+  const [metricsLoading, setMetricsLoading] = useState(true)
+
+  useEffect(() => {
+    async function loadMetrics() {
+      try {
+        const data = await AdminApi.getReports()
+        setMonthlyTrend(data?.monthlyTrend || [])
+        setInterviewRate(typeof data?.applicationToInterviewRate === "number" ? data.applicationToInterviewRate : null)
+      } catch (err) {
+        console.error("Failed to load report metrics", err)
+      } finally {
+        setMetricsLoading(false)
+      }
+    }
+    loadMetrics()
+  }, [])
 
   // Calls the real GET /api/v1/admins/reports?type=...&export=csv endpoint,
   // which streams a CSV built from live database counts, and triggers an
@@ -133,23 +149,27 @@ export function ReportsAnalytics() {
             <span className="text-[9px] font-bold text-slate-400 dark:text-slate-500">6 Month Window</span>
           </div>
           <div className="h-64 text-xs">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={monthlyReportsData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" className="stroke-slate-100 dark:stroke-slate-850" />
-                <XAxis dataKey="month" stroke="#94A3B8" fontSize={10} tickLine={false} />
-                <YAxis stroke="#94A3B8" fontSize={10} tickLine={false} />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: "rgba(255, 255, 255, 0.95)",
-                    border: "1px solid #E2E8F0",
-                    borderRadius: "8px",
-                    fontSize: "11px",
-                  }}
-                />
-                <Bar dataKey="Applications" fill="#6B2C91" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="Hired" fill="#EC4899" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
+            {metricsLoading ? (
+              <div className="h-full flex items-center justify-center text-slate-400 text-xs">Loading trend...</div>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={monthlyTrend} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-slate-100 dark:stroke-slate-850" />
+                  <XAxis dataKey="month" stroke="#94A3B8" fontSize={10} tickLine={false} />
+                  <YAxis stroke="#94A3B8" fontSize={10} tickLine={false} />
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: "rgba(255, 255, 255, 0.95)",
+                      border: "1px solid #E2E8F0",
+                      borderRadius: "8px",
+                      fontSize: "11px",
+                    }}
+                  />
+                  <Bar dataKey="applications" name="Applications" fill="#6B2C91" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="hired" name="Hired" fill="#EC4899" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
           </div>
         </DashboardCard>
 
@@ -162,25 +182,33 @@ export function ReportsAnalytics() {
           </div>
           <div className="space-y-4 py-3">
             <div className="flex justify-between items-center border-b border-slate-100 pb-2 dark:border-slate-850">
-              <span className="text-xs text-slate-500 font-semibold">Average Application to Interview</span>
-              <span className="text-sm font-black text-slate-900 dark:text-white">24.5%</span>
+              <span className="text-xs text-slate-500 font-semibold">Application to Interview Rate</span>
+              <span className="text-sm font-black text-slate-900 dark:text-white">
+                {interviewRate === null ? "—" : `${interviewRate}%`}
+              </span>
             </div>
-            <div className="flex justify-between items-center border-b border-slate-100 pb-2 dark:border-slate-850">
-              <span className="text-xs text-slate-500 font-semibold">Average Resume Verification Duration</span>
-              <span className="text-sm font-black text-slate-900 dark:text-white">4.2 Hours</span>
-            </div>
-            <div className="flex justify-between items-center border-b border-slate-100 pb-2 dark:border-slate-850">
-              <span className="text-xs text-slate-500 font-semibold">Menstrual Leave Perks Checked</span>
-              <span className="text-sm font-black text-slate-900 dark:text-white">82 Companies</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-xs text-slate-500 font-semibold">Returnee Mentorship Ratio</span>
-              <span className="text-sm font-black text-slate-900 dark:text-white">3.8:1</span>
-            </div>
+            {/* CONFIRMED BUG (fixed here): "Average Resume Verification
+                Duration", "Menstrual Leave Perks Checked", and "Returnee
+                Mentorship Ratio" used to be hardcoded literals
+                ("4.2 Hours", "82 Companies", "3.8:1") that never changed --
+                there is no timestamped resume-verification-duration field,
+                company perk-checklist field, or returnee-mentorship field
+                anywhere in the schema to compute them from. Rather than
+                keep showing fabricated numbers, they're removed until
+                there's real data to back them. */}
+            <p className="text-[10px] text-slate-400 dark:text-slate-500 leading-relaxed">
+              Additional sourcing metrics (resume verification duration, employer perk tracking, returnee mentorship
+              ratio) require new data fields that don't exist in the platform yet and are not shown here rather than
+              being fabricated.
+            </p>
           </div>
           <div className="pt-2">
-            <Button className="w-full text-xs font-black bg-[#6B2C91] hover:bg-[#5a237b] text-white dark:bg-pink-600 dark:hover:bg-pink-700">
-              Generate Custom Audit Report
+            <Button
+              disabled
+              title="Not yet implemented"
+              className="w-full text-xs font-black bg-slate-200 text-slate-500 cursor-not-allowed dark:bg-slate-800 dark:text-slate-500"
+            >
+              Generate Custom Audit Report (Coming Soon)
             </Button>
           </div>
         </DashboardCard>

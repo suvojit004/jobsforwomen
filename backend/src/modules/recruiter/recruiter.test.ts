@@ -27,7 +27,7 @@ jest.mock("../../shared/database/db", () => {
       groupBy: jest.fn(),
       count: jest.fn(),
     },
-    interview: { findMany: jest.fn() },
+    interview: { findMany: jest.fn(), create: jest.fn() },
     notification: { create: jest.fn(), findMany: jest.fn(), count: jest.fn() },
     auditLog: { create: jest.fn() },
     $transaction: jest.fn().mockImplementation(async (callback) => await callback(localPrismaMock)),
@@ -354,6 +354,179 @@ describe("Recruiter Module Integration Tests (Phase 6)", () => {
       expect(res.status).toBe(201)
       expect(res.body.data.title).toBe("Copy of Original Job")
       expect(res.body.data.status).toBe("draft")
+    })
+
+    // CONFIRMED PRODUCTION BUG (see recruiter.service.ts lifecycleJob):
+    // the "resume"/Activate action used to set a job straight to `approved`
+    // with no check on its current status, letting a recruiter self-approve
+    // a job that was never reviewed (pending_approval) or that admin
+    // explicitly rejected (flagged) -- completely bypassing moderation.
+    it("should reject activating (resume) a job still pending admin approval", async () => {
+      mockPrisma.recruiterProfile.findUnique.mockResolvedValue({
+        id: "profile-approved",
+        userId: "rec-approved-id",
+        companyId: "comp-approved",
+        company: { id: "comp-approved", status: CompanyStatus.approved },
+      })
+      mockPrisma.job.findUnique.mockResolvedValue({
+        id: "job-pending-1",
+        status: JobStatus.pending_approval,
+        companyId: "comp-approved",
+        recruiter: { userId: "rec-approved-id" },
+      })
+
+      const res = await request(app)
+        .post("/api/v1/recruiters/jobs/job-pending-1/lifecycle/resume")
+        .set("Authorization", `Bearer ${approvedRecruiterToken}`)
+
+      expect(res.status).toBe(400)
+      expect(res.body.success).toBe(false)
+      expect(res.body.message).toMatch(/has not been approved by an admin/i)
+      expect(mockPrisma.job.update).not.toHaveBeenCalled()
+    })
+
+    it("should reject activating (resume) a job that admin rejected (flagged)", async () => {
+      mockPrisma.recruiterProfile.findUnique.mockResolvedValue({
+        id: "profile-approved",
+        userId: "rec-approved-id",
+        companyId: "comp-approved",
+        company: { id: "comp-approved", status: CompanyStatus.approved },
+      })
+      mockPrisma.job.findUnique.mockResolvedValue({
+        id: "job-flagged-1",
+        status: JobStatus.flagged,
+        companyId: "comp-approved",
+        recruiter: { userId: "rec-approved-id" },
+      })
+
+      const res = await request(app)
+        .post("/api/v1/recruiters/jobs/job-flagged-1/lifecycle/resume")
+        .set("Authorization", `Bearer ${approvedRecruiterToken}`)
+
+      expect(res.status).toBe(400)
+      expect(mockPrisma.job.update).not.toHaveBeenCalled()
+    })
+
+    it("should allow the owning recruiter to re-activate a paused job that admin had already approved", async () => {
+      mockPrisma.recruiterProfile.findUnique.mockResolvedValue({
+        id: "profile-approved",
+        userId: "rec-approved-id",
+        companyId: "comp-approved",
+        company: { id: "comp-approved", status: CompanyStatus.approved },
+      })
+      mockPrisma.job.findUnique.mockResolvedValue({
+        id: "job-paused-1",
+        status: JobStatus.paused,
+        companyId: "comp-approved",
+        recruiter: { userId: "rec-approved-id" },
+      })
+      mockPrisma.job.update.mockResolvedValue({ id: "job-paused-1", status: JobStatus.approved })
+
+      const res = await request(app)
+        .post("/api/v1/recruiters/jobs/job-paused-1/lifecycle/resume")
+        .set("Authorization", `Bearer ${approvedRecruiterToken}`)
+
+      expect(res.status).toBe(200)
+      expect(mockPrisma.job.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: "job-paused-1" },
+          data: expect.objectContaining({ status: JobStatus.approved }),
+        })
+      )
+    })
+
+    it("should reject pausing a job that was never approved", async () => {
+      mockPrisma.recruiterProfile.findUnique.mockResolvedValue({
+        id: "profile-approved",
+        userId: "rec-approved-id",
+        companyId: "comp-approved",
+        company: { id: "comp-approved", status: CompanyStatus.approved },
+      })
+      mockPrisma.job.findUnique.mockResolvedValue({
+        id: "job-draft-1",
+        status: JobStatus.draft,
+        companyId: "comp-approved",
+        recruiter: { userId: "rec-approved-id" },
+      })
+
+      const res = await request(app)
+        .post("/api/v1/recruiters/jobs/job-draft-1/lifecycle/pause")
+        .set("Authorization", `Bearer ${approvedRecruiterToken}`)
+
+      expect(res.status).toBe(400)
+      expect(mockPrisma.job.update).not.toHaveBeenCalled()
+    })
+  })
+
+  describe("Interview Scheduling", () => {
+    it("should schedule an interview, persist it, update application status, and notify the candidate and active admins", async () => {
+      mockPrisma.recruiterProfile.findUnique.mockResolvedValue({
+        id: "profile-approved",
+        userId: "rec-approved-id",
+        fullName: "Sneha Reddy",
+        companyId: "comp-approved",
+        company: { id: "comp-approved", status: CompanyStatus.approved },
+      })
+      mockPrisma.application.findUnique.mockResolvedValue({
+        id: "app-interview-1",
+        status: ApplicationStatus.Shortlisted,
+        jobId: "job-9",
+        candidateId: "cand-profile-1",
+        job: { id: "job-9", companyId: "comp-approved", title: "React Developer" },
+        candidate: { id: "cand-profile-1", userId: "cand-user-1", fullName: "Anita Rao" },
+      })
+      mockPrisma.interview.create.mockResolvedValue({ id: "interview-1" })
+      mockPrisma.application.update.mockResolvedValue({
+        id: "app-interview-1",
+        status: ApplicationStatus.InterviewScheduled,
+      })
+      mockPrisma.user.findMany.mockResolvedValue([{ id: "admin-1" }])
+      mockPrisma.notification.create.mockImplementation(async ({ data }: any) => ({ id: "notif-" + data.recipientId, ...data }))
+
+      const res = await request(app)
+        .post("/api/v1/recruiters/applications/app-interview-1/interview")
+        .set("Authorization", `Bearer ${approvedRecruiterToken}`)
+        .send({
+          title: "Technical Round 1",
+          scheduledAt: "2026-08-01T10:00:00.000Z",
+          location: "Google Meet",
+        })
+
+      expect(res.status).toBe(201)
+      expect(mockPrisma.interview.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ applicationId: "app-interview-1", title: "Technical Round 1" }),
+        })
+      )
+      expect(mockPrisma.application.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: "app-interview-1" },
+          data: expect.objectContaining({ status: ApplicationStatus.InterviewScheduled }),
+        })
+      )
+
+      await EventBus.allSettled()
+
+      // Candidate notified
+      expect(mockPrisma.notification.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            recipientId: "cand-user-1",
+            title: "Interview Scheduled!",
+            dedupeKey: "interview-scheduled-candidate:app-interview-1",
+          }),
+        })
+      )
+      // Active admins notified
+      expect(mockPrisma.notification.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            recipientId: "admin-1",
+            title: "Interview Scheduled",
+            dedupeKey: "interview-scheduled-admin:app-interview-1:admin-1",
+          }),
+        })
+      )
     })
   })
 

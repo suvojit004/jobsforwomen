@@ -34,11 +34,44 @@ async function createAndEmitNotification(data: {
   return notification
 }
 
+// Shared helper for the several events that must fan out to every active
+// Admin/Super Admin user (job submitted, application submitted, interview
+// scheduled). Centralizing this avoids re-querying/re-implementing the
+// admin lookup + per-admin dedupeKey pattern three separate times.
+async function notifyActiveAdmins(opts: {
+  title: string
+  message: string
+  category: string
+  actionUrl: string
+  dedupeKeyPrefix: string
+}) {
+  const admins = await prisma.user.findMany({
+    where: {
+      status: "Active",
+      roles: { some: { role: { name: { in: ["Admin", "Super Admin"] } } } },
+    },
+    select: { id: true },
+  })
+
+  await Promise.all(
+    admins.map((admin) =>
+      createAndEmitNotification({
+        recipientId: admin.id,
+        title: opts.title,
+        message: opts.message,
+        category: opts.category,
+        actionUrl: opts.actionUrl,
+        dedupeKey: `${opts.dedupeKeyPrefix}:${admin.id}`,
+      })
+    )
+  )
+}
+
 export function initNotificationListener() {
   // 1. Applications Submission Handler
   EventBus.subscribe("ApplicationSubmitted", async (payload: any) => {
     logger.debug(`[NotificationListener] Creating notification for recruiter on Application: ${payload.applicationId}`)
-    
+
     // Create Recruiter Notification
     await createAndEmitNotification({
       recipientId: payload.recruiterUserId,
@@ -49,6 +82,18 @@ export function initNotificationListener() {
       // not "applications/:id" -- there is no such route, so this link
       // previously 404'd via RecruiterRoutes' catch-all every time.
       actionUrl: `/recruiter/applicants/${payload.applicationId}`,
+    })
+
+    // Admins need lifecycle visibility into application activity too --
+    // there is no dedicated admin per-application page, so this links to
+    // the closest real existing oversight surface (Job Moderation), same
+    // as JobSubmittedForApproval below.
+    await notifyActiveAdmins({
+      title: "New Job Application",
+      message: `${payload.candidateName} applied for ${payload.jobTitle}${payload.companyName ? ` at ${payload.companyName}` : ""}.`,
+      category: "Application",
+      actionUrl: "/admin/job-moderation",
+      dedupeKeyPrefix: `application-submitted:${payload.applicationId}`,
     })
 
     // Dispatch corresponding Audit Event
@@ -272,15 +317,35 @@ export function initNotificationListener() {
   // 12. Interview Scheduled Notifications & Audits
   EventBus.subscribe("InterviewScheduled", async (payload: any) => {
     logger.debug(`[NotificationListener] Creating interview notification for candidate: ${payload.candidateUserId}`)
+
+    const whenText = payload.scheduledAt
+      ? new Date(payload.scheduledAt).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })
+      : "a scheduled time"
+
     await createAndEmitNotification({
       recipientId: payload.candidateUserId,
       title: "Interview Scheduled!",
-      message: `Your interview for job ID ${payload.jobId} has been scheduled.`,
+      message: payload.jobTitle
+        ? `Your interview for ${payload.jobTitle} has been scheduled for ${whenText}.`
+        : `Your interview has been scheduled for ${whenText}.`,
       category: "Application",
       // CandidateRoutes has no "applications/:id" sub-route (Applications.tsx
       // is a flat list with no per-row deep link support) -- link to the
       // real list page instead of a route that doesn't exist.
       actionUrl: "/candidate/applications",
+      dedupeKey: `interview-scheduled-candidate:${payload.applicationId}`,
+    })
+
+    // Admins need lifecycle visibility here too -- there is no dedicated
+    // admin per-application/interview page, so this links to the closest
+    // real existing oversight surface (Job Moderation), same convention as
+    // the other admin fan-outs in this file.
+    await notifyActiveAdmins({
+      title: "Interview Scheduled",
+      message: `Interview scheduled: ${payload.candidateName || "A candidate"} for ${payload.jobTitle || "a job posting"} on ${whenText}.`,
+      category: "Application",
+      actionUrl: "/admin/job-moderation",
+      dedupeKeyPrefix: `interview-scheduled-admin:${payload.applicationId}`,
     })
 
     EventBus.publish("AuditCreated", {
@@ -318,28 +383,15 @@ export function initNotificationListener() {
   // 14. Job Submitted For Approval -- notify active admins
   EventBus.subscribe("JobSubmittedForApproval", async (payload: any) => {
     logger.debug(`[NotificationListener] Job ${payload.jobId} submitted for approval -- notifying admins`)
-    const admins = await prisma.user.findMany({
-      where: {
-        status: "Active",
-        roles: { some: { role: { name: { in: ["Admin", "Super Admin"] } } } },
-      },
-      select: { id: true },
+    // AdminRoutes only has a single "job-moderation" list route -- no
+    // per-job detail page exists to deep-link into.
+    await notifyActiveAdmins({
+      title: "New Job Pending Approval",
+      message: `${payload.companyName || "A recruiter"} submitted "${payload.jobTitle}" for review.`,
+      category: "Moderation",
+      actionUrl: "/admin/job-moderation",
+      dedupeKeyPrefix: `job-submitted:${payload.jobId}`,
     })
-
-    await Promise.all(
-      admins.map((admin) =>
-        createAndEmitNotification({
-          recipientId: admin.id,
-          title: "New Job Pending Approval",
-          message: `${payload.companyName || "A recruiter"} submitted "${payload.jobTitle}" for review.`,
-          category: "Moderation",
-          // AdminRoutes only has a single "job-moderation" list route -- no
-          // per-job detail page exists to deep-link into.
-          actionUrl: "/admin/job-moderation",
-          dedupeKey: `job-submitted:${payload.jobId}:${admin.id}`,
-        })
-      )
-    )
   })
 
   // 15. Admin Job Approved Event -- notify the owning recruiter and matched candidates

@@ -6,6 +6,8 @@ import {
   Trash2,
   Eye,
   EyeOff,
+  X,
+  Ban,
 } from "lucide-react"
 import { DataTable } from "@/components/shared/DataTable"
 import type { ColumnDef } from "@/components/shared/DataTable"
@@ -31,6 +33,15 @@ export function JobModeration() {
   const [searchQuery, setSearchQuery] = useState("")
   const [filterMode, setFilterMode] = useState<"all" | "reported" | "hidden">("all")
   const [loading, setLoading] = useState(true)
+
+  // Reject-with-reason modal state. Previously this page had no Reject
+  // control at all -- Approve was the only moderation action, and it was
+  // only shown for `reported` jobs, not for jobs actually awaiting their
+  // first review (`status === "pending_approval"`). A recruiter's freshly
+  // submitted job had no way to be approved OR rejected from this screen.
+  const [rejectTarget, setRejectTarget] = useState<AdminJob | null>(null)
+  const [rejectReason, setRejectReason] = useState("")
+  const [rejectSubmitting, setRejectSubmitting] = useState(false)
 
   const loadJobs = async () => {
     try {
@@ -88,6 +99,25 @@ export function JobModeration() {
       loadJobs()
     } catch (err) {
       console.error("Failed to approve job", err)
+    }
+  }
+
+  const openRejectModal = (job: AdminJob) => {
+    setRejectTarget(job)
+    setRejectReason("")
+  }
+
+  const handleConfirmReject = async () => {
+    if (!rejectTarget || !rejectReason.trim()) return
+    try {
+      setRejectSubmitting(true)
+      await AdminApi.moderateJob(rejectTarget.id, "reject", rejectReason.trim())
+      setRejectTarget(null)
+      loadJobs()
+    } catch (err) {
+      console.error("Failed to reject job", err)
+    } finally {
+      setRejectSubmitting(false)
     }
   }
 
@@ -190,7 +220,12 @@ export function JobModeration() {
       className: "text-right",
       cell: (row) => (
         <div className="flex justify-end gap-1.5">
-          {row.reported && (
+          {/* Approve/Reject must be available for any job actually awaiting
+              or previously failing moderation (pending_approval, flagged),
+              not just reported ones -- gating Approve on `reported` alone
+              meant a freshly-submitted job had no visible way to be
+              approved from this screen at all. */}
+          {(row.status === "pending_approval" || row.status === "flagged" || row.reported) && (
             <Button
               size="sm"
               variant="outline"
@@ -199,6 +234,17 @@ export function JobModeration() {
             >
               <Check className="size-3 mr-0.5" />
               Approve
+            </Button>
+          )}
+          {(row.status === "pending_approval" || row.reported) && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 text-[10px] font-bold text-red-600 hover:text-red-700 border-red-200 hover:bg-red-50 dark:text-red-400 dark:border-red-900 dark:hover:bg-red-950/20"
+              onClick={() => openRejectModal(row)}
+            >
+              <Ban className="size-3 mr-0.5" />
+              Reject
             </Button>
           )}
           <Button
@@ -304,6 +350,50 @@ export function JobModeration() {
           />
         )}
       </DashboardCard>
+
+      {/* Reject reason modal -- reason is required, matches the backend's
+          JobRejected event which surfaces this text to the recruiter. */}
+      {rejectTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl">
+            <div className="flex items-center justify-between p-4 border-b border-slate-100 dark:border-slate-800">
+              <h3 className="text-sm font-black text-slate-900 dark:text-white flex items-center gap-1.5">
+                <Ban className="size-4 text-red-600" />
+                Reject "{rejectTarget.title}"
+              </h3>
+              <button onClick={() => setRejectTarget(null)} className="text-slate-400 hover:text-slate-700 dark:hover:text-white">
+                <X className="size-4" />
+              </button>
+            </div>
+            <div className="p-4">
+              <label className="text-[10px] font-black uppercase text-slate-400">Rejection Reason (required)</label>
+              <textarea
+                value={rejectReason}
+                onChange={(e) => setRejectReason(e.target.value)}
+                rows={4}
+                placeholder="e.g. Job description contains discriminatory language, salary range missing, duplicate posting..."
+                className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6B2C91]/30 dark:border-slate-800 dark:bg-slate-950 dark:text-white"
+              />
+              {!rejectReason.trim() && (
+                <p className="mt-1 text-[10px] font-bold text-red-500">A reason is required so the recruiter knows what to fix.</p>
+              )}
+            </div>
+            <div className="flex justify-end gap-2 p-4 border-t border-slate-100 dark:border-slate-800">
+              <Button variant="outline" size="sm" onClick={() => setRejectTarget(null)} className="text-xs font-bold">
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                onClick={handleConfirmReject}
+                disabled={rejectSubmitting || !rejectReason.trim()}
+                className="text-xs font-black bg-red-600 hover:bg-red-700 text-white"
+              >
+                {rejectSubmitting ? "Rejecting..." : "Reject & Notify Recruiter"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

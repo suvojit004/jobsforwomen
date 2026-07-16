@@ -25,14 +25,17 @@ jest.mock("../database/db", () => {
   }
 })
 
-// Mock Nodemailer Transporter inline
-jest.mock("nodemailer", () => {
-  const transportMock = {
-    sendMail: jest.fn().mockResolvedValue({ messageId: "msg-123" }),
-  }
+// Mock Resend Transporter inline
+jest.mock("resend", () => {
+  const mockSend = jest.fn().mockResolvedValue({ data: { id: "msg-123" }, error: null })
   return {
-    createTransport: jest.fn().mockReturnValue(transportMock),
-    default: { createTransport: jest.fn().mockReturnValue(transportMock) },
+    Resend: jest.fn().mockImplementation(() => {
+      return {
+        emails: {
+          send: mockSend,
+        },
+      }
+    }),
   }
 })
 
@@ -122,7 +125,7 @@ describe("Infrastructure Hardening Integration Tests (Phase 8 - Hardened)", () =
     })
   })
 
-  describe("2. Nodemailer SMTP & Plain Text alternate converters", () => {
+  describe("2. Resend Email Transport & Plain Text alternate converters", () => {
     it("should strip HTML tags correctly and format clean text-only alternate bodies", () => {
       const htmlBody = `
         <div style="padding: 10px;">

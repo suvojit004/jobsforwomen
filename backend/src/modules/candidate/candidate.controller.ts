@@ -2,6 +2,7 @@ import type { Request, Response } from "express"
 import { CandidateService, ServiceContext } from "./candidate.service"
 import { sendSuccess, sendError } from "../../shared/utils/response"
 import { uploadToCloudinary, deleteFromCloudinary } from "../../shared/utils/cloudinary"
+import { ConversationService } from "../../shared/services/conversation.service"
 import {
   updateCandidateProfileSchema,
   updateCandidateSettingsSchema,
@@ -276,6 +277,24 @@ export class CandidateController {
     const userId = req.user?.userId || ""
     const message = await this.service.sendMessage(req.params.id as string, userId, validated.content)
     return sendSuccess(res, { message }, "Message sent successfully.", 201)
+  }
+
+  markConversationAsRead = async (req: Request, res: Response) => {
+    const userId = req.user?.userId || ""
+    const result = await this.service.markConversationAsRead(req.params.id as string, userId)
+    return sendSuccess(res, result, "Conversation marked as read.")
+  }
+
+  // CONFIRMED CRITICAL BUG (fixed here): no route anywhere ever created a
+  // Conversation row, so a candidate could never start a chat with a
+  // recruiter -- see ConversationService.getOrCreateForApplication for the
+  // full explanation. requireOwnership("Application") at the route layer
+  // already guarantees the caller is either the applicant or the hiring
+  // recruiter before this ever runs.
+  startConversation = async (req: Request, res: Response) => {
+    const userId = req.user?.userId || ""
+    const conversation = await ConversationService.getOrCreateForApplication(req.params.id as string, userId)
+    return sendSuccess(res, { conversation }, "Conversation ready.", 201)
   }
 
   // ==========================================

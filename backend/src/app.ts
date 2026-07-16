@@ -17,6 +17,31 @@ import { initEmailListener } from "./shared/listeners/email.listener"
 
 const app = express()
 
+// Trust the Render reverse proxy for exactly one hop.
+//
+// CONFIRMED BUG (fixed here): this was never set. Render terminates TLS and
+// forwards every request through its own reverse proxy, so without this,
+// Express's req.ip (and req.protocol/req.secure) resolve to the proxy's
+// internal socket address for every request in production -- not the real
+// client IP. That silently broke two things: (1) the per-IP rate limiter in
+// rateLimit.middleware.ts effectively rate-limited "the Render proxy" as a
+// single shared bucket for all users, rather than limiting abusive clients
+// individually; (2) every ipAddress recorded in AuthSession/RefreshToken/
+// AuditLog rows (auth.controller, admin.controller, candidate.controller,
+// recruiter.controller, rbac.controller) recorded the same meaningless proxy
+// address instead of the client's real IP.
+//
+// `true` (trust every hop) is deliberately NOT used here: that would let a
+// client forge an arbitrary X-Forwarded-For chain and have Express trust the
+// leftmost (attacker-controlled) entry as the "real" IP, defeating both the
+// rate limiter and audit trail. Render's architecture puts exactly one
+// reverse proxy between the internet and this process, so `1` is the
+// narrowest correct value -- Express trusts only the single nearest hop's
+// X-Forwarded-For entry and computes req.ip from that, while still rejecting
+// attempts to inject additional spoofed hops beyond it.
+const trustProxyHops = process.env.NODE_ENV === "production" ? 1 : false
+app.set("trust proxy", trustProxyHops)
+
 // Initialize in-memory listeners
 initAuditListener()
 initNotificationListener()

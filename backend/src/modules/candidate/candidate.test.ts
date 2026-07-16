@@ -233,12 +233,15 @@ describe("Candidate Module Integration Tests (Phase 5)", () => {
         id: "job-1",
         title: "Developer",
         recruiter: { userId: "rec-1" },
+        company: { id: "comp-1", name: "JFW Tech" },
       })
       mockPrisma.application.findFirst.mockResolvedValue(null)
       mockPrisma.application.create.mockResolvedValue({
         id: "app-1",
         status: ApplicationStatus.Applied,
       })
+      mockPrisma.user.findMany.mockResolvedValue([{ id: "admin-1" }])
+      mockPrisma.notification.create.mockResolvedValue({ id: "notif-1" })
 
       const res = await request(app)
         .post("/api/v1/candidates/jobs/job-1/apply")

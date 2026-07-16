@@ -1,9 +1,13 @@
-import { Check, Clock, User, Calendar, FileText, X } from "lucide-react"
+import { useState } from "react"
+import { useNavigate } from "react-router-dom"
+import { toast } from "sonner"
+import { Check, Clock, User, Calendar, FileText, X, MessageCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { DashboardCard } from "@/components/dashboard/DashboardCard"
 import { CompanyLogo } from "@/components/shared/CompanyLogo"
 import type { Application } from "@/types/dashboard"
 import { cn } from "@/lib/utils"
+import { candidateApi } from "../../services/candidateApi"
 
 type ApplicationTimelineProps = {
   application: Application
@@ -13,6 +17,23 @@ type ApplicationTimelineProps = {
 export function ApplicationTimeline({ application, onClose }: ApplicationTimelineProps) {
   // Stepper state computation based on status
   const status = application.status
+  const navigate = useNavigate()
+  const [messaging, setMessaging] = useState(false)
+
+  // CONFIRMED BUG (fixed here): there was previously no way to start a
+  // conversation with the recruiter from anywhere in the Candidate module --
+  // see candidateApi.startConversation for the full explanation.
+  const handleMessageRecruiter = async () => {
+    try {
+      setMessaging(true)
+      const conversation = await candidateApi.startConversation(application.id)
+      navigate(`/candidate/messages?conversation=${conversation.id}`)
+    } catch (err: any) {
+      toast.error(err?.message || "Couldn't start a conversation with the recruiter.")
+    } finally {
+      setMessaging(false)
+    }
+  }
 
   const steps = [
     {
@@ -164,16 +185,29 @@ export function ApplicationTimeline({ application, onClose }: ApplicationTimelin
           </h4>
 
           {/* Recruiter */}
-          <div className="flex items-center gap-3 text-xs">
-            <div className="size-8 rounded-lg bg-violet-50 text-[#6B2C91] dark:bg-violet-500/20 dark:text-pink-100 flex items-center justify-center shrink-0">
-              <User className="size-4" />
+          <div className="flex items-center justify-between gap-3 text-xs">
+            <div className="flex items-center gap-3">
+              <div className="size-8 rounded-lg bg-violet-50 text-[#6B2C91] dark:bg-violet-500/20 dark:text-pink-100 flex items-center justify-center shrink-0">
+                <User className="size-4" />
+              </div>
+              <div>
+                <p className="font-bold text-slate-500 dark:text-slate-400">Assigned Recruiter</p>
+                <p className="font-extrabold text-slate-900 dark:text-white">
+                  {application.recruiter ?? "Not Assigned"}
+                </p>
+              </div>
             </div>
-            <div>
-              <p className="font-bold text-slate-500 dark:text-slate-400">Assigned Recruiter</p>
-              <p className="font-extrabold text-slate-900 dark:text-white">
-                {application.recruiter ?? "Not Assigned"}
-              </p>
-            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleMessageRecruiter}
+              disabled={messaging}
+              className="h-7 gap-1 text-[11px] font-bold shrink-0"
+            >
+              <MessageCircle className="size-3.5" />
+              {messaging ? "Opening..." : "Message"}
+            </Button>
           </div>
 
           {/* Interview */}
@@ -191,15 +225,23 @@ export function ApplicationTimeline({ application, onClose }: ApplicationTimelin
             </div>
           )}
 
-          {/* Resume Used */}
+          {/* Resume Used -- CONFIRMED BUG (fixed here): this used to show
+              the literal hardcoded string "Priya_Sharma_Resume.pdf" for
+              every candidate's every application regardless of whose
+              resume was actually on file. The Application type/API this
+              component receives doesn't carry a per-application resume
+              filename (resumes aren't versioned per-application in the
+              schema -- one resumeUrl lives on the candidate profile), so
+              rather than fabricate a filename we show an honest, generic
+              confirmation instead. */}
           <div className="flex items-center gap-3 text-xs">
             <div className="size-8 rounded-lg bg-violet-50 text-[#6B2C91] dark:bg-violet-500/20 dark:text-pink-100 flex items-center justify-center shrink-0">
               <FileText className="size-4" />
             </div>
             <div>
-              <p className="font-bold text-slate-500 dark:text-slate-400">Resume Submitted</p>
+              <p className="font-bold text-slate-500 dark:text-slate-400">Resume</p>
               <p className="font-extrabold text-slate-900 dark:text-white truncate max-w-xs">
-                Priya_Sharma_Resume.pdf
+                Resume on file at time of application
               </p>
             </div>
           </div>

@@ -32,6 +32,36 @@ function formatBytes(bytes: number) {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`
 }
 
+// Final Implementation Pass, Part 8: metric semantics.
+//
+// CONFIRMED GAP (fixed here): every number on this page used to be
+// presented identically, with no indication that most of them
+// (activeJobs/completedJobs/failedJobs, email/storage delivery counts) are
+// plain in-memory counters that silently reset to 0 on every server
+// restart or redeploy -- an admin could easily read "Failed Jobs: 0" right
+// after a deploy as "nothing has ever failed" rather than "nothing has
+// failed since this process last booted." The backend now classifies every
+// field via `metricSemantics` (see admin.service.ts's getSystemHealth());
+// this renders that classification as a small inline tag next to each
+// number instead of presenting all of them as equally durable.
+function MetricTag({ isCounter }: { isCounter: boolean }) {
+  return isCounter ? (
+    <span
+      className="ml-1.5 align-middle inline-block text-[8px] font-black uppercase tracking-wide text-amber-700 bg-amber-100/70 dark:bg-amber-950/30 dark:text-amber-350 px-1.5 py-0.5 rounded"
+      title="Resets to 0 on every server restart/redeploy -- counts events since the process last started, not an all-time total."
+    >
+      Since Restart
+    </span>
+  ) : (
+    <span
+      className="ml-1.5 align-middle inline-block text-[8px] font-black uppercase tracking-wide text-emerald-700 bg-emerald-100/70 dark:bg-emerald-950/30 dark:text-emerald-350 px-1.5 py-0.5 rounded"
+      title="Live value read fresh on every request -- reflects real current state, not an accumulating counter."
+    >
+      Live
+    </span>
+  )
+}
+
 export function SystemHealth() {
   const [refreshing, setRefreshing] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
@@ -192,6 +222,55 @@ export function SystemHealth() {
         ))}
       </div>
 
+      {/* Final Implementation Pass, Part 7: real dead-letter queue depth.
+          Previously the backend's real BullMQ queue counters (activeJobs/
+          completedJobs/failedJobs) existed but were never surfaced here at
+          all, and there was no real DLQ to report on in the first place --
+          see queue.ts's getDeadLetterQueueStats(). */}
+      {health?.queues && (
+        <DashboardCard className="p-5 space-y-4">
+          <div className="border-b border-slate-100 pb-3 dark:border-slate-800">
+            <h4 className="text-xs font-black text-slate-900 uppercase dark:text-white">
+              Background Job Queues
+            </h4>
+          </div>
+          <div className="grid gap-6 md:grid-cols-4 text-xs">
+            <div className="p-4 border border-slate-150 rounded-xl dark:border-slate-850 space-y-2">
+              <h5 className="font-bold text-slate-900 dark:text-white">
+                Active Jobs
+                <MetricTag isCounter={false} />
+              </h5>
+              <p className="text-lg font-black text-slate-900 dark:text-white">{health.queues.activeJobs ?? 0}</p>
+            </div>
+            <div className="p-4 border border-slate-150 rounded-xl dark:border-slate-850 space-y-2">
+              <h5 className="font-bold text-slate-900 dark:text-white">
+                Completed Jobs
+                <MetricTag isCounter={true} />
+              </h5>
+              <p className="text-lg font-black text-slate-900 dark:text-white">{health.queues.completedJobs ?? 0}</p>
+            </div>
+            <div className="p-4 border border-slate-150 rounded-xl dark:border-slate-850 space-y-2">
+              <h5 className="font-bold text-slate-900 dark:text-white">
+                Failed Jobs
+                <MetricTag isCounter={true} />
+              </h5>
+              <p className="text-lg font-black text-slate-900 dark:text-white">{health.queues.failedJobs ?? 0}</p>
+            </div>
+            <div className="p-4 border border-pink-150 rounded-xl dark:border-pink-900/40 space-y-2 bg-pink-50/30 dark:bg-pink-950/10">
+              <h5 className="font-bold text-slate-900 dark:text-white">
+                Dead-Letter Queue Pending
+                <MetricTag isCounter={false} />
+              </h5>
+              <p className="text-lg font-black text-pink-600 dark:text-pink-300">{health.queues.deadLetterPendingCount ?? 0}</p>
+              <p className="text-[10px] font-semibold text-slate-500 dark:text-slate-400">
+                Jobs that exhausted all retry attempts and are held for manual review. Backed by a real Redis-durable
+                queue, so unlike the counters above this survives a server restart.
+              </p>
+            </div>
+          </div>
+        </DashboardCard>
+      )}
+
       {/* Process Resource Usage */}
       {health && (
         <DashboardCard className="p-5 space-y-4">
@@ -204,6 +283,12 @@ export function SystemHealth() {
             <div className="p-4 border border-slate-150 rounded-xl dark:border-slate-850 space-y-2">
               <h5 className="font-bold text-slate-900 dark:text-white">Process Uptime</h5>
               <p className="text-lg font-black text-slate-900 dark:text-white">{formatUptime(health.apiUptime || 0)}</p>
+              {health.processStartedAt && (
+                <p className="text-[10px] font-semibold text-slate-500 dark:text-slate-400">
+                  Server last restarted {new Date(health.processStartedAt).toLocaleString()}. Every
+                  "Since Restart" counter on this page has been accumulating since then, not since the platform launched.
+                </p>
+              )}
             </div>
             <div className="p-4 border border-slate-150 rounded-xl dark:border-slate-850 space-y-2">
               <h5 className="font-bold text-slate-900 dark:text-white">Heap Memory Used</h5>

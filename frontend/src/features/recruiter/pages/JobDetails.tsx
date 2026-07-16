@@ -46,12 +46,26 @@ interface JobDetail {
   postedOn: string
 }
 
-// Backend job statuses map to a simplified display status, matching the
-// same convention already used in ManageJobs.tsx.
-function toDisplayStatus(status: string): "Active" | "Paused" | "Closed" {
+// Backend job statuses map to a simplified display status.
+//
+// CONFIRMED PRODUCTION BUG (fixed here): this used to collapse
+// "pending_approval" and "flagged" into the same generic "Closed" bucket as
+// ManageJobs.tsx does, but -- unlike ManageJobs.tsx -- this page never
+// gated the Pause/Activate toggle button on displayStatus, so it always
+// rendered "Activate Posting" for a job in any non-Active/non-Paused state.
+// Clicking it called the "resume" lifecycle action, which the backend
+// previously applied unconditionally -- silently marking an unreviewed
+// (pending_approval) or admin-rejected (flagged) job as "approved" and
+// bypassing moderation entirely. The backend now rejects that transition
+// (recruiter.service.ts lifecycleJob), but the button here also needs to
+// stop offering an action that can never legitimately succeed for those
+// states, and needs to say what's actually going on instead of "Closed".
+function toDisplayStatus(status: string): "Active" | "Paused" | "Pending Approval" | "Rejected" | "Closed" {
   if (status === "approved") return "Active"
   if (status === "paused") return "Paused"
-  return "Closed" // draft, pending_approval, closed, archived, flagged
+  if (status === "pending_approval") return "Pending Approval"
+  if (status === "flagged") return "Rejected"
+  return "Closed" // draft, closed, archived
 }
 
 export function JobDetails() {
@@ -227,7 +241,11 @@ export function JobDetails() {
                       "inline-flex h-5 items-center rounded-md px-2 text-[10px] font-black uppercase ring-1 ring-inset shrink-0",
                       displayStatus === "Active"
                         ? "bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-500/15 dark:text-emerald-300"
-                        : "bg-amber-50 text-amber-700 ring-amber-200 dark:bg-amber-500/15 dark:text-amber-300"
+                        : displayStatus === "Paused" || displayStatus === "Pending Approval"
+                        ? "bg-amber-50 text-amber-700 ring-amber-200 dark:bg-amber-500/15 dark:text-amber-300"
+                        : displayStatus === "Rejected"
+                        ? "bg-red-50 text-red-700 ring-red-200 dark:bg-red-500/15 dark:text-red-300"
+                        : "bg-slate-100 text-slate-600 ring-slate-200 dark:bg-slate-800 dark:text-slate-400"
                     )}
                   >
                     {displayStatus}
@@ -253,23 +271,38 @@ export function JobDetails() {
                   <Edit2 className="size-4" />
                   Edit Posting
                 </Button>
-                <Button
-                  onClick={handleToggleStatus}
-                  variant="outline"
-                  className="h-9 font-bold text-xs gap-1.5 cursor-pointer"
-                >
-                  {displayStatus === "Active" ? (
-                    <>
-                      <Pause className="size-4" />
-                      Pause Posting
-                    </>
-                  ) : (
-                    <>
-                      <Play className="size-4" />
-                      Activate Posting
-                    </>
-                  )}
-                </Button>
+                {/* Only an approved (Active) or paused job can legitimately be
+                    toggled by the recruiter -- moderation approval itself
+                    is admin-only. See toDisplayStatus's comment above. */}
+                {(displayStatus === "Active" || displayStatus === "Paused") && (
+                  <Button
+                    onClick={handleToggleStatus}
+                    variant="outline"
+                    className="h-9 font-bold text-xs gap-1.5 cursor-pointer"
+                  >
+                    {displayStatus === "Active" ? (
+                      <>
+                        <Pause className="size-4" />
+                        Pause Posting
+                      </>
+                    ) : (
+                      <>
+                        <Play className="size-4" />
+                        Activate Posting
+                      </>
+                    )}
+                  </Button>
+                )}
+                {displayStatus === "Pending Approval" && (
+                  <span className="h-9 inline-flex items-center px-3 text-xs font-bold text-amber-600 dark:text-amber-300">
+                    Awaiting admin approval
+                  </span>
+                )}
+                {displayStatus === "Rejected" && (
+                  <span className="h-9 inline-flex items-center px-3 text-xs font-bold text-red-600 dark:text-red-300">
+                    Rejected by admin
+                  </span>
+                )}
                 <Button
                   onClick={handleDelete}
                   variant="ghost"

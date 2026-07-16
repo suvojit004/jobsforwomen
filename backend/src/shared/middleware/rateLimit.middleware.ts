@@ -11,7 +11,17 @@ export async function rateLimitMiddleware(req: Request, res: Response, next: Nex
     return next()
   }
 
-  const ip = req.ip || (req.headers["x-forwarded-for"] as string) || "unknown_ip"
+  // CONFIRMED BUG (fixed alongside app.ts's trust-proxy config): this used to
+  // fall back to the raw x-forwarded-for request header when req.ip was
+  // falsy. That header is fully client-controlled input -- a request can send
+  // any X-Forwarded-For value it likes, so keying the rate limiter off it
+  // directly would let a client trivially pick a fresh "IP" on every request
+  // to dodge the limiter entirely, or frame another user by supplying their
+  // IP. Now that app.ts sets `trust proxy` to the correct single-hop value
+  // for this deployment, req.ip is Express's own vetted computation (it reads
+  // X-Forwarded-For but only trusts it up to the configured proxy count), so
+  // it's the only source used here -- no direct header fallback.
+  const ip = req.ip || "unknown_ip"
   const now = Date.now()
   const windowMs = 60 * 1000 // 1 minute window
   const maxRequests = 100 // max 100 requests per minute
