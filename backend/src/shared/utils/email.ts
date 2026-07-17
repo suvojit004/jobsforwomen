@@ -107,7 +107,11 @@ export class EmailService {
 
   static async sendWelcomeEmail(to: string, verificationToken: string): Promise<boolean> {
     const baseUrl = process.env.FRONTEND_URL || env.CLIENT_URL || (env.SMTP_FROM.includes("resend") ? "http://localhost:3000" : "https://jobsforwomen.info")
-    const link = `${baseUrl}/verify-email?token=${verificationToken}`
+    // Root-cause fix: the frontend only registers this page at /auth/verify-email
+    // (see frontend/src/routes/AuthRoutes.tsx, mounted under /auth/* in AppRouter.tsx).
+    // The previous bare "/verify-email" link matched no route, fell through to the
+    // catch-all redirect, and silently discarded the token.
+    const link = `${baseUrl}/auth/verify-email?token=${verificationToken}`
     const html = EmailTemplates.welcome({ email: to, verificationLink: link })
     return this.sendMail(to, "Welcome to JobsForWomen - Verify Email", html)
   }
