@@ -1,9 +1,16 @@
 {
+  // Production build config. "types" intentionally lists only "node" --
+  // @types/jest is a devDependency, and Render's production build
+  // (NODE_ENV=production) does not install devDependencies, so `tsc` would
+  // fail with TS2688 ("Cannot find type definition file for 'jest'") the
+  // moment this list asked for Jest's ambient types. Test files get their
+  // own config (tsconfig.test.json) that adds "jest" back, used only by
+  // ts-jest -- never by this file, and never by the production `tsc` build.
   "compilerOptions": {
     "target": "es2022",
     "module": "node16",
     "moduleResolution": "node16",
-    "types": ["jest", "node"],
+    "types": ["node"],
     "outDir": "./dist",
     "rootDir": "./src",
     "strict": true,
@@ -14,5 +21,10 @@
     "resolveJsonModule": true,
     "isolatedModules": true
   },
-  "include": ["src/**/*"]
+  "include": ["src/**/*"],
+  // Test files (and the Jest-only setup helper) must never be part of the
+  // production compilation: they use ambient Jest globals (describe/it/
+  // expect/afterAll) that this config no longer declares, and they have no
+  // business shipping into dist/ as compiled output anyway.
+  "exclude": ["src/**/*.test.ts", "src/shared/test/**"]
 }

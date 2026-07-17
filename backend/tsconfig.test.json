@@ -1,0 +1,22 @@
+{
+  // Test-only compilation config, used exclusively by ts-jest (see
+  // jest.config.js's transform option). Extends the production
+  // tsconfig.json for all real compiler settings (target, strict, module
+  // resolution, etc.) so tests are type-checked against the same rules as
+  // production code, but:
+  //   - re-adds "jest" to "types" so ambient Jest globals (describe, it,
+  //     expect, jest.fn, beforeEach, afterAll, ...) resolve without every
+  //     test file needing an explicit import.
+  //   - re-includes everything under src/ (overriding the base config's
+  //     "exclude" of *.test.ts and shared/test/**), since this config's
+  //     entire purpose is to compile exactly those files.
+  //   - sets noEmit so this config can never accidentally be pointed at by
+  //     a build step and write compiled test output to disk.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["jest", "node"],
+    "noEmit": true
+  },
+  "include": ["src/**/*"],
+  "exclude": []
+}
