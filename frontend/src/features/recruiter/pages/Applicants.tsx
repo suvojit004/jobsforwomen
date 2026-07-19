@@ -17,6 +17,7 @@ import { DashboardCard } from "@/components/shared/DashboardCard"
 import { DataTable, type ColumnDef } from "@/components/shared/DataTable"
 import { StatusBadge } from "@/components/shared/StatusBadge"
 import { RecruiterApi, type ApplicantRow } from "../services/recruiterApi"
+import { ScheduleInterviewModal, type ScheduleInterviewSubject } from "../components/ScheduleInterviewModal"
 
 export function Applicants() {
   const navigate = useNavigate()
@@ -31,12 +32,10 @@ export function Applicants() {
   const [isLoading, setIsLoading] = useState(true)
   const [applicants, setApplicants] = useState<ApplicantRow[]>([])
 
-  // Interview scheduling modal state
-  const [schedulingRow, setSchedulingRow] = useState<ApplicantRow | null>(null)
-  const [interviewTitle, setInterviewTitle] = useState("")
-  const [interviewDateTime, setInterviewDateTime] = useState("")
-  const [interviewLocation, setInterviewLocation] = useState("")
-  const [interviewSubmitting, setInterviewSubmitting] = useState(false)
+  // Interview scheduling modal state -- Issue 1: now delegated entirely to
+  // the shared ScheduleInterviewModal (full Timezone/Mode/Meeting
+  // Link/Venue/Notes field set) instead of a duplicated inline modal.
+  const [schedulingSubject, setSchedulingSubject] = useState<ScheduleInterviewSubject | null>(null)
 
   // Offer release modal state
   const [releasingRow, setReleasingRow] = useState<ApplicantRow | null>(null)
@@ -65,10 +64,7 @@ export function Applicants() {
   // status directly -- the backend rejects those two values on this endpoint.
   const handleStatusSelect = (row: ApplicantRow, newStatus: string) => {
     if (newStatus === "Interview Scheduled") {
-      setInterviewTitle(`Interview for ${row.job}`)
-      setInterviewDateTime("")
-      setInterviewLocation("")
-      setSchedulingRow(row)
+      setSchedulingSubject({ applicationId: row.id, name: row.name, jobTitle: row.job })
       return
     }
     if (newStatus === "Offer Released") {
@@ -87,28 +83,6 @@ export function Applicants() {
     } catch (err: any) {
       setApplicants(previous)
       toast.error(err?.message || "Couldn't update applicant status.")
-    }
-  }
-
-  const handleConfirmSchedule = async () => {
-    if (!schedulingRow || !interviewTitle.trim() || !interviewDateTime) {
-      toast.error("Title and date/time are required.")
-      return
-    }
-    try {
-      setInterviewSubmitting(true)
-      await RecruiterApi.scheduleInterview(schedulingRow.id, {
-        title: interviewTitle.trim(),
-        scheduledAt: new Date(interviewDateTime).toISOString(),
-        location: interviewLocation.trim() || undefined,
-      })
-      toast.success("Interview scheduled and candidate notified.")
-      setSchedulingRow(null)
-      load()
-    } catch (err: any) {
-      toast.error(err?.message || "Couldn't schedule the interview.")
-    } finally {
-      setInterviewSubmitting(false)
     }
   }
 
@@ -354,64 +328,11 @@ export function Applicants() {
       </DashboardCard>
 
       {/* Schedule Interview modal */}
-      {schedulingRow && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-md rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl">
-            <div className="flex items-center justify-between p-4 border-b border-slate-100 dark:border-slate-800">
-              <h3 className="text-sm font-black text-slate-900 dark:text-white flex items-center gap-1.5">
-                <CalendarClock className="size-4 text-[#6B2C91]" />
-                Schedule Interview — {schedulingRow.name}
-              </h3>
-              <button onClick={() => setSchedulingRow(null)} className="text-slate-400 hover:text-slate-700 dark:hover:text-white">
-                <X className="size-4" />
-              </button>
-            </div>
-            <div className="p-4 space-y-3">
-              <div>
-                <label className="text-[10px] font-black uppercase text-slate-400">Title</label>
-                <input
-                  type="text"
-                  value={interviewTitle}
-                  onChange={(e) => setInterviewTitle(e.target.value)}
-                  className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6B2C91]/30 dark:border-slate-800 dark:bg-slate-950 dark:text-white"
-                />
-              </div>
-              <div>
-                <label className="text-[10px] font-black uppercase text-slate-400">Date & Time</label>
-                <input
-                  type="datetime-local"
-                  value={interviewDateTime}
-                  onChange={(e) => setInterviewDateTime(e.target.value)}
-                  className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6B2C91]/30 dark:border-slate-800 dark:bg-slate-950 dark:text-white"
-                />
-              </div>
-              <div>
-                <label className="text-[10px] font-black uppercase text-slate-400">Location / Video Link (optional)</label>
-                <input
-                  type="text"
-                  value={interviewLocation}
-                  onChange={(e) => setInterviewLocation(e.target.value)}
-                  placeholder="e.g. Google Meet link or office address"
-                  className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6B2C91]/30 dark:border-slate-800 dark:bg-slate-950 dark:text-white"
-                />
-              </div>
-            </div>
-            <div className="flex justify-end gap-2 p-4 border-t border-slate-100 dark:border-slate-800">
-              <Button variant="outline" size="sm" onClick={() => setSchedulingRow(null)} className="text-xs font-bold">
-                Cancel
-              </Button>
-              <Button
-                size="sm"
-                onClick={handleConfirmSchedule}
-                disabled={interviewSubmitting}
-                className="text-xs font-black bg-[#6B2C91] hover:bg-[#5a237b] text-white"
-              >
-                {interviewSubmitting ? "Scheduling..." : "Schedule & Notify"}
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ScheduleInterviewModal
+        subject={schedulingSubject}
+        onClose={() => setSchedulingSubject(null)}
+        onScheduled={load}
+      />
 
       {/* Release Offer modal */}
       {releasingRow && (

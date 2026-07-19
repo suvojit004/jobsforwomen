@@ -457,9 +457,24 @@ model Interview {
   description   String?
   scheduledAt   DateTime
   durationMins  Int         @default(60)
+  // Kept for backward compatibility with rows written before the
+  // mode/meetingLink/venue split below -- the service still populates it
+  // (meetingLink for Online, venue for Offline) so any older read path that
+  // only knows about `location` keeps working unmodified.
   location      String? // Video link / office address
   status        String      @default("Scheduled") // Scheduled, Completed, Cancelled
   createdAt     DateTime    @default(now())
+
+  // Issue 1 (Candidate Job Lifecycle spec): the recruiter scheduling modal
+  // previously only captured title/date/location, one flat text field doing
+  // triple duty as meeting link, office address, or nothing at all. These
+  // columns give each of the spec'd fields (Timezone, Interview Mode,
+  // Meeting Link, Venue, Notes) its own real, validated home.
+  mode        String   @default("Online") // "Online" | "Offline"
+  timezone    String? // IANA zone string, e.g. "Asia/Kolkata" -- the candidate's device renders scheduledAt in their own local time regardless, this is what the recruiter intended/confirmed on the call.
+  meetingLink String? // set when mode = "Online"
+  venue       String? // set when mode = "Offline"
+  notes       String? // recruiter-authored notes shown to the candidate, distinct from the internal `description` field
 }
 
 model SavedJob {

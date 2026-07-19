@@ -54,6 +54,10 @@ router.put("/conversations/:id/read", controller.markConversationAsRead)
 // Jobs Discovery & Reporting
 router.get("/jobs", controller.getJobs)
 router.get("/jobs/recommendations", controller.getRecommendations)
+// Must stay registered after the static "/jobs/recommendations" route above
+// -- otherwise this would swallow it (treating "recommendations" as :jobId)
+// since Express matches routes in registration order.
+router.get("/jobs/:jobId", controller.getJobById)
 router.post("/jobs/:jobId/report", controller.reportJob)
 
 // Job Applications (Apply requires verified email & completed profile)

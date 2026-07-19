@@ -9,6 +9,7 @@ import { verifyEmailTransport, EmailService } from "../../shared/utils/email"
 import env from "../../shared/config/env"
 import { verifyCloudinaryConnection, runOrphanAssetCleanup, deleteFromCloudinary } from "../../shared/utils/cloudinary"
 import { normalizeDocuments } from "../../shared/utils/documents"
+import { RECRUITER_SUMMARY_SELECT, shapeRecruiterSummary } from "../../shared/utils/recruiterSummary"
 import { io as socketIo } from "../../shared/socket/socket"
 import { createAuditLog } from "../../shared/utils/audit"
 import { invalidateFeatureFlagCache } from "../../shared/utils/featureFlags"
@@ -402,15 +403,33 @@ export class AdminService {
       where.status = status
     }
 
-    return prisma.job.findMany({
+    // Issue 5 fix: this already returned every scalar Job column (full
+    // description/responsibilities/requirements/benefits etc. -- nothing
+    // was ever trimmed there), but never included `recruiter`, `skills`, or
+    // `history`, so admin's Job Approval view had no way to show who posted
+    // a job, its skill tags, or its moderation trail even though the table
+    // row itself carried the rest. Reuses the same safe recruiter-select
+    // (no passwordHash) as candidate.service.ts even though admin is
+    // trusted, purely so the shape matches what JobDetailContent.tsx
+    // (shared between both) expects.
+    const jobs = await prisma.job.findMany({
       where,
       include: {
         company: true,
         department: true,
+        recruiter: { select: RECRUITER_SUMMARY_SELECT },
+        skills: { include: { skill: true } },
+        history: { orderBy: { createdAt: "desc" } },
         _count: { select: { applications: true, reports: true } },
       },
       orderBy: { postedOn: "desc" },
     })
+
+    return jobs.map((job) => ({
+      ...job,
+      recruiter: shapeRecruiterSummary(job.recruiter),
+      skills: job.skills.map((s) => s.skill.name),
+    }))
   }
 
   async verifyCompany(

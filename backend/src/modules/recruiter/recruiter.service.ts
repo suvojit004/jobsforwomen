@@ -1105,6 +1105,27 @@ export class RecruiterService {
       },
     })
 
+    // CONFIRMED BUG (fixed here): this method previously only ever published
+    // "AuditCreated" -- there was no EventBus event a notification/email
+    // listener could subscribe to, so every Reviewed/Shortlisted/Hired/
+    // Rejected transition (every status this generic endpoint handles) was
+    // completely silent to the candidate: no DB notification, no socket
+    // push, no email, regardless of the real notification architecture
+    // already working correctly for InterviewScheduled/OfferReleased below.
+    EventBus.publish("ApplicationStatusChanged", {
+      applicationId,
+      candidateId: app.candidateId,
+      candidateUserId: app.candidate.userId,
+      candidateName: app.candidate.fullName,
+      jobId: app.jobId,
+      jobTitle: app.job.title,
+      recruiterUserId: userId,
+      previousStatus: currentStatus,
+      status: targetStatus,
+      notes,
+      context,
+    })
+
     EventBus.publish("AuditCreated", {
       ...context,
       category: "RECRUITER",
@@ -1124,7 +1145,18 @@ export class RecruiterService {
   async scheduleInterview(
     applicationId: string,
     userId: string,
-    data: { title: string; description?: string; scheduledAt: string; durationMins?: number; location?: string },
+    data: {
+      title: string
+      description?: string
+      scheduledAt: string
+      timezone?: string
+      durationMins?: number
+      mode?: "Online" | "Offline"
+      meetingLink?: string
+      venue?: string
+      notes?: string
+      location?: string
+    },
     context?: ServiceContext
   ) {
     const profile = await prisma.recruiterProfile.findUnique({ where: { userId } })
@@ -1153,6 +1185,11 @@ export class RecruiterService {
     }
 
     const scheduledAt = new Date(data.scheduledAt)
+    const mode = data.mode || "Online"
+    // `location` is kept in sync for any older read path that only knows
+    // about that flat field -- it mirrors whichever of meetingLink/venue is
+    // actually relevant for this interview's mode.
+    const derivedLocation = data.location || (mode === "Offline" ? data.venue : data.meetingLink)
 
     const interview = await prisma.interview.create({
       data: {
@@ -1160,8 +1197,13 @@ export class RecruiterService {
         title: data.title,
         description: data.description,
         scheduledAt,
+        timezone: data.timezone,
         durationMins: data.durationMins || 60,
-        location: data.location,
+        mode,
+        meetingLink: mode === "Online" ? data.meetingLink : undefined,
+        venue: mode === "Offline" ? data.venue : undefined,
+        notes: data.notes,
+        location: derivedLocation,
       },
     })
 
@@ -1188,7 +1230,12 @@ export class RecruiterService {
       jobTitle: app.job.title,
       recruiterUserId: userId,
       scheduledAt: scheduledAt.toISOString(),
-      location: data.location,
+      timezone: data.timezone,
+      mode,
+      meetingLink: interview.meetingLink,
+      venue: interview.venue,
+      notes: data.notes,
+      location: derivedLocation,
       context,
     })
 
@@ -1259,6 +1306,10 @@ export class RecruiterService {
       candidateId: app.candidateId,
       candidateUserId: app.candidate.userId,
       jobId: app.jobId,
+      // CONFIRMED BUG (fixed here): jobTitle was never included in this
+      // payload, so the candidate notification below fell back to literally
+      // printing the job's raw UUID ("...offer for job ID 3f9a1c2e-...").
+      jobTitle: app.job.title,
       offerDetails: data.offerDetails,
       context,
     })

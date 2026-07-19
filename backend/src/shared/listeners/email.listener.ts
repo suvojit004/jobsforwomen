@@ -257,6 +257,9 @@ export function initEmailListener() {
             ? new Date(payload.scheduledAt).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })
             : "the scheduled time (check your dashboard)",
           location: payload.location,
+          timezone: payload.timezone,
+          mode: payload.mode,
+          notes: payload.notes,
         })
       }
     } catch (err: any) {
@@ -289,6 +292,63 @@ export function initEmailListener() {
       }
     } catch (err: any) {
       logger.error(`[EmailListener] OfferReleased trigger failed: ${err.message}`)
+    }
+  })
+
+  // 10. Generic Application Status Change trigger (Issue 3 fix) -- the
+  // Reviewed/Shortlisted/Hired/Rejected transitions handled by
+  // RecruiterService.progressApplicant() previously sent no email at all.
+  const STATUS_EMAIL_COPY: Record<string, { heading: string; message: (jobTitle: string, companyName: string) => string }> = {
+    Reviewed: {
+      heading: "Application Under Review",
+      message: (jobTitle, companyName) => `Your application for ${jobTitle} at ${companyName} is now under review.`,
+    },
+    Shortlisted: {
+      heading: "You've Been Shortlisted!",
+      message: (jobTitle, companyName) => `Great news -- you've been shortlisted for ${jobTitle} at ${companyName}.`,
+    },
+    Hired: {
+      heading: "Congratulations -- You're Selected!",
+      message: (jobTitle, companyName) => `You've been selected for ${jobTitle} at ${companyName}! The recruiter will be in touch with next steps.`,
+    },
+    Rejected: {
+      heading: "Application Update",
+      message: (jobTitle, companyName) =>
+        `Thank you for your interest in ${jobTitle} at ${companyName}. The recruiter has decided not to move forward with your application at this time.`,
+    },
+  }
+
+  EventBus.subscribe("ApplicationStatusChanged", async (payload: any) => {
+    try {
+      const copy = STATUS_EMAIL_COPY[payload.status]
+      if (!copy) return
+
+      const isEnabled = await shouldSendEmail(payload.candidateUserId, "applicationUpdates")
+      if (!isEnabled) return
+
+      const user = await prisma.user.findUnique({
+        where: { id: payload.candidateUserId },
+        include: { candidateProfile: true },
+      })
+      const job = payload.jobId
+        ? await prisma.job.findUnique({ where: { id: payload.jobId }, include: { company: true } })
+        : null
+      const jobTitle = job?.title || payload.jobTitle || "your application"
+      const companyName = job?.company?.name || "the company"
+
+      if (user?.email) {
+        await addJob("email", "sendApplicationStatusUpdate", {
+          to: user.email,
+          recipientName: user.candidateProfile?.fullName || "Candidate",
+          jobTitle,
+          companyName,
+          statusHeading: copy.heading,
+          statusMessage: copy.message(jobTitle, companyName),
+          notes: payload.notes || undefined,
+        })
+      }
+    } catch (err: any) {
+      logger.error(`[EmailListener] ApplicationStatusChanged trigger failed: ${err.message}`)
     }
   })
 }

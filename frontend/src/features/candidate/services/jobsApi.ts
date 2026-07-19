@@ -55,11 +55,29 @@ export function mapApiJobToExtendedJob(apiJob: any): ExtendedJob {
     postedAt: apiJob.postedOn ? formatDate(apiJob.postedOn) : "",
     womenReturnship: false,
     menstrualLeaveChampion: !!apiJob.menstrualLeaveChampion,
+    flexibleHours: !!apiJob.flexibleHours,
+    workFromHome: !!apiJob.workFromHome,
     description: apiJob.description || "",
     requirements: splitLines(apiJob.requirements),
     responsibilities: splitLines(apiJob.responsibilities),
     benefits: splitLines(apiJob.benefits),
-    companyDescription: apiJob.company?.location,
+    // CONFIRMED BUG (fixed here): this read the company's *location* into
+    // "companyDescription" -- Company.description is a real, separate field
+    // that was simply never mapped, so "About {company}" always showed the
+    // city instead of an actual company blurb (or silently fell back to the
+    // generic placeholder string in JobDetailContent.tsx).
+    companyDescription: apiJob.company?.description || undefined,
+    companyWebsite: apiJob.company?.website || undefined,
+    companyLogoUrl: apiJob.company?.logoUrl || null,
+    department: apiJob.department?.name || undefined,
+    // Only present on the single-job detail response (getJobById) -- the
+    // list endpoint (getJobs) doesn't include job.recruiter/job.skills, so
+    // these are simply absent (not wrong) on list-derived ExtendedJobs like
+    // the ones used for job cards / related jobs.
+    skills: Array.isArray(apiJob.skills) ? apiJob.skills : undefined,
+    recruiter: apiJob.recruiter || undefined,
+    applicationStatus: apiJob.applicationStatus ?? undefined,
+    isSaved: typeof apiJob.isSaved === "boolean" ? apiJob.isSaved : undefined,
   }
 }
 
@@ -114,12 +132,21 @@ export const CandidateJobsApi = {
   },
 
   async getJobById(id: string): Promise<ExtendedJob | undefined> {
-    // There's no single-job public endpoint yet, so pull from the listing
-    // with a generous page size and find the match.
-    const res = await apiClient.get(`/api/v1/candidates/jobs?limit=200`)
-    const jobs: any[] = res?.data?.jobs || []
-    const found = jobs.find((j) => j.id === id)
-    return found ? mapApiJobToExtendedJob(found) : undefined
+    // CONFIRMED BUG (fixed here): this used to fake a single-job lookup by
+    // fetching the paginated list (limit=200) and finding a client-side
+    // match -- the exact "summary DTO reused where full detail is required"
+    // pattern. That list response never carried job.recruiter or
+    // job.skills, so the Job Details page could never show them regardless
+    // of what this function did with the data. GET /jobs/:jobId is a real
+    // detail endpoint now (candidate.service.ts's getJobById) that includes
+    // both, plus this candidate's own application/bookmark state for the job.
+    try {
+      const res = await apiClient.get(`/api/v1/candidates/jobs/${id}`)
+      const job = res?.data?.job
+      return job ? mapApiJobToExtendedJob(job) : undefined
+    } catch {
+      return undefined
+    }
   },
 
   async getSavedJobs(): Promise<ExtendedJob[]> {
@@ -168,22 +195,49 @@ type DisplayApplicationStatus =
   | "Selected"
   | "Rejected"
 
+// Matches candidate.service.ts's shapeRecruiterSummary() -- a flat, safe
+// (no passwordHash, no raw preferences blob) recruiter summary attached to
+// job.recruiter on both GET /candidates/applications and
+// GET /candidates/applications/:id. There's no dedicated recruiter photo
+// column in the schema (RecruiterProfile only has fullName/phone/verified),
+// so "avatar" is rendered client-side from initials + the company logo
+// rather than a stored image -- see RecruiterBadge in ApplicationTimeline.tsx.
+export interface RecruiterSummary {
+  name: string
+  jobTitle: string
+  email: string | null
+}
+
+// Issue 1: full structured detail for the most recent Interview record
+// (mode/timezone/meetingLink/venue/notes), matching the new Interview
+// columns -- see types/application.ts's ApplicationInterview.
+export interface DisplayApplicationInterview {
+  scheduledAt: string
+  timezone?: string | null
+  mode: string
+  meetingLink?: string | null
+  venue?: string | null
+  notes?: string | null
+}
+
 export interface DisplayApplication {
   id: string
   company: string
   companyCode: string
+  companyLogoUrl?: string | null
   job: string
   appliedDate: string
   status: DisplayApplicationStatus
   interviewDate?: string
+  interview?: DisplayApplicationInterview | null
   offerDetails?: string
-  recruiter?: string
+  recruiter?: RecruiterSummary | null
 }
 
 /**
  * Maps a raw Application record (as returned by GET /api/v1/candidates/applications,
- * which includes { job: { company } }) into the flat shape the candidate
- * Applications UI expects.
+ * which includes { job: { company, recruiter } }) into the flat shape the
+ * candidate Applications UI expects.
  */
 export function mapApiApplication(app: any): DisplayApplication {
   const companyName = app.job?.company?.name || "Unknown Company"
@@ -192,6 +246,7 @@ export function mapApiApplication(app: any): DisplayApplication {
     id: app.id,
     company: companyName,
     companyCode: codeForCompany(companyName),
+    companyLogoUrl: app.job?.company?.logoUrl || null,
     job: app.job?.title || "Untitled Role",
     appliedDate: formatDate(app.appliedOn),
     // Falling back to the raw backend value (rather than "Applied") means an
@@ -199,7 +254,23 @@ export function mapApiApplication(app: any): DisplayApplication {
     // about the application's real state.
     status: APPLICATION_STATUS_MAP[app.status] || (app.status as DisplayApplicationStatus),
     interviewDate: latestInterview?.scheduledAt ? formatDate(latestInterview.scheduledAt) : undefined,
+    interview: latestInterview
+      ? {
+          scheduledAt: latestInterview.scheduledAt,
+          timezone: latestInterview.timezone || null,
+          mode: latestInterview.mode || "Online",
+          meetingLink: latestInterview.meetingLink || null,
+          venue: latestInterview.venue || null,
+          notes: latestInterview.notes || null,
+        }
+      : null,
     offerDetails: app.offerDetails || undefined,
+    // CONFIRMED BUG (fixed here): this key was never set at all, so the
+    // Assigned Recruiter card on the candidate Applications page always
+    // showed "Not Assigned" even when job.recruiter existed -- the backend
+    // now actually queries and shapes it (candidate.service.ts), this just
+    // has to actually read it.
+    recruiter: app.job?.recruiter || null,
   }
 }
 

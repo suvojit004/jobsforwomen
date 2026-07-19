@@ -228,7 +228,7 @@ async function processJobMock(queueName: string, jobName: string, data: any) {
 }
 
 async function handleEmailJob(jobName: string, data: any) {
-  const { to, token, roleName, companyName, status, notes, jobTitle, recipientName, jobs, scheduledAt, location, offerDetails, actionLink, actionLabel, perkName, comment } = data
+  const { to, token, roleName, companyName, status, notes, jobTitle, recipientName, jobs, scheduledAt, location, timezone, mode, offerDetails, actionLink, actionLabel, perkName, comment, statusHeading, statusMessage } = data
   if (jobName === "sendWelcome") {
     await EmailService.sendWelcomeEmail(to, token)
   } else if (jobName === "sendEmployeeInvitation") {
@@ -246,9 +246,11 @@ async function handleEmailJob(jobName: string, data: any) {
   } else if (jobName === "sendWeeklyDigest") {
     await EmailService.sendWeeklyDigest(to, recipientName, jobs)
   } else if (jobName === "sendInterviewScheduled") {
-    await EmailService.sendInterviewScheduledEmail(to, recipientName, jobTitle, companyName, scheduledAt, location)
+    await EmailService.sendInterviewScheduledEmail(to, recipientName, jobTitle, companyName, scheduledAt, location, timezone, mode, notes)
   } else if (jobName === "sendOfferReleased") {
     await EmailService.sendOfferReleasedEmail(to, recipientName, jobTitle, companyName, offerDetails)
+  } else if (jobName === "sendApplicationStatusUpdate") {
+    await EmailService.sendApplicationStatusUpdateEmail(to, recipientName, jobTitle, companyName, statusHeading, statusMessage, notes)
   }
 }
 

@@ -566,13 +566,14 @@ export function initNotificationListener() {
     const whenText = payload.scheduledAt
       ? new Date(payload.scheduledAt).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })
       : "a scheduled time"
+    const whereText = payload.mode === "Offline" ? payload.venue : payload.meetingLink
 
     await createAndEmitNotification({
       recipientId: payload.candidateUserId,
       title: "Interview Scheduled!",
-      message: payload.jobTitle
+      message: (payload.jobTitle
         ? `Your interview for ${payload.jobTitle} has been scheduled for ${whenText}.`
-        : `Your interview has been scheduled for ${whenText}.`,
+        : `Your interview has been scheduled for ${whenText}.`) + (whereText ? ` (${payload.mode === "Offline" ? "Venue" : "Meeting link"}: ${whereText})` : ""),
       category: "Application",
       // CandidateRoutes has no "applications/:id" sub-route (Applications.tsx
       // is a flat list with no per-row deep link support) -- link to the
@@ -608,7 +609,12 @@ export function initNotificationListener() {
     await createAndEmitNotification({
       recipientId: payload.candidateUserId,
       title: "Job Offer Released!",
-      message: `Congratulations! You have received a job offer for job ID ${payload.jobId}.`,
+      // CONFIRMED BUG (fixed here): payload.jobTitle didn't exist until the
+      // recruiter.service.ts fix above, so this always printed the raw job
+      // UUID instead of a readable role name.
+      message: payload.jobTitle
+        ? `Congratulations! You have received a job offer for ${payload.jobTitle}.`
+        : `Congratulations! You have received a job offer.`,
       category: "Application",
       // CandidateRoutes has no "applications/:id" sub-route (Applications.tsx
       // is a flat list with no per-row deep link support) -- link to the
@@ -622,6 +628,59 @@ export function initNotificationListener() {
       action: "RELEASE_OFFER",
       entity: "Application",
       entityId: payload.applicationId,
+    })
+  })
+
+  // 13b. Generic Application Status Change Notifications (Issue 3 fix) --
+  // Reviewed/Shortlisted/Hired/Rejected all flow through
+  // RecruiterService.progressApplicant(), which previously only published
+  // "AuditCreated". This is the missing candidate-facing half: a DB
+  // notification (+ socket push via createAndEmitNotification) for every
+  // status this generic endpoint can set. InterviewScheduled/OfferReleased
+  // keep their own dedicated, richer handlers above -- progressApplicant
+  // can never set those two (see STRUCTURED_STATUSES in recruiter.service.ts).
+  const STATUS_NOTIFICATION_COPY: Record<string, { title: string; message: (jobTitle: string) => string }> = {
+    Reviewed: {
+      title: "Application Under Review",
+      message: (jobTitle) => `Your application for ${jobTitle} is now under review.`,
+    },
+    Shortlisted: {
+      title: "You've Been Shortlisted!",
+      message: (jobTitle) => `Great news! You've been shortlisted for ${jobTitle}.`,
+    },
+    Hired: {
+      title: "Congratulations — You're Selected!",
+      message: (jobTitle) => `You've been selected for ${jobTitle}! The recruiter will be in touch with next steps.`,
+    },
+    Rejected: {
+      title: "Application Update",
+      message: (jobTitle) =>
+        `Thank you for your interest in ${jobTitle}. The recruiter has decided not to move forward with your application at this time.`,
+    },
+  }
+
+  EventBus.subscribe("ApplicationStatusChanged", async (payload: any) => {
+    const copy = STATUS_NOTIFICATION_COPY[payload.status]
+    if (!copy) {
+      // Applied is the only other status reachable through this path (a
+      // recruiter "resetting" an application), and it has no useful
+      // candidate-facing message -- silently skip rather than notify with
+      // a blank/confusing message.
+      return
+    }
+    logger.debug(
+      `[NotificationListener] Creating status-change notification (${payload.status}) for candidate: ${payload.candidateUserId}`
+    )
+    const jobTitle = payload.jobTitle || "your application"
+    await createAndEmitNotification({
+      recipientId: payload.candidateUserId,
+      title: copy.title,
+      message: copy.message(jobTitle),
+      category: "Application",
+      actionUrl: "/candidate/applications",
+      // Dedupe on applicationId+status so a retried/duplicated publish of
+      // the same transition can't double-notify the candidate.
+      dedupeKey: `application-status:${payload.applicationId}:${payload.status}`,
     })
   })
 

@@ -189,10 +189,29 @@ export class EmailService {
     jobTitle: string,
     companyName: string,
     scheduledAt: string,
-    location?: string
+    location?: string,
+    // Issue 1: Timezone/Mode/Notes are optional trailing params (rather than
+    // an options object) to avoid touching every existing call site of this
+    // method -- only queue.ts's "sendInterviewScheduled" job passes them.
+    timezone?: string,
+    mode?: string,
+    notes?: string
   ): Promise<boolean> {
-    const html = EmailTemplates.interviewScheduled({ recipientName, jobTitle, companyName, scheduledAt, location })
+    const html = EmailTemplates.interviewScheduled({ recipientName, jobTitle, companyName, scheduledAt, location, timezone, mode, notes })
     return this.sendMail(to, `Interview Scheduled: ${jobTitle} at ${companyName}`, html)
+  }
+
+  static async sendApplicationStatusUpdateEmail(
+    to: string,
+    recipientName: string,
+    jobTitle: string,
+    companyName: string,
+    statusHeading: string,
+    statusMessage: string,
+    notes?: string
+  ): Promise<boolean> {
+    const html = EmailTemplates.applicationStatusUpdate({ recipientName, jobTitle, companyName, statusHeading, statusMessage, notes })
+    return this.sendMail(to, `${statusHeading}: ${jobTitle} at ${companyName}`, html)
   }
 
   static async sendOfferReleasedEmail(

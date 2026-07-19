@@ -166,13 +166,28 @@ export const progressApplicationSchema = z.object({
 })
 
 // Schedule a real interview (creates an Interview record + moves status to InterviewScheduled)
-export const scheduleInterviewSchema = z.object({
-  title: z.string().min(1, "Title is required").max(150),
-  description: z.string().max(1000).optional(),
-  scheduledAt: z.string().refine((v) => !isNaN(Date.parse(v)), "Invalid date/time"),
-  durationMins: z.number().int().positive().max(600).optional(),
-  location: z.string().max(500).optional(),
-})
+// Issue 1 (Candidate Job Lifecycle spec): the modal now captures Timezone,
+// Interview Mode (Online/Offline), Meeting Link, Venue, and Notes as their
+// own fields instead of overloading `location`/`description`. `location` is
+// still accepted so older frontend builds / API callers keep working; the
+// service derives it from meetingLink/venue when not explicitly passed.
+export const scheduleInterviewSchema = z
+  .object({
+    title: z.string().min(1, "Title is required").max(150),
+    description: z.string().max(1000).optional(),
+    scheduledAt: z.string().refine((v) => !isNaN(Date.parse(v)), "Invalid date/time"),
+    timezone: z.string().max(100).optional(),
+    durationMins: z.number().int().positive().max(600).optional(),
+    mode: z.enum(["Online", "Offline"]).optional(),
+    meetingLink: z.string().max(500).optional(),
+    venue: z.string().max(500).optional(),
+    notes: z.string().max(1000).optional(),
+    location: z.string().max(500).optional(),
+  })
+  .refine((data) => data.mode !== "Offline" || !!(data.venue && data.venue.trim()), {
+    message: "Venue is required for an offline interview.",
+    path: ["venue"],
+  })
 
 // Release a real offer (persists offer details + moves status to OfferReleased)
 export const releaseOfferSchema = z.object({

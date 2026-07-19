@@ -154,7 +154,7 @@ export function Applications() {
                                 {app.appliedDate}
                               </TableCell>
                               <TableCell className="text-xs font-semibold text-slate-600 dark:text-slate-300">
-                                {app.recruiter ?? "-"}
+                                {app.recruiter?.name ?? "Not Assigned"}
                               </TableCell>
                               <TableCell>
                                 <StatusBadge status={app.status} />
@@ -228,7 +228,7 @@ export function Applications() {
                           {app.recruiter && (
                             <span className="flex items-center gap-1 font-semibold text-slate-600 dark:text-slate-300">
                               <User className="size-3.5" />
-                              {app.recruiter}
+                              {app.recruiter.name}
                             </span>
                           )}
                         </div>

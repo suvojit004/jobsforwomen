@@ -189,6 +189,15 @@ export class CandidateController {
     return sendSuccess(res, result, "Jobs fetched successfully.")
   }
 
+  getJobById = async (req: Request, res: Response) => {
+    const userId = req.user?.userId || undefined
+    const job = await this.service.getJobById(req.params.jobId as string, userId)
+    if (!job) {
+      return sendError(res, "Job not found or no longer available.", null, 404)
+    }
+    return sendSuccess(res, { job }, "Job details fetched successfully.")
+  }
+
   getRecommendations = async (req: Request, res: Response) => {
     const userId = req.user?.userId || ""
     const recommendations = await this.service.getRecommendations(userId)

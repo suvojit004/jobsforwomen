@@ -184,17 +184,44 @@ export function ApplicationTimeline({ application, onClose }: ApplicationTimelin
             Application Context
           </h4>
 
-          {/* Recruiter */}
+          {/* Recruiter -- CONFIRMED BUG (fixed here): application.recruiter
+              was never populated by the backend at all (candidate.service.ts's
+              getApplications() didn't query job.recruiter), so this always
+              rendered "Not Assigned" regardless of whether the job actually
+              had one. No dedicated recruiter photo column exists in the
+              schema, so the avatar is initials-based rather than a stored
+              image. */}
           <div className="flex items-center justify-between gap-3 text-xs">
-            <div className="flex items-center gap-3">
-              <div className="size-8 rounded-lg bg-violet-50 text-[#6B2C91] dark:bg-violet-500/20 dark:text-pink-100 flex items-center justify-center shrink-0">
-                <User className="size-4" />
-              </div>
-              <div>
+            <div className="flex items-center gap-3 min-w-0">
+              {application.recruiter ? (
+                <div className="size-9 rounded-full bg-gradient-to-br from-[#6B2C91] to-pink-600 text-white flex items-center justify-center shrink-0 font-black text-xs">
+                  {application.recruiter.name
+                    .split(" ")
+                    .filter(Boolean)
+                    .slice(0, 2)
+                    .map((part) => part[0]?.toUpperCase())
+                    .join("") || "R"}
+                </div>
+              ) : (
+                <div className="size-9 rounded-lg bg-violet-50 text-[#6B2C91] dark:bg-violet-500/20 dark:text-pink-100 flex items-center justify-center shrink-0">
+                  <User className="size-4" />
+                </div>
+              )}
+              <div className="min-w-0">
                 <p className="font-bold text-slate-500 dark:text-slate-400">Assigned Recruiter</p>
-                <p className="font-extrabold text-slate-900 dark:text-white">
-                  {application.recruiter ?? "Not Assigned"}
-                </p>
+                {application.recruiter ? (
+                  <>
+                    <p className="font-extrabold text-slate-900 dark:text-white truncate">
+                      {application.recruiter.name}
+                    </p>
+                    <p className="text-[10px] font-semibold text-slate-450 dark:text-slate-500 truncate">
+                      {application.recruiter.jobTitle}
+                      {application.recruiter.email ? ` · ${application.recruiter.email}` : ""}
+                    </p>
+                  </>
+                ) : (
+                  <p className="font-extrabold text-slate-900 dark:text-white">Not Assigned</p>
+                )}
               </div>
             </div>
             <Button
@@ -202,7 +229,7 @@ export function ApplicationTimeline({ application, onClose }: ApplicationTimelin
               variant="outline"
               size="sm"
               onClick={handleMessageRecruiter}
-              disabled={messaging}
+              disabled={messaging || !application.recruiter}
               className="h-7 gap-1 text-[11px] font-bold shrink-0"
             >
               <MessageCircle className="size-3.5" />
@@ -210,17 +237,44 @@ export function ApplicationTimeline({ application, onClose }: ApplicationTimelin
             </Button>
           </div>
 
-          {/* Interview */}
+          {/* Interview -- Issue 1: show the full structured detail the
+              recruiter set (Timezone, Mode, Meeting Link/Venue, Notes)
+              instead of just a flattened date string. */}
           {application.status === "Interview Scheduled" && application.interviewDate && (
-            <div className="flex items-center gap-3 text-xs">
+            <div className="flex items-start gap-3 text-xs">
               <div className="size-8 rounded-lg bg-violet-50 text-[#6B2C91] dark:bg-violet-500/20 dark:text-pink-100 flex items-center justify-center shrink-0">
                 <Calendar className="size-4" />
               </div>
-              <div>
+              <div className="space-y-1">
                 <p className="font-bold text-slate-500 dark:text-slate-400">Interview Date & Time</p>
                 <p className="font-extrabold text-emerald-600 dark:text-emerald-400">
                   {application.interviewDate}
+                  {application.interview?.timezone ? ` (${application.interview.timezone})` : ""}
                 </p>
+                {application.interview && (
+                  <p className="font-bold text-slate-500 dark:text-slate-400">
+                    {application.interview.mode === "Offline" ? "In-person" : "Online"}
+                    {application.interview.mode === "Offline" && application.interview.venue
+                      ? ` — ${application.interview.venue}`
+                      : ""}
+                    {application.interview.mode !== "Offline" && application.interview.meetingLink ? (
+                      <>
+                        {" — "}
+                        <a
+                          href={application.interview.meetingLink}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-[#6B2C91] dark:text-pink-200 hover:underline"
+                        >
+                          Join link
+                        </a>
+                      </>
+                    ) : null}
+                  </p>
+                )}
+                {application.interview?.notes && (
+                  <p className="text-slate-500 dark:text-slate-400 font-semibold">{application.interview.notes}</p>
+                )}
               </div>
             </div>
           )}

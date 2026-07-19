@@ -55,7 +55,25 @@ export interface InterviewScheduledParams {
   jobTitle: string
   companyName: string
   scheduledAt: string
+  timezone?: string
+  mode?: string
   location?: string
+  notes?: string
+}
+
+// Issue 3 (Candidate Job Lifecycle spec): the generic recruiter status
+// progression (Applied -> Reviewed -> Shortlisted -> ... -> Hired/Rejected)
+// previously only wrote an AuditCreated event -- nothing ever reached the
+// candidate. This is the shared template for all of those plain status
+// transitions (InterviewScheduled/OfferReleased keep their own richer
+// templates above, since they carry structured data this doesn't have).
+export interface ApplicationStatusUpdateParams {
+  recipientName: string
+  jobTitle: string
+  companyName: string
+  statusHeading: string
+  statusMessage: string
+  notes?: string
 }
 
 export interface OfferReleasedParams {
@@ -309,15 +327,51 @@ export const EmailTemplates = {
         <table role="presentation" cellpadding="0" cellspacing="0" style="margin:16px 0; width:100%;">
           <tr>
             <td style="padding:4px 0; font-size:11px; font-weight:800; text-transform:uppercase; color:#94A3B8; width:80px;">When</td>
-            <td style="padding:4px 0; font-weight:700; color:#0F172A;">${params.scheduledAt}</td>
+            <td style="padding:4px 0; font-weight:700; color:#0F172A;">${params.scheduledAt}${params.timezone ? ` (${params.timezone})` : ""}</td>
           </tr>
+          ${params.mode ? `
+          <tr>
+            <td style="padding:4px 0; font-size:11px; font-weight:800; text-transform:uppercase; color:#94A3B8; width:80px;">Mode</td>
+            <td style="padding:4px 0; font-weight:700; color:#0F172A;">${params.mode}</td>
+          </tr>` : ""}
           ${params.location ? `
           <tr>
             <td style="padding:4px 0; font-size:11px; font-weight:800; text-transform:uppercase; color:#94A3B8; width:80px;">Where</td>
             <td style="padding:4px 0; font-weight:700; color:#0F172A;">${params.location}</td>
           </tr>` : ""}
         </table>
+        ${params.notes ? `
+        <div style="background-color:#F8FAFC; border:1px solid #E2E8F0; border-radius:8px; padding:12px 16px; margin:16px 0;">
+          <p style="margin:0 0 4px; font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:0.3px; color:#94A3B8;">Notes from the recruiter</p>
+          <p style="margin:0;">${params.notes}</p>
+        </div>` : ""}
         <p>Log in to your JobsForWomen account for full details.</p>
+      `,
+    }),
+
+  applicationStatusUpdate: (params: ApplicationStatusUpdateParams): string =>
+    renderShell({
+      preheader: `${params.statusHeading}: ${params.jobTitle} at ${params.companyName}.`,
+      heading: params.statusHeading,
+      bodyHtml: `
+        <p>Hi ${params.recipientName},</p>
+        <p>${params.statusMessage}</p>
+        <table role="presentation" cellpadding="0" cellspacing="0" style="margin:16px 0; width:100%;">
+          <tr>
+            <td style="padding:4px 0; font-size:11px; font-weight:800; text-transform:uppercase; color:#94A3B8; width:80px;">Role</td>
+            <td style="padding:4px 0; font-weight:700; color:#0F172A;">${params.jobTitle}</td>
+          </tr>
+          <tr>
+            <td style="padding:4px 0; font-size:11px; font-weight:800; text-transform:uppercase; color:#94A3B8; width:80px;">Company</td>
+            <td style="padding:4px 0; font-weight:700; color:#0F172A;">${params.companyName}</td>
+          </tr>
+        </table>
+        ${params.notes ? `
+        <div style="background-color:#F8FAFC; border:1px solid #E2E8F0; border-radius:8px; padding:12px 16px; margin:16px 0;">
+          <p style="margin:0 0 4px; font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:0.3px; color:#94A3B8;">Notes from the recruiter</p>
+          <p style="margin:0;">${params.notes}</p>
+        </div>` : ""}
+        <p>Log in to your JobsForWomen account to see the full details.</p>
       `,
     }),
 

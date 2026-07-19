@@ -257,7 +257,18 @@ export const RecruiterApi = {
 
   async scheduleInterview(
     applicationId: string,
-    data: { title: string; description?: string; scheduledAt: string; durationMins?: number; location?: string }
+    data: {
+      title: string
+      description?: string
+      scheduledAt: string
+      timezone?: string
+      durationMins?: number
+      mode?: "Online" | "Offline"
+      meetingLink?: string
+      venue?: string
+      notes?: string
+      location?: string
+    }
   ) {
     return apiClient.post(`/api/v1/recruiters/applications/${applicationId}/interview`, data)
   },

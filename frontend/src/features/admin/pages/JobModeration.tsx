@@ -15,6 +15,13 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { DashboardCard } from "@/components/shared/DashboardCard"
 import { AdminApi } from "../services/adminApi"
+// Issue 5 fix: reuse the exact same Job Details layout the candidate side
+// uses (JobDetailContent, in "admin" variant) instead of duplicating it --
+// this page previously had no way to open a job at all, just the summary
+// table columns below.
+import { JobDetailContent, type JobModerationHistoryEntry } from "@/features/candidate/components/Jobs/JobDetailContent"
+import { mapApiJobToExtendedJob } from "@/features/candidate/services/jobsApi"
+import type { ExtendedJob } from "@/types/job"
 
 interface AdminJob {
   id: string
@@ -26,6 +33,13 @@ interface AdminJob {
   status: string
   reported: boolean
   visibility: "visible" | "hidden"
+  // Full raw job record from AdminApi.getJobs() (admin.service.ts's
+  // listJobs now includes recruiter/skills/history/description/etc. -- see
+  // Issue 5) -- kept alongside the trimmed table-row fields above so the
+  // detail modal can be built from data already in memory, no second
+  // request needed.
+  raw: any
+  moderationHistory: JobModerationHistoryEntry[]
 }
 
 export function JobModeration() {
@@ -42,6 +56,7 @@ export function JobModeration() {
   const [rejectTarget, setRejectTarget] = useState<AdminJob | null>(null)
   const [rejectReason, setRejectReason] = useState("")
   const [rejectSubmitting, setRejectSubmitting] = useState(false)
+  const [viewingJob, setViewingJob] = useState<AdminJob | null>(null)
 
   const loadJobs = async () => {
     try {
@@ -66,7 +81,14 @@ export function JobModeration() {
         // "visible" (so a hidden job could never be shown as hidden, and the
         // toggle below could never actually unhide anything).
         reported: !!j.reported,
-        visibility: j.visibility === "hidden" ? "hidden" : "visible"
+        visibility: j.visibility === "hidden" ? "hidden" : "visible",
+        raw: j,
+        moderationHistory: (j.history || []).map((h: any) => ({
+          status: h.status,
+          notes: h.notes,
+          changedBy: h.changedBy,
+          createdAt: h.createdAt,
+        })),
       })))
     } catch (err) {
       console.error("Failed to load jobs list:", err)
@@ -222,6 +244,22 @@ export function JobModeration() {
         // Part 15: flex-wrap keeps up to 4 action buttons from forcing this
         // table into horizontal-scroll mode on mobile.
         <div className="flex flex-wrap justify-end gap-1.5">
+          {/* Issue 5: the only way to review a posting before it existed at
+              all -- clicking a row now also opens this (see onRowClick
+              below), this button is just an explicit, discoverable
+              affordance for the same action. */}
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 text-[10px] font-bold border-slate-200 hover:bg-slate-100"
+            onClick={(e) => {
+              e.stopPropagation()
+              setViewingJob(row)
+            }}
+          >
+            <Eye className="size-3 mr-0.5" />
+            View Details
+          </Button>
           {/* Approve/Reject must be available for any job actually awaiting
               or previously failing moderation (pending_approval, flagged),
               not just reported ones -- gating Approve on `reported` alone
@@ -232,7 +270,10 @@ export function JobModeration() {
               size="sm"
               variant="outline"
               className="h-7 text-[10px] font-bold text-emerald-700 hover:text-emerald-800 border-emerald-250 hover:bg-emerald-50 dark:text-emerald-400 dark:border-emerald-900 dark:hover:bg-emerald-950/20"
-              onClick={() => handleApprove(row.id)}
+              onClick={(e) => {
+                e.stopPropagation()
+                handleApprove(row.id)
+              }}
             >
               <Check className="size-3 mr-0.5" />
               Approve
@@ -243,7 +284,10 @@ export function JobModeration() {
               size="sm"
               variant="outline"
               className="h-7 text-[10px] font-bold text-red-600 hover:text-red-700 border-red-200 hover:bg-red-50 dark:text-red-400 dark:border-red-900 dark:hover:bg-red-950/20"
-              onClick={() => openRejectModal(row)}
+              onClick={(e) => {
+                e.stopPropagation()
+                openRejectModal(row)
+              }}
             >
               <Ban className="size-3 mr-0.5" />
               Reject
@@ -253,7 +297,10 @@ export function JobModeration() {
             size="sm"
             variant="outline"
             className="h-7 text-[10px] font-bold border-slate-200 hover:bg-slate-100"
-            onClick={() => handleToggleVisibility(row.id)}
+            onClick={(e) => {
+              e.stopPropagation()
+              handleToggleVisibility(row.id)
+            }}
           >
             {row.visibility === "visible" ? (
               <>
@@ -271,7 +318,10 @@ export function JobModeration() {
             size="sm"
             variant="destructive"
             className="h-7 text-[10px] font-bold flex items-center gap-1"
-            onClick={() => handleDelete(row.id)}
+            onClick={(e) => {
+              e.stopPropagation()
+              handleDelete(row.id)
+            }}
           >
             <Trash2 className="size-3" />
             Delete
@@ -349,6 +399,7 @@ export function JobModeration() {
             columns={columns}
             data={filteredJobs}
             emptyMessage="No matching job listings found."
+            onRowClick={(row) => setViewingJob(row)}
           />
         )}
       </DashboardCard>
@@ -391,6 +442,101 @@ export function JobModeration() {
                 className="text-xs font-black bg-red-600 hover:bg-red-700 text-white"
               >
                 {rejectSubmitting ? "Rejecting..." : "Reject & Notify Recruiter"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Issue 5: full job detail modal, reusing JobDetailContent (variant
+          "admin") instead of a duplicate admin-only layout. Built entirely
+          from `viewingJob.raw`, already fetched by loadJobs() -- no second
+          network request needed to open this. */}
+      {viewingJob && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl">
+            <div className="sticky top-0 z-10 flex items-center justify-between p-4 border-b border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900">
+              <h3 className="text-sm font-black text-slate-900 dark:text-white flex items-center gap-1.5">
+                <Eye className="size-4 text-[#6B2C91]" />
+                Reviewing "{viewingJob.title}"
+              </h3>
+              <button
+                onClick={() => setViewingJob(null)}
+                className="text-slate-400 hover:text-slate-700 dark:hover:text-white"
+              >
+                <X className="size-4" />
+              </button>
+            </div>
+
+            <div className="p-4">
+              <JobDetailContent
+                job={mapApiJobToExtendedJob(viewingJob.raw) as ExtendedJob}
+                variant="admin"
+                applicantsCount={viewingJob.applicantsCount}
+                moderationHistory={viewingJob.moderationHistory}
+              />
+            </div>
+
+            <div className="sticky bottom-0 flex flex-wrap justify-end gap-1.5 p-4 border-t border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900">
+              {(viewingJob.status === "pending_approval" || viewingJob.status === "flagged" || viewingJob.reported) && (
+                <Button
+                  size="sm"
+                  className="h-8 text-[11px] font-black bg-emerald-600 hover:bg-emerald-700 text-white"
+                  onClick={() => {
+                    handleApprove(viewingJob.id)
+                    setViewingJob(null)
+                  }}
+                >
+                  <Check className="size-3.5 mr-1" />
+                  Approve
+                </Button>
+              )}
+              {(viewingJob.status === "pending_approval" || viewingJob.reported) && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-8 text-[11px] font-bold text-red-600 hover:text-red-700 border-red-200 hover:bg-red-50 dark:text-red-400 dark:border-red-900 dark:hover:bg-red-950/20"
+                  onClick={() => {
+                    openRejectModal(viewingJob)
+                    setViewingJob(null)
+                  }}
+                >
+                  <Ban className="size-3.5 mr-1" />
+                  Reject
+                </Button>
+              )}
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-8 text-[11px] font-bold border-slate-200 hover:bg-slate-100"
+                onClick={() => {
+                  handleToggleVisibility(viewingJob.id)
+                  setViewingJob(null)
+                }}
+              >
+                {viewingJob.visibility === "visible" ? (
+                  <>
+                    <EyeOff className="size-3.5 mr-1" />
+                    Hide Listing
+                  </>
+                ) : (
+                  <>
+                    <Eye className="size-3.5 mr-1" />
+                    Show Listing
+                  </>
+                )}
+              </Button>
+              <Button
+                size="sm"
+                variant="destructive"
+                className="h-8 text-[11px] font-bold"
+                onClick={() => {
+                  handleDelete(viewingJob.id)
+                  setViewingJob(null)
+                }}
+              >
+                <Trash2 className="size-3.5 mr-1" />
+                Delete
               </Button>
             </div>
           </div>

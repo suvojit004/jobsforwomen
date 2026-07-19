@@ -9,6 +9,18 @@ jest.mock("../../shared/database/db", () => {
     notification: {
       create: jest.fn().mockResolvedValue({ id: "notif-1" }),
     },
+    // notification.listener.ts's notifyActiveAdmins() queries prisma.user.findMany()
+    // to fan a notification out to every Active Admin/Super Admin -- registering a
+    // recruiter (CompanyRegistered event) and several other flows in this file
+    // trigger that listener as a real side effect. Without this stub it threw
+    // "Cannot read properties of undefined (reading 'findMany')" on every run
+    // (silently caught by that listener's own try/catch, so it never failed an
+    // assertion here, but it polluted every test's log output with a spurious
+    // error). Empty result is correct for this file's purposes -- no test here
+    // asserts on the admin fan-out notification itself.
+    user: {
+      findMany: jest.fn().mockResolvedValue([]),
+    },
   }
   return {
     ...localPrismaMock,

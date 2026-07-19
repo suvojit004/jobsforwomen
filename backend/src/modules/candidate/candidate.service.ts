@@ -5,6 +5,7 @@ import EventBus from "../../shared/eventBus/eventBus"
 import { ApplicationStatus, JobStatus, UserStatus } from "@prisma/client"
 import { NotificationService } from "../../shared/services/notification.service"
 import { ConversationService } from "../../shared/services/conversation.service"
+import { RECRUITER_SUMMARY_SELECT, shapeRecruiterSummary } from "../../shared/utils/recruiterSummary"
 
 export interface ServiceContext {
   operatorId?: string
@@ -378,12 +379,19 @@ export class CandidateService {
       throw new Error("Candidate profile not found")
     }
 
-    return prisma.application.findMany({
+    // CONFIRMED BUG (fixed here): this never queried job.recruiter at all,
+    // so the candidate Applications page's "Assigned Recruiter" card always
+    // fell back to "Not Assigned" regardless of whether the job actually had
+    // one -- see jobsApi.ts's mapApiApplication on the frontend, which had
+    // the matching half of this bug (never read a recruiter field either,
+    // because there was nothing to read).
+    const applications = await prisma.application.findMany({
       where: { candidateId: candidate.id },
       include: {
         job: {
           include: {
             company: true,
+            recruiter: { select: RECRUITER_SUMMARY_SELECT },
           },
         },
         interviews: {
@@ -392,6 +400,11 @@ export class CandidateService {
       },
       orderBy: { appliedOn: "desc" },
     })
+
+    return applications.map((app) => ({
+      ...app,
+      job: { ...app.job, recruiter: shapeRecruiterSummary(app.job.recruiter) },
+    }))
   }
 
   async getApplicationDetails(applicationId: string, userId: string) {
@@ -402,7 +415,7 @@ export class CandidateService {
         job: {
           include: {
             company: true,
-            recruiter: true,
+            recruiter: { select: RECRUITER_SUMMARY_SELECT },
           },
         },
         history: {
@@ -419,7 +432,7 @@ export class CandidateService {
       throw new Error("Forbidden: Access denied")
     }
 
-    return app
+    return { ...app, job: { ...app.job, recruiter: shapeRecruiterSummary(app.job.recruiter) } }
   }
 
   async withdrawApplication(applicationId: string, userId: string, context?: ServiceContext) {
@@ -538,6 +551,69 @@ export class CandidateService {
       page,
       limit,
       totalPages: Math.ceil(total / limit),
+    }
+  }
+
+  // Candidate-safe company summary -- excludes internal moderation/
+  // verification-workflow fields (verificationToken, feedback,
+  // recruiterResubmissionComment, verificationDocuments, etc.) that
+  // `company: true` would otherwise pull in, since this is served straight
+  // to an unauthenticated-relative-to-that-data candidate.
+  private static readonly JOB_COMPANY_SELECT = {
+    name: true,
+    description: true,
+    website: true,
+    location: true,
+    logoUrl: true,
+    industry: { select: { name: true } },
+  } as const
+
+  // CONFIRMED BUG (fixed here): there was no single-job detail endpoint at
+  // all -- the frontend's getJobById() faked one by fetching the paginated
+  // list (GET /jobs?limit=200) and finding a client-side match, which is
+  // exactly the "summary DTO reused where full detail is required" pattern.
+  // That list query never included job.recruiter or job.skills, so the Job
+  // Details page could never show them no matter what the frontend did with
+  // the response. This is a real, separate query with the full include set
+  // Job Details actually needs: recruiter, skills, and (when a candidate is
+  // viewing their own session) this candidate's application/bookmark state
+  // for that specific job.
+  async getJobById(jobId: string, userId?: string) {
+    const job = await prisma.job.findFirst({
+      where: { id: jobId, status: JobStatus.approved, visibility: "visible" },
+      include: {
+        company: { select: CandidateService.JOB_COMPANY_SELECT },
+        department: true,
+        recruiter: { select: RECRUITER_SUMMARY_SELECT },
+        skills: { include: { skill: true } },
+      },
+    })
+
+    if (!job) {
+      return null
+    }
+
+    let applicationStatus: ApplicationStatus | null = null
+    let isSaved = false
+
+    if (userId) {
+      const candidate = await prisma.candidateProfile.findUnique({ where: { userId } })
+      if (candidate) {
+        const [application, saved] = await Promise.all([
+          prisma.application.findFirst({ where: { jobId, candidateId: candidate.id }, select: { status: true } }),
+          prisma.savedJob.findUnique({ where: { jobId_candidateId: { jobId, candidateId: candidate.id } } }),
+        ])
+        applicationStatus = application?.status || null
+        isSaved = !!saved
+      }
+    }
+
+    return {
+      ...job,
+      recruiter: shapeRecruiterSummary(job.recruiter),
+      skills: job.skills.map((s) => s.skill.name),
+      applicationStatus,
+      isSaved,
     }
   }
 
