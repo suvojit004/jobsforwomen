@@ -377,6 +377,27 @@ export class AuthService {
     return this.authRepository.deleteOtherSessions(activeSessionId, userId)
   }
 
+  // Public, unauthenticated lookup (Part of fixing the broken /accept-invitation
+  // link -- the frontend page needs to greet the invited person and confirm
+  // the link is still valid *before* they fill out a whole form, the same
+  // way CompanyVerification.tsx's getByToken does for the company-verification
+  // resubmission link). Deliberately generic on failure -- same reasoning as
+  // CompanyVerificationService.findValidByToken: whether the token never
+  // existed, was already accepted, or expired should look identical to the
+  // caller so no one can fish for which invitations are still outstanding.
+  async getInvitationDetails(token: string) {
+    const invite = await this.authRepository.findInvitation(token)
+    if (!invite || invite.acceptedAt || new Date() > invite.expiresAt) {
+      throw new Error("This invitation link is invalid, has already been used, or has expired.")
+    }
+
+    return {
+      email: invite.email,
+      roleName: invite.role.name,
+      companyName: invite.company?.name || null,
+    }
+  }
+
   async acceptInvitation(token: string, passwordHashRaw?: string, googleToken?: string, fullName?: string) {
     const invite = await this.authRepository.findInvitation(token)
     if (!invite || invite.acceptedAt || new Date() > invite.expiresAt) {

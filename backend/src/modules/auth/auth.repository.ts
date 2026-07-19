@@ -316,6 +316,12 @@ export class AuthRepository {
       where: { token },
       include: {
         role: true,
+        // Needed so AuthService.getInvitationDetails can greet the invited
+        // person with the actual company name ("You've been invited to join
+        // Acme Corp") -- team invitations always carry a companyId (see
+        // recruiter.service.ts's inviteColleague), but this stayed optional
+        // at the schema level since Invitation is reused generically.
+        company: true,
       },
     })
   }

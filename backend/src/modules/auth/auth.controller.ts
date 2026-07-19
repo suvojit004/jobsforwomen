@@ -191,6 +191,12 @@ export class AuthController {
     return sendSuccess(res, null, "Other sessions revoked successfully.")
   }
 
+  getInvitation = async (req: Request, res: Response) => {
+    const token = req.params.token as string
+    const result = await this.authService.getInvitationDetails(token)
+    return sendSuccess(res, result, "Invitation details fetched successfully.")
+  }
+
   acceptInvitation = async (req: Request, res: Response) => {
     const validated = acceptInvitationSchema.parse(req.body)
     const result = await this.authService.acceptInvitation(

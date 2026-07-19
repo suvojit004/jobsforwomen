@@ -5,6 +5,7 @@ import { RecruiterRegister } from "@/features/auth/pages/RecruiterRegister"
 import { VerifyEmail } from "@/features/auth/pages/VerifyEmail"
 import { ForgotPassword } from "@/features/auth/pages/ForgotPassword"
 import { ResetPassword } from "@/features/auth/pages/ResetPassword"
+import { AcceptInvitation } from "@/features/auth/pages/AcceptInvitation"
 
 export function AuthRoutes() {
   return (
@@ -15,6 +16,7 @@ export function AuthRoutes() {
       <Route path="verify-email" element={<VerifyEmail />} />
       <Route path="forgot-password" element={<ForgotPassword />} />
       <Route path="reset-password" element={<ResetPassword />} />
+      <Route path="accept-invitation" element={<AcceptInvitation />} />
       <Route path="*" element={<Navigate to="login" replace />} />
     </Routes>
   )

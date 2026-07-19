@@ -24,7 +24,13 @@ router.post("/logout", controller.logout)
 router.post("/forgot-password", controller.forgotPassword)
 router.post("/reset-password", controller.resetPassword)
 
-// Invitations accept
+// Invitations -- public, token-based (reached via the mailed invite link,
+// no login involved yet). GET must be registered so the frontend can look up
+// who/what company the invite is for and confirm it's still valid before
+// the invited person fills out the accept form; it doesn't collide with the
+// POST /invitations/accept route below despite the shared "/invitations"
+// prefix since Express matches on method + full path independently.
+router.get("/invitations/:token", controller.getInvitation)
 router.post("/invitations/accept", controller.acceptInvitation)
 
 // Protected Account Sessions (Authentication required)

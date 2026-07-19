@@ -118,7 +118,12 @@ export class EmailService {
 
   static async sendEmployeeInvitation(to: string, invitationToken: string, roleName: string): Promise<boolean> {
     const baseUrl = process.env.FRONTEND_URL || env.CLIENT_URL || (env.SMTP_FROM.includes("resend") ? "http://localhost:3000" : "https://jobsforwomen.info")
-    const link = `${baseUrl}/accept-invitation?token=${invitationToken}`
+    // Same class of bug as sendPasswordResetEmail/sendWelcomeEmail above: the
+    // frontend page for this lives at /auth/accept-invitation
+    // (AuthRoutes.tsx, mounted under /auth/* in AppRouter.tsx) -- and until
+    // now that page didn't exist at all, so this link had nowhere valid to
+    // go regardless of the prefix.
+    const link = `${baseUrl}/auth/accept-invitation?token=${invitationToken}`
     const html = EmailTemplates.invitation({ email: to, invitationLink: link, roleName })
     return this.sendMail(to, "JobsForWomen Staff Invitation", html)
   }
@@ -154,7 +159,16 @@ export class EmailService {
 
   static async sendPasswordResetEmail(to: string, resetToken: string): Promise<boolean> {
     const baseUrl = process.env.FRONTEND_URL || env.CLIENT_URL || (env.SMTP_FROM.includes("resend") ? "http://localhost:3000" : "https://jobsforwomen.info")
-    const link = `${baseUrl}/reset-password?token=${resetToken}`
+    // Root-cause fix (same bug already fixed above for sendWelcomeEmail's
+    // verify-email link, but never applied here): the frontend only
+    // registers this page at /auth/reset-password (AuthRoutes.tsx, mounted
+    // under /auth/* in AppRouter.tsx). The previous bare "/reset-password"
+    // link matched no route, fell through to the catch-all
+    // `<Route path="*" element={<Navigate to="/dashboard" replace />} />`,
+    // and since the recruiter/candidate clicking the email isn't logged in,
+    // DashboardRedirect immediately bounced them to /auth/login with no
+    // reset form ever shown and the token silently discarded.
+    const link = `${baseUrl}/auth/reset-password?token=${resetToken}`
     const html = EmailTemplates.passwordReset({ email: to, resetLink: link })
     return this.sendMail(to, "JobsForWomen Password Reset Request", html)
   }
