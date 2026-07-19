@@ -23,6 +23,14 @@ interface CandidateUser {
   status: string
 }
 
+interface ProfileWithCareerBreak {
+  candidateProfile?: {
+    careerBreak?: {
+      hasBreak?: boolean
+    } | null
+  } | null
+}
+
 export function CandidateManagement() {
   const [candidates, setCandidates] = useState<CandidateUser[]>([])
   const [searchQuery, setSearchQuery] = useState("")
@@ -38,12 +46,7 @@ export function CandidateManagement() {
         name: u.fullName || u.email.split("@")[0],
         email: u.email,
         role: u.candidateProfile?.title || "Professional",
-        // careerBreak is a real JSONB field on CandidateProfile (added for
-        // the candidate Profile page's career-break editor) -- this
-        // previously checked `!!candidateProfile?.bio` instead, which just
-        // tests whether the candidate wrote an "About" bio and has nothing
-        // to do with career breaks at all.
-        careerBreak: !!u.candidateProfile?.careerBreak,
+        careerBreak: !!(u as ProfileWithCareerBreak).candidateProfile?.careerBreak?.hasBreak,
         hasResume: !!u.candidateProfile?.resumeUrl,
         // Real UserStatus enum values: PendingVerification, PendingApproval,
         // Active, Rejected, Suspended, Blocked. Previously every non-Active
@@ -109,12 +112,12 @@ export function CandidateManagement() {
       header: "Career Returner",
       cell: (row) => (
         row.careerBreak ? (
-          <span className="inline-flex items-center gap-1 text-[10px] font-black text-purple-700 bg-purple-100/75 dark:bg-purple-950/25 dark:text-purple-300 px-2.5 py-0.5 rounded-full">
+          <span className="inline-flex items-center gap-1 text-[10px] font-black text-indigo-700 bg-indigo-100/75 dark:bg-indigo-950/25 dark:text-indigo-300 px-2.5 py-0.5 rounded-full">
             <GraduationCap className="size-3" />
             Yes
           </span>
         ) : (
-          <span className="text-[10px] text-slate-400 dark:text-slate-650 font-bold ml-2">No</span>
+          <span className="text-[10px] text-slate-600 dark:text-slate-400 font-bold ml-2">No</span>
         )
       ),
     },

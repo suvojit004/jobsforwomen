@@ -3,12 +3,12 @@ import request from "supertest"
 // Mock Prisma DB Operations inline in factory
 jest.mock("../../shared/database/db", () => {
   const localPrismaMock = {
-    user: { findUnique: jest.fn(), update: jest.fn(), findMany: jest.fn() },
+    user: { findUnique: jest.fn(), update: jest.fn(), findMany: jest.fn(), updateMany: jest.fn() },
     role: { findUnique: jest.fn(), findFirst: jest.fn(), findMany: jest.fn(), create: jest.fn(), update: jest.fn(), delete: jest.fn() },
     permission: { findMany: jest.fn() },
     rolePermission: { createMany: jest.fn(), deleteMany: jest.fn() },
     userRole: { deleteMany: jest.fn(), createMany: jest.fn() },
-    recruiterProfile: { findUnique: jest.fn(), updateMany: jest.fn() },
+    recruiterProfile: { findUnique: jest.fn(), updateMany: jest.fn(), findMany: jest.fn() },
     company: { findUnique: jest.fn(), update: jest.fn(), count: jest.fn() },
     companyVerificationHistory: { create: jest.fn() },
     industry: { upsert: jest.fn() },
@@ -188,6 +188,8 @@ describe("Admin Module Integration Tests (Phase 7)", () => {
       mockPrisma.company.findUnique.mockResolvedValue({ id: "comp-123", name: "Tech Corp" })
       mockPrisma.companyVerificationHistory.create.mockResolvedValue({ id: "hist-1" })
       mockPrisma.company.update.mockResolvedValue({ id: "comp-123", status: CompanyStatus.approved })
+      mockPrisma.recruiterProfile.findMany.mockResolvedValue([{ userId: "rec-user-123" }])
+      mockPrisma.user.updateMany.mockResolvedValue({ count: 1 })
 
       const res = await request(app)
         .post("/api/v1/admins/companies/comp-123/verify")
@@ -212,6 +214,11 @@ describe("Admin Module Integration Tests (Phase 7)", () => {
         where: { companyId: "comp-123" },
         data: { verified: true },
       })
+      expect(mockPrisma.user.updateMany).toHaveBeenCalledWith({
+        where: { id: { in: ["rec-user-123"] } },
+        data: { status: UserStatus.Active },
+      })
+      expect(mockRedis.del).toHaveBeenCalledWith("user:permissions:rec-user-123")
     })
 
     it("should flag job and set job visibility to hidden during moderation rejection, and notify the recruiter with the reason", async () => {

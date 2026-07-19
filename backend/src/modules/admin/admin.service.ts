@@ -424,67 +424,98 @@ export class AdminService {
 
     const admin = await prisma.user.findUnique({ where: { id: adminId } })
 
-    // Save Verification History audit trail
-    await prisma.companyVerificationHistory.create({
-      data: {
-        companyId,
-        status,
-        notes: notes || `Verification status updated to ${status}`,
-        adminId,
-      },
-    })
+    let verificationToken: string | undefined
+    if (status === CompanyStatus.info_requested) {
+      verificationToken = crypto.randomBytes(32).toString("hex")
+    }
 
-    // Update Company status
-    const updatedCompany = await prisma.company.update({
-      where: { id: companyId },
-      data: {
+    const updatedCompany = await prisma.$transaction(async (tx) => {
+      // 1. Save Verification History audit trail
+      await tx.companyVerificationHistory.create({
+        data: {
+          companyId,
+          status,
+          notes: notes || `Verification status updated to ${status}`,
+          adminId,
+        },
+      })
+
+      // 2. Update Company status
+      const updateData: any = {
         status,
         feedback: notes,
-      },
+      }
+      if (status === CompanyStatus.info_requested && verificationToken) {
+        updateData.verificationToken = verificationToken
+        updateData.verificationTokenExpiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+      }
+
+      const updated = await tx.company.update({
+        where: { id: companyId },
+        data: updateData,
+      })
+
+      // 3. Auto-approve recruiter profiles & update user status
+      if (status === CompanyStatus.approved) {
+        await tx.recruiterProfile.updateMany({
+          where: { companyId },
+          data: { verified: true },
+        })
+
+        const recruiters = await tx.recruiterProfile.findMany({
+          where: { companyId },
+          select: { userId: true },
+        })
+        const userIds = recruiters.map((r) => r.userId)
+
+        if (userIds.length > 0) {
+          await tx.user.updateMany({
+            where: { id: { in: userIds } },
+            data: { status: UserStatus.Active },
+          })
+        }
+      } else if (status === CompanyStatus.rejected) {
+        await tx.recruiterProfile.updateMany({
+          where: { companyId },
+          data: { verified: false },
+        })
+
+        const recruiters = await tx.recruiterProfile.findMany({
+          where: { companyId },
+          select: { userId: true },
+        })
+        const userIds = recruiters.map((r) => r.userId)
+
+        if (userIds.length > 0) {
+          await tx.user.updateMany({
+            where: { id: { in: userIds } },
+            data: { status: UserStatus.Rejected },
+          })
+        }
+      }
+
+      return updated
     })
 
-    // Auto-approve recruiter profiles when company gets approved
-    if (status === CompanyStatus.approved) {
-      await prisma.recruiterProfile.updateMany({
+    // Invalidate recruiter permission cache in Redis after transactional DB commit succeeds
+    if (status === CompanyStatus.approved || status === CompanyStatus.rejected) {
+      const recruiters = await prisma.recruiterProfile.findMany({
         where: { companyId },
-        data: { verified: true },
+        select: { userId: true },
       })
+      const userIds = recruiters.map((r) => r.userId)
 
-      // Perk claims are NOT auto-verified here anymore (Part 6 explicitly
-      // requires the perk workflow to "remain completely independent from
-      // Company Registration" -- approving the company used to bulk-flip
-      // every CompanyBenefit to verified regardless of whether any admin
-      // ever actually reviewed that specific perk claim). Perks now go
-      // through their own CompanyPerkRequest workflow exclusively
-      // (see admin.service.ts's reviewPerkRequest()).
+      for (const userId of userIds) {
+        await PermissionCacheManager.invalidateUser(userId)
+      }
+    }
 
+    // Publish event bus updates after commit
+    if (status === CompanyStatus.approved) {
       EventBus.publish("CompanyApproved", { companyId, context })
     } else if (status === CompanyStatus.rejected) {
-      await prisma.recruiterProfile.updateMany({
-        where: { companyId },
-        data: { verified: false },
-      })
       EventBus.publish("CompanyRejected", { companyId, context })
-    } else if (status === CompanyStatus.info_requested) {
-      // Confirmed gap: this branch never existed before -- setting a company
-      // to info_requested via the "Request Documentation" admin action fired
-      // no event at all, so the recruiter never got an email and admins never
-      // got an audit entry for it. Communication for this state is
-      // email-only (per spec), so there is no analogous
-      // recruiterProfile.verified change here (that only happens on the
-      // terminal approved/rejected outcomes).
-      //
-      // Also generate the secure, single-use, 7-day resubmission token here
-      // (Part 3): a fresh token is minted on every info-request, overwriting
-      // any previous unused one, so only the most recent email link is ever
-      // valid.
-      const verificationToken = crypto.randomBytes(32).toString("hex")
-      const verificationTokenExpiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
-      await prisma.company.update({
-        where: { id: companyId },
-        data: { verificationToken, verificationTokenExpiresAt },
-      })
-
+    } else if (status === CompanyStatus.info_requested && verificationToken) {
       EventBus.publish("CompanyInfoRequested", { companyId, notes, verificationToken, context })
     }
 

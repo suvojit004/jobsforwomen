@@ -51,6 +51,14 @@ interface AdminUser {
   status: string
 }
 
+interface ProfileWithCareerBreak {
+  candidateProfile?: {
+    careerBreak?: {
+      hasBreak?: boolean
+    } | null
+  } | null
+}
+
 export function UserModeration() {
   const { user: currentUser } = useAuth()
   // Only Admin/Super Admin can delete users (the backend enforces this too,
@@ -81,7 +89,7 @@ export function UserModeration() {
         name: u.fullName || u.email.split("@")[0],
         email: u.email,
         role: u.candidateProfile?.title || "Professional",
-        careerBreak: !!u.candidateProfile?.bio,
+        careerBreak: !!(u as ProfileWithCareerBreak).candidateProfile?.careerBreak?.hasBreak,
         hasResume: !!u.candidateProfile?.resumeUrl,
         status: u.status === "Active" ? "Active" : "Inactive"
       })))
@@ -208,12 +216,12 @@ export function UserModeration() {
       header: "Career Break",
       cell: (row) => (
         row.careerBreak ? (
-          <span className="inline-flex items-center gap-1 text-[10px] font-black text-purple-700 bg-purple-100/75 dark:bg-purple-950/25 dark:text-purple-300 px-2 py-0.5 rounded-full">
+          <span className="inline-flex items-center gap-1 text-[10px] font-black text-indigo-700 bg-indigo-100/75 dark:bg-indigo-950/25 dark:text-indigo-300 px-2 py-0.5 rounded-full">
             <GraduationCap className="size-3" />
             Yes
           </span>
         ) : (
-          <span className="text-[10px] text-slate-400 dark:text-slate-650 font-bold">None</span>
+          <span className="text-[10px] text-slate-600 dark:text-slate-400 font-bold">None</span>
         )
       ),
     },
