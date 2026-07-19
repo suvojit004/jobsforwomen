@@ -8,6 +8,8 @@ const JobDetails = lazy(() => import("@/features/recruiter/pages/JobDetails").th
 const Applicants = lazy(() => import("@/features/recruiter/pages/Applicants").then(m => ({ default: m.Applicants })))
 const CandidatePreview = lazy(() => import("@/features/recruiter/pages/CandidatePreview").then(m => ({ default: m.CandidatePreview })))
 const CompanyProfile = lazy(() => import("@/features/recruiter/pages/CompanyProfile").then(m => ({ default: m.CompanyProfile })))
+const Perks = lazy(() => import("@/features/recruiter/pages/Perks").then(m => ({ default: m.Perks })))
+const ApprovalRequests = lazy(() => import("@/features/recruiter/pages/ApprovalRequests").then(m => ({ default: m.ApprovalRequests })))
 const Analytics = lazy(() => import("@/features/recruiter/pages/Analytics").then(m => ({ default: m.Analytics })))
 const Messages = lazy(() => import("@/features/recruiter/pages/Messages").then(m => ({ default: m.Messages })))
 const Notifications = lazy(() => import("@/features/recruiter/pages/Notifications").then(m => ({ default: m.Notifications })))
@@ -27,6 +29,8 @@ export function RecruiterRoutes() {
       <Route path="applicants" element={<Applicants />} />
       <Route path="applicants/:id" element={<CandidatePreview />} />
       <Route path="company" element={<CompanyProfile />} />
+      <Route path="perks" element={<Perks />} />
+      <Route path="approvals" element={<ApprovalRequests />} />
       <Route path="team" element={<Team />} />
       <Route path="analytics" element={<Analytics />} />
       <Route path="messages" element={<Messages />} />

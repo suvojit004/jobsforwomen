@@ -85,6 +85,22 @@ export class AuthService {
       verificationToken,
     })
 
+    // Publish CompanyRegistered Domain Event -- distinct from CompanySubmitted
+    // (which fires later, on company-profile onboarding/resubmission). This
+    // is the initial "a new company registration request exists" signal:
+    // notification.listener.ts creates an audit log entry and a realtime
+    // dashboard notification for every Active Admin/Super Admin.
+    const companyId = (user as any).recruiterProfile?.companyId
+    if (companyId) {
+      EventBus.publish("CompanyRegistered", {
+        companyId,
+        companyName,
+        recruiterUserId: user.id,
+        recruiterName: fullName,
+        recruiterEmail: email,
+      })
+    }
+
     return { user, verificationToken }
   }
 
@@ -221,7 +237,38 @@ export class AuthService {
     return this.createAuthSession(fullUser!, ipAddress || "127.0.0.1", userAgent || "Unknown")
   }
 
+  // Recruiters must not receive access/refresh tokens while their company is
+  // still pending verification, rejected, or awaiting more information --
+  // only an "approved" Company should ever let a recruiter reach the app.
+  // Confirmed gap: login() previously had no PendingApproval/company-status
+  // check at all, so a recruiter could fully log in immediately after email
+  // verification, well before any admin approved their company. Checked once
+  // here (rather than duplicated in login/oauth/refresh separately) since all
+  // three paths funnel through createAuthSession.
+  private assertRecruiterCompanyApproved(user: any) {
+    const isRecruiter = user.roles?.some((r: any) => r.role?.name === "Recruiter")
+    if (!isRecruiter) return
+
+    const companyStatus = user.recruiterProfile?.company?.status
+    if (!companyStatus || companyStatus === "approved") return
+
+    if (companyStatus === "rejected") {
+      throw new Error("Company verification rejected. Please check your email to update your company information.")
+    }
+
+    if (companyStatus === "info_requested") {
+      throw new Error(
+        "Additional information is required to complete your company verification. Please check your registered email for details."
+      )
+    }
+
+    // draft, submitted, pending, pending_verification, under_review
+    throw new Error("Your company verification is still pending. Please check your registered email for updates.")
+  }
+
   private async createAuthSession(user: any, ipAddress: string, userAgent: string) {
+    this.assertRecruiterCompanyApproved(user)
+
     const roles = user.roles.map((r: any) => r.role.name)
     const permissions = user.roles.flatMap((r: any) => r.role.permissions.map((p: any) => p.permission.name))
 

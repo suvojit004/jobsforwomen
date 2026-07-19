@@ -23,6 +23,17 @@ export function OAuthCallback() {
     ranRef.current = true
 
     async function completeOAuthLogin() {
+      // The backend redirects here with ?error=<message> instead of ?token=
+      // when OAuth itself fails or when the recruiter company-approval gate
+      // (AuthService.createAuthSession) rejects the login -- e.g. a company
+      // still pending or rejected. Show that specific message rather than
+      // falling through to the generic "no token" case below.
+      const oauthError = searchParams.get("error")
+      if (oauthError) {
+        setError(oauthError)
+        return
+      }
+
       const token = searchParams.get("token")
       if (!token) {
         setError("Google sign-in did not return a valid session. Please try again.")

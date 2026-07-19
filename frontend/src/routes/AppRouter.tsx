@@ -10,6 +10,7 @@ import { AuthRoutes } from "./AuthRoutes"
 import { ProtectedRoute } from "./ProtectedRoute"
 import { LandingPage } from "@/features/landing/LandingPage"
 import { OAuthCallback } from "@/features/auth/pages/OAuthCallback"
+import { CompanyVerification } from "@/features/auth/pages/CompanyVerification"
 import { NotFoundPage } from "@/components/shared/errors/NotFoundPage"
 import { UnauthorizedPage } from "@/components/shared/errors/UnauthorizedPage"
 import { ServerErrorPage } from "@/components/shared/errors/ServerErrorPage"
@@ -53,6 +54,12 @@ export function AppRouter() {
           as its own top-level public route, or it falls through to the
           catch-all below and silently discards the token. */}
       <Route path="/oauth/callback" element={<OAuthCallback />} />
+
+      {/* Secure, token-based company verification resubmission page (Part 3
+          of the recruiter onboarding/approval spec) -- public, unauthenticated,
+          reached only via the mailed link. Must be a top-level route, not
+          nested under /auth/* or any ProtectedRoute. */}
+      <Route path="/company-verification/:token" element={<CompanyVerification />} />
 
       {/* Dynamic Role-Based Redirector */}
       <Route path="/dashboard" element={<DashboardRedirect />} />

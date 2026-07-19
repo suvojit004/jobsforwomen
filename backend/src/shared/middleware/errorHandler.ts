@@ -66,9 +66,24 @@ export function errorHandler(
     message.includes("verify your email address first") ||
     message.includes("account has been blocked") ||
     message.includes("account has been suspended") ||
-    message.includes("account application was rejected")
+    message.includes("account application was rejected") ||
+    message.includes("configured for Google login")
   ) {
     logger.warn(`[Req: ${reqId}] Access forbidden: ${message}`)
+    return sendError(res, message, null, 403)
+  }
+
+  // Recruiter company-approval gate (AuthService.assertRecruiterCompanyApproved,
+  // called from createAuthSession on login/oauth/refresh). Without this
+  // mapping these three business-rule rejections would fall through to the
+  // generic 500 branch below and be logged as server faults even though
+  // they're an entirely expected "your company isn't approved yet" outcome.
+  if (
+    message.includes("company verification is still pending") ||
+    message.includes("Company verification rejected") ||
+    message.includes("Additional information is required to complete your company verification")
+  ) {
+    logger.warn(`[Req: ${reqId}] Recruiter company approval gate: ${message}`)
     return sendError(res, message, null, 403)
   }
 
@@ -91,6 +106,17 @@ export function errorHandler(
   ) {
     logger.warn(`[Req: ${reqId}] Conflict: ${message}`)
     return sendError(res, message, null, 409)
+  }
+
+  // Public company-verification resubmission flow (Part 3). Both are
+  // client-facing, expected outcomes -- an expired/reused link, or a
+  // malformed document category -- not server faults.
+  if (
+    message.includes("verification link is invalid or has expired") ||
+    message.includes("Invalid document category")
+  ) {
+    logger.warn(`[Req: ${reqId}] Company verification request rejected: ${message}`)
+    return sendError(res, message, null, 400)
   }
 
   if (

@@ -4,7 +4,15 @@ export const updateCandidateProfileSchema = z.object({
   fullName: z.string().min(2, "Full name must be at least 2 characters").optional(),
   title: z.string().max(100).nullable().optional(),
   bio: z.string().max(500).nullable().optional(),
-  phone: z.string().max(20).nullable().optional(),
+  // Part 16: was length-only (`.max(20)`), so "!!!!" or "abc" was persisted
+  // as-is. `.refine` only runs when a non-empty value is present, so
+  // clearing the field (empty string/null) still passes.
+  phone: z
+    .string()
+    .max(20)
+    .refine((val) => !val || /^\+?[0-9]{10,14}$/.test(val), "Please enter a valid phone number (10-14 digits).")
+    .nullable()
+    .optional(),
   location: z.string().max(100).nullable().optional(),
   totalExperience: z.string().max(50).nullable().optional(),
   careerBreak: z.object({

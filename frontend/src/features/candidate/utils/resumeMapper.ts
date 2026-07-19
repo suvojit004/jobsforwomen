@@ -1,7 +1,13 @@
 export interface NormalizedResume {
   name: string
   uploadDate: string
-  verified: boolean
+  // Renamed from `verified` -- this was always set to `true` the instant a
+  // resume existed and `false` otherwise (see below), so it was never a real
+  // verification flag, just "has resume" under a misleading name. Resumes
+  // aren't reviewed/verified by anyone on this platform, and the old field
+  // fed a "Verified" badge on the candidate's own Dashboard that implied
+  // otherwise.
+  uploaded: boolean
   url: string
   publicId?: string
   size?: number
@@ -19,7 +25,7 @@ export function mapResumeData(
     return {
       name: "",
       uploadDate: "",
-      verified: false,
+      uploaded: false,
       url: "",
       publicId: "",
       size: 0,
@@ -46,7 +52,7 @@ export function mapResumeData(
   return {
     name,
     uploadDate,
-    verified: true,
+    uploaded: true,
     url: resumeUrl,
     publicId: resumePublicId || "",
     size: resumeMeta.size || 0,

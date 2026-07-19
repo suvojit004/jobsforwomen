@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react"
+import { toast } from "sonner"
 import {
   Search,
   UserCheck,
@@ -6,6 +7,7 @@ import {
   ShieldCheck,
   ShieldAlert,
   GraduationCap,
+  Trash2,
 } from "lucide-react"
 import { DataTable } from "@/components/shared/DataTable"
 import type { ColumnDef } from "@/components/shared/DataTable"
@@ -13,6 +15,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { DashboardCard } from "@/components/shared/DashboardCard"
 import { AdminApi } from "../services/adminApi"
+import { useAuth } from "@/hooks/useAuth"
 
 type TabType = "candidates" | "recruiters" | "admins"
 
@@ -22,7 +25,11 @@ interface CandidateUser {
   email: string
   role: string
   careerBreak: boolean
-  verified: boolean
+  // Renamed from `verified` -- candidates aren't manually verified, there's
+  // simply a resume on file or there isn't. The old field name (and the
+  // "Resume Verified" label it fed) implied a review process that doesn't
+  // exist for candidates.
+  hasResume: boolean
   status: string
 }
 
@@ -45,12 +52,19 @@ interface AdminUser {
 }
 
 export function UserModeration() {
+  const { user: currentUser } = useAuth()
+  // Only Admin/Super Admin can delete users (the backend enforces this too,
+  // via requireRole(USER_MGMT_ROLES) on DELETE /admins/users/:id -- this is
+  // just so a Moderator/Support Executive viewing this same page, who could
+  // previously see it, doesn't see a Delete button that would just 403).
+  const canDeleteUsers = !!currentUser?.roles?.some((r) => r === "Admin" || r === "Super Admin")
   const [activeTab, setActiveTab] = useState<TabType>("candidates")
   const [candidates, setCandidates] = useState<CandidateUser[]>([])
   const [recruiters, setRecruiters] = useState<RecruiterUser[]>([])
   const [admins, setAdmins] = useState<AdminUser[]>([])
   const [searchQuery, setSearchQuery] = useState("")
   const [loading, setLoading] = useState(true)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
 
   // Load all user collections
   const loadUsers = async () => {
@@ -68,7 +82,7 @@ export function UserModeration() {
         email: u.email,
         role: u.candidateProfile?.title || "Professional",
         careerBreak: !!u.candidateProfile?.bio,
-        verified: !!u.candidateProfile?.resumeUrl,
+        hasResume: !!u.candidateProfile?.resumeUrl,
         status: u.status === "Active" ? "Active" : "Inactive"
       })))
 
@@ -131,6 +145,28 @@ export function UserModeration() {
     }
   }
 
+  // Permanent delete -- distinct from Block/Unblock above, which only flips
+  // status and keeps every relation intact. This genuinely removes the
+  // account and (via the backend's cascade delete) everything it owns:
+  // profile, resume, applications, notifications, saved jobs.
+  const handleDeleteUser = async (userId: string, name: string, email: string) => {
+    const confirmed = window.confirm(
+      `Permanently delete ${name} (${email})?\n\nThis will remove their account, profile, resume, applications, notifications, and saved jobs. This cannot be undone.`
+    )
+    if (!confirmed) return
+
+    setDeletingId(userId)
+    try {
+      await AdminApi.deleteUser(userId)
+      toast.success(`${name}'s account has been permanently deleted.`)
+      loadUsers()
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to delete user account.")
+    } finally {
+      setDeletingId(null)
+    }
+  }
+
   // Filter lists based on search
   const filteredCandidates = candidates.filter(
     (c) =>
@@ -182,17 +218,22 @@ export function UserModeration() {
       ),
     },
     {
-      header: "Verification",
+      // Was "Verification" / "Resume Verified" -- resumes aren't reviewed or
+      // verified by anyone, a candidate either has one on file or doesn't.
+      // The old wording implied a manual verification step that doesn't
+      // exist and could mislead admins into thinking a resume had been
+      // vetted for authenticity.
+      header: "Resume Status",
       cell: (row) => (
-        row.verified ? (
+        row.hasResume ? (
           <span className="inline-flex items-center gap-1 text-[10px] font-black text-emerald-700 bg-emerald-100/75 dark:bg-emerald-950/25 dark:text-emerald-300 px-2 py-0.5 rounded-full">
             <ShieldCheck className="size-3" />
-            Resume Verified
+            Resume Uploaded
           </span>
         ) : (
-          <span className="inline-flex items-center gap-1 text-[10px] font-black text-amber-700 bg-amber-100/75 dark:bg-amber-955/25 dark:text-amber-300 px-2 py-0.5 rounded-full">
+          <span className="inline-flex items-center gap-1 text-[10px] font-black text-blue-700 bg-blue-100/75 dark:bg-blue-950/25 dark:text-blue-300 px-2 py-0.5 rounded-full">
             <ShieldAlert className="size-3" />
-            Pending
+            Resume Not Uploaded
           </span>
         )
       ),
@@ -215,7 +256,7 @@ export function UserModeration() {
       header: "Actions",
       className: "text-right",
       cell: (row) => (
-        <div className="flex justify-end gap-1.5">
+        <div className="flex flex-wrap justify-end gap-1.5">
           <Button
             size="sm"
             variant={row.status === "Active" ? "destructive" : "outline"}
@@ -234,6 +275,18 @@ export function UserModeration() {
               </>
             )}
           </Button>
+          {canDeleteUsers && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 text-[10px] font-bold flex items-center gap-1 border-red-200 text-red-600 hover:bg-red-50 dark:border-red-950/50 dark:text-red-400 dark:hover:bg-red-950/20"
+              disabled={deletingId === row.id}
+              onClick={() => handleDeleteUser(row.id, row.name, row.email)}
+            >
+              <Trash2 className="size-3" />
+              {deletingId === row.id ? "Deleting..." : "Delete"}
+            </Button>
+          )}
         </div>
       ),
     },
@@ -262,7 +315,7 @@ export function UserModeration() {
             Partner Approved
           </span>
         ) : (
-          <span className="inline-flex items-center gap-1 text-[10px] font-black text-amber-700 bg-amber-100/75 dark:bg-amber-955/25 dark:text-amber-300 px-2 py-0.5 rounded-full">
+          <span className="inline-flex items-center gap-1 text-[10px] font-black text-blue-700 bg-blue-100/75 dark:bg-blue-950/25 dark:text-blue-300 px-2 py-0.5 rounded-full">
             <ShieldAlert className="size-3" />
             Unverified Partner
           </span>
@@ -287,7 +340,7 @@ export function UserModeration() {
       header: "Actions",
       className: "text-right",
       cell: (row) => (
-        <div className="flex justify-end gap-1.5">
+        <div className="flex flex-wrap justify-end gap-1.5">
           <Button
             size="sm"
             variant="outline"
@@ -314,6 +367,18 @@ export function UserModeration() {
               </>
             )}
           </Button>
+          {canDeleteUsers && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 text-[10px] font-bold flex items-center gap-1 border-red-200 text-red-600 hover:bg-red-50 dark:border-red-950/50 dark:text-red-400 dark:hover:bg-red-950/20"
+              disabled={deletingId === row.id}
+              onClick={() => handleDeleteUser(row.id, row.name, row.email)}
+            >
+              <Trash2 className="size-3" />
+              {deletingId === row.id ? "Deleting..." : "Delete"}
+            </Button>
+          )}
         </div>
       ),
     },
@@ -366,34 +431,57 @@ export function UserModeration() {
     {
       header: "Actions",
       className: "text-right",
-      cell: (row) => (
-        <div className="flex justify-end">
-          <Button
-            size="sm"
-            variant={row.status === "Active" ? "destructive" : "outline"}
-            className="h-7 text-[10px] font-bold flex items-center gap-1"
-            // Never allow suspending a Super Admin through this screen -- the
-            // previous check compared row.id to the literal string "admin-1",
-            // which no real seeded/created user ID ever equals (IDs are
-            // UUIDs), so it silently protected nobody. Guard on the real role.
-            disabled={row.roles.includes("Super Admin")}
-            title={row.roles.includes("Super Admin") ? "Super Admin accounts cannot be suspended from this screen." : undefined}
-            onClick={() => handleToggleStatus(row.id, "admin")}
-          >
-            {row.status === "Active" ? (
-              <>
-                <UserX className="size-3" />
-                Suspend Admin
-              </>
-            ) : (
-              <>
-                <UserCheck className="size-3" />
-                Activate Admin
-              </>
+      cell: (row) => {
+        const isSuperAdmin = row.roles.includes("Super Admin")
+        const isSelf = row.id === currentUser?.id
+        return (
+          <div className="flex flex-wrap justify-end gap-1.5">
+            <Button
+              size="sm"
+              variant={row.status === "Active" ? "destructive" : "outline"}
+              className="h-7 text-[10px] font-bold flex items-center gap-1"
+              // Never allow suspending a Super Admin through this screen -- the
+              // previous check compared row.id to the literal string "admin-1",
+              // which no real seeded/created user ID ever equals (IDs are
+              // UUIDs), so it silently protected nobody. Guard on the real role.
+              disabled={isSuperAdmin}
+              title={isSuperAdmin ? "Super Admin accounts cannot be suspended from this screen." : undefined}
+              onClick={() => handleToggleStatus(row.id, "admin")}
+            >
+              {row.status === "Active" ? (
+                <>
+                  <UserX className="size-3" />
+                  Suspend Admin
+                </>
+              ) : (
+                <>
+                  <UserCheck className="size-3" />
+                  Activate Admin
+                </>
+              )}
+            </Button>
+            {canDeleteUsers && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 text-[10px] font-bold flex items-center gap-1 border-red-200 text-red-600 hover:bg-red-50 dark:border-red-950/50 dark:text-red-400 dark:hover:bg-red-950/20"
+                disabled={isSuperAdmin || isSelf || deletingId === row.id}
+                title={
+                  isSuperAdmin
+                    ? "Super Admin accounts cannot be deleted from this screen."
+                    : isSelf
+                      ? "You cannot delete your own account from this screen."
+                      : undefined
+                }
+                onClick={() => handleDeleteUser(row.id, row.name, row.email)}
+              >
+                <Trash2 className="size-3" />
+                {deletingId === row.id ? "Deleting..." : "Delete"}
+              </Button>
             )}
-          </Button>
-        </div>
-      ),
+          </div>
+        )
+      },
     },
   ]
 

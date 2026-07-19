@@ -39,7 +39,7 @@ export function ChatWindow({
     <div className="flex flex-col h-full bg-white border border-slate-200 rounded-xl overflow-hidden dark:bg-slate-900 dark:border-slate-800">
       {/* Top Header */}
       <div className="p-4 border-b border-slate-100 flex items-center justify-between shrink-0 dark:border-slate-800">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 min-w-0">
           {onBackToList && (
             <Button
               type="button"
@@ -62,11 +62,14 @@ export function ChatWindow({
             )}
           </div>
 
-          <div>
-            <h3 className="text-xs font-extrabold text-slate-950 dark:text-white">
+          {/* Part 15: no min-w-0/truncate meant a long recruiter or company
+              name could overflow this fixed-height header between the
+              shrink-0 avatar and shrink-0 online-status block. */}
+          <div className="min-w-0">
+            <h3 className="text-xs font-extrabold text-slate-950 dark:text-white truncate">
               {conversation.recruiterName}
             </h3>
-            <p className="text-[10px] font-semibold text-slate-400 dark:text-slate-500">
+            <p className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 truncate">
               Recruiter · {conversation.companyName}
             </p>
           </div>

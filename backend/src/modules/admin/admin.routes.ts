@@ -45,6 +45,11 @@ router.post("/support-ticket", controller.submitSupportTicket)
 router.get("/companies", controller.listCompanies)
 router.post("/companies/:id/verify", controller.verifyCompany)
 
+// Company Perk Requests (Parts 6/7/12 -- deliberately a separate module from
+// Company Registration Requests above; never mixed into the same queue)
+router.get("/perks", controller.listPerkRequests)
+router.post("/perks/:id/review", controller.reviewPerkRequest)
+
 // Job listings moderation (Admin, Super Admin, Moderator)
 router.get("/jobs", controller.listJobs)
 router.post("/jobs/:id/moderate", controller.moderateJob)
@@ -55,6 +60,7 @@ router.post("/jobs/:id/moderate", controller.moderateJob)
 const USER_MGMT_ROLES = ["Admin", "Super Admin"]
 router.get("/users", controller.listUsers)
 router.put("/users/:id/status", requireRole(USER_MGMT_ROLES), controller.updateUserStatus)
+router.delete("/users/:id", requireRole(USER_MGMT_ROLES), controller.deleteUser)
 router.put("/recruiters/:id/verify", requireRole(USER_MGMT_ROLES), controller.verifyRecruiter)
 router.post("/users/:id/action/:action", requireRole(USER_MGMT_ROLES), controller.userAdministrativeAction)
 

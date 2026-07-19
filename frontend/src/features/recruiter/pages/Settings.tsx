@@ -22,7 +22,8 @@ const settingsSchema = z.object({
   name: z.string().min(2, "Name must be at least 2 characters."),
   role: z.string().min(2, "Job title/role must be at least 2 characters."),
   email: z.string().email("Please enter a valid email address."),
-  phone: z.string().min(8, "Phone number must be at least 8 digits."),
+  // Part 16: was length-only (`.min(8)`), so "aaaaaaaa" passed.
+  phone: z.string().regex(/^\+?[0-9]{10,14}$/, "Please enter a valid phone number (10-14 digits)."),
   notifyNewApp: z.boolean(),
   notifyInterview: z.boolean(),
   notifyWeeklyDigest: z.boolean(),

@@ -180,9 +180,30 @@ export const apiClient = {
       }
 
       if (!response.ok) {
-        const httpError: any = new Error(`HTTP error! Status: ${response.status}`)
+        // The backend (shared/utils/response.ts's sendError()) always sends
+        // a real JSON body -- {success:false, message: "...", errors: ...} --
+        // with a specific, actionable message per failure reason (wrong
+        // password vs unverified email vs suspended vs company-approval-gate
+        // messages, etc, all correctly mapped to the right status code by
+        // errorHandler.ts). This branch used to throw a generic
+        // `Error("HTTP error! Status: 401")` without ever reading that body,
+        // so every distinct backend error collapsed into the same
+        // meaningless status-code string by the time it reached a page's
+        // `catch (err) { toast.error(err.message) }` -- worse than a merely
+        // generic message, since it wasn't even human-readable. Parse the
+        // body (best-effort, since a non-JSON error page is still possible)
+        // and surface the real message.
+        let data: any = null
+        try {
+          data = await response.json()
+        } catch {
+          // Response body wasn't valid JSON (e.g. a proxy/gateway error page)
+          // -- fall back to the generic status-code message below.
+        }
+        const httpError: any = new Error(data?.message || `HTTP error! Status: ${response.status}`)
         httpError.status = response.status
         httpError.endpoint = endpoint
+        httpError.errors = data?.errors
         throw httpError
       }
 

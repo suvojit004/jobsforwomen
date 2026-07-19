@@ -4,6 +4,7 @@ import { DashboardPageSkeleton } from "@/components/dashboard/DashboardSkeletons
 
 const Dashboard = lazy(() => import("@/features/admin/pages/Dashboard").then(m => ({ default: m.Dashboard })))
 const CompanyApprovals = lazy(() => import("@/features/admin/pages/CompanyApprovals").then(m => ({ default: m.CompanyApprovals })))
+const CompanyPerkRequests = lazy(() => import("@/features/admin/pages/CompanyPerkRequests").then(m => ({ default: m.CompanyPerkRequests })))
 const CandidateManagement = lazy(() => import("@/features/admin/pages/CandidateManagement").then(m => ({ default: m.CandidateManagement })))
 const CompanyDetails = lazy(() => import("@/features/admin/pages/CompanyDetails").then(m => ({ default: m.CompanyDetails })))
 const JobModeration = lazy(() => import("@/features/admin/pages/JobModeration").then(m => ({ default: m.JobModeration })))
@@ -25,6 +26,7 @@ export function AdminRoutes() {
         <Route index element={<Dashboard />} />
         <Route path="dashboard" element={<Dashboard />} />
         <Route path="company-approvals" element={<CompanyApprovals />} />
+        <Route path="company-perk-requests" element={<CompanyPerkRequests />} />
         <Route path="candidate-management" element={<CandidateManagement />} />
         <Route path="company-details" element={<CompanyDetails />} />
         <Route path="job-moderation" element={<JobModeration />} />

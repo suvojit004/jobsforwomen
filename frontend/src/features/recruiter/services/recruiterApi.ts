@@ -281,6 +281,31 @@ export const RecruiterApi = {
     return res?.data
   },
 
+  // Company Perk Requests (Parts 6/7) -- deliberately separate from
+  // onboardCompany above.
+  async getPerkRequests() {
+    const res = await apiClient.get("/api/v1/recruiters/perks")
+    return res?.data?.perkRequests || []
+  },
+
+  async submitPerk(perkName: string, comment?: string) {
+    const res = await apiClient.post("/api/v1/recruiters/perks/submit", { perkName, comment })
+    return res?.data
+  },
+
+  async uploadPerkDocument(perkRequestId: string, file: File, category: string) {
+    const formData = new FormData()
+    formData.append("document", file)
+    formData.append("category", category)
+    const res = await apiClient.post(`/api/v1/recruiters/perks/${perkRequestId}/documents`, formData)
+    return res?.data
+  },
+
+  async getApprovalTracker() {
+    const res = await apiClient.get("/api/v1/recruiters/approvals")
+    return res?.data
+  },
+
   async uploadCompanyLogo(file: File) {
     const formData = new FormData()
     formData.append("logo", file)
@@ -290,6 +315,25 @@ export const RecruiterApi = {
 
   async deleteCompanyLogo() {
     const res = await apiClient.delete("/api/v1/recruiters/company/logo")
+    return res?.data
+  },
+
+  // Company Profile expansion (Part 5) -- office photo gallery + policies
+  async uploadGalleryPhoto(file: File, caption?: string) {
+    const formData = new FormData()
+    formData.append("photo", file)
+    if (caption) formData.append("caption", caption)
+    const res = await apiClient.post("/api/v1/recruiters/company/gallery", formData)
+    return res?.data
+  },
+
+  async deleteGalleryPhoto(publicId: string) {
+    const res = await apiClient.delete("/api/v1/recruiters/company/gallery", { publicId })
+    return res?.data
+  },
+
+  async updatePolicies(policies: { title: string; description: string }[]) {
+    const res = await apiClient.put("/api/v1/recruiters/company/policies", { policies })
     return res?.data
   },
 

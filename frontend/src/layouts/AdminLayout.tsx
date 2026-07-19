@@ -26,11 +26,13 @@ import {
   Sparkles,
   Shield,
   Activity,
+  Award,
 } from "lucide-react"
 
 const adminMenuItems = [
   { label: "Dashboard", icon: Home, href: "/admin/dashboard" },
-  { label: "Company Approvals", icon: Building, href: "/admin/company-approvals" },
+  { label: "Company Registration Requests", icon: Building, href: "/admin/company-approvals" },
+  { label: "Company Perk Requests", icon: Award, href: "/admin/company-perk-requests" },
   { label: "Candidate Management", icon: UserCheck, href: "/admin/candidate-management" },
   { label: "Company Details", icon: BriefcaseBusiness, href: "/admin/company-details" },
   { label: "Job Moderation", icon: ShieldAlert, href: "/admin/job-moderation" },

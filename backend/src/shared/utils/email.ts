@@ -123,9 +123,28 @@ export class EmailService {
     return this.sendMail(to, "JobsForWomen Staff Invitation", html)
   }
 
-  static async sendCompanyVerificationEmail(to: string, companyName: string, status: string, notes?: string): Promise<boolean> {
-    const html = EmailTemplates.companyVerification({ companyName, status, notes })
+  static async sendCompanyVerificationEmail(
+    to: string,
+    companyName: string,
+    status: string,
+    notes?: string,
+    actionLink?: string,
+    actionLabel?: string
+  ): Promise<boolean> {
+    const html = EmailTemplates.companyVerification({ companyName, status, notes, actionLink, actionLabel })
     return this.sendMail(to, `Company Verification Status Update: ${status}`, html)
+  }
+
+  static async sendPerkVerificationEmail(
+    to: string,
+    companyName: string,
+    perkName: string,
+    status: string,
+    comment?: string,
+    actionLink?: string
+  ): Promise<boolean> {
+    const html = EmailTemplates.perkVerification({ companyName, perkName, status, comment, actionLink })
+    return this.sendMail(to, `Perk Verification Update: ${perkName} (${status})`, html)
   }
 
   static async sendJobModerationEmail(to: string, jobTitle: string, status: "approved" | "rejected", notes?: string): Promise<boolean> {

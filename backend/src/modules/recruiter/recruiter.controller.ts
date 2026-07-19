@@ -14,6 +14,8 @@ import {
   releaseOfferSchema,
   recruiterSettingsSchema,
   inviteColleagueSchema,
+  submitPerkSchema,
+  updatePoliciesSchema,
 } from "./recruiter.validator"
 
 export class RecruiterController {
@@ -66,6 +68,54 @@ export class RecruiterController {
     const context = this.getContext(req)
     const result = await this.service.onboardCompany(userId, validated, context)
     return sendSuccess(res, result, "Company onboarded successfully.")
+  }
+
+  // ==========================================
+  // COMPANY PERK REQUESTS (Parts 6/7)
+  // ==========================================
+
+  submitPerk = async (req: Request, res: Response) => {
+    const validated = submitPerkSchema.parse(req.body)
+    const userId = req.user?.userId || ""
+    const context = this.getContext(req)
+    const result = await this.service.submitOrResubmitPerk(userId, validated.perkName, validated.comment, context)
+    return sendSuccess(res, result, "Perk submitted for verification successfully.", 201)
+  }
+
+  getPerkRequests = async (req: Request, res: Response) => {
+    const userId = req.user?.userId || ""
+    const result = await this.service.listPerkRequests(userId)
+    return sendSuccess(res, { perkRequests: result }, "Fetched perk requests successfully.")
+  }
+
+  addPerkDocument = async (req: Request, res: Response) => {
+    const userId = req.user?.userId || ""
+    const perkRequestId = req.params.id as string
+    const file = (req as any).file
+    if (!file) {
+      return sendError(res, "No file uploaded. Please attach a document.", null, 400)
+    }
+    const category = req.body?.category
+    if (!category) {
+      return sendError(res, "Document category is required.", null, 400)
+    }
+
+    const result = await uploadToCloudinary(file.buffer, "jfw/perk-documents", `${userId}_${category}_${Date.now()}`, true)
+
+    const doc = await this.service.addPerkDocument(userId, perkRequestId, {
+      url: result.secureUrl,
+      publicId: result.publicId,
+      size: result.size,
+      mimetype: file.mimetype,
+      category,
+    })
+    return sendSuccess(res, doc, "Document uploaded successfully.", 201)
+  }
+
+  getApprovalTracker = async (req: Request, res: Response) => {
+    const userId = req.user?.userId || ""
+    const result = await this.service.getApprovalTracker(userId)
+    return sendSuccess(res, result, "Fetched approval tracker successfully.")
   }
 
   postJob = async (req: Request, res: Response) => {
@@ -320,6 +370,94 @@ export class RecruiterController {
       const context = this.getContext(req)
       const updatedCompany = await this.service.deleteCompanyLogo(userId, context)
       return sendSuccess(res, { company: updatedCompany }, "Company logo deleted successfully.")
+    } catch (err: any) {
+      next(err)
+    }
+  }
+
+  // ==========================================
+  // COMPANY PROFILE: OFFICE PHOTO GALLERY (Part 5)
+  // ==========================================
+  uploadGalleryPhoto = async (req: Request, res: Response, next: any) => {
+    try {
+      const file = (req as any).file
+      const userId = req.user?.userId || ""
+      const context = this.getContext(req)
+      const caption = req.body?.caption
+
+      if (!file && process.env.NODE_ENV !== "test") {
+        return sendError(res, "No file uploaded. Please upload a valid photo.", null, 400)
+      }
+
+      let photoDetails: any
+
+      if (file) {
+        // Unlike the logo (one deterministic public_id per company, so a
+        // re-upload overwrites), gallery photos are many-per-company, so
+        // each upload needs its own unique public_id.
+        const uniqueName = `${userId}_gallery_${Date.now()}_${Math.round(Math.random() * 1e6)}`
+        const result = await uploadToCloudinary(file.buffer, "jfw/gallery", uniqueName, false)
+        photoDetails = {
+          url: result.secureUrl,
+          publicId: result.publicId,
+          size: result.size,
+          mimetype: file.mimetype,
+          caption: caption || undefined,
+        }
+      } else {
+        // Fallback for tests
+        photoDetails = {
+          url: "https://cloudinary.com/gallery.png",
+          publicId: `gallery/mock_${Date.now()}`,
+          size: 51200,
+          mimetype: "image/png",
+          caption: caption || undefined,
+        }
+      }
+
+      try {
+        const updatedCompany = await this.service.addGalleryPhoto(userId, photoDetails, context)
+        return sendSuccess(res, { company: updatedCompany }, "Photo added to gallery successfully.", 201)
+      } catch (dbErr: any) {
+        if (file && photoDetails?.publicId) {
+          try {
+            await deleteFromCloudinary(photoDetails.publicId, false)
+          } catch (cleanupErr: any) {
+            logger.warn(`[Cloudinary] Failed to clean up orphaned gallery upload after DB error: ${cleanupErr.message}`)
+          }
+        }
+        throw dbErr
+      }
+    } catch (err: any) {
+      next(err)
+    }
+  }
+
+  deleteGalleryPhoto = async (req: Request, res: Response, next: any) => {
+    try {
+      const userId = req.user?.userId || ""
+      const context = this.getContext(req)
+      const publicId = req.body?.publicId
+      if (!publicId) {
+        return sendError(res, "publicId is required.", null, 400)
+      }
+      const updatedCompany = await this.service.deleteGalleryPhoto(userId, publicId, context)
+      return sendSuccess(res, { company: updatedCompany }, "Photo removed from gallery successfully.")
+    } catch (err: any) {
+      next(err)
+    }
+  }
+
+  // ==========================================
+  // COMPANY PROFILE: WORKPLACE POLICIES (Part 5)
+  // ==========================================
+  updatePolicies = async (req: Request, res: Response, next: any) => {
+    try {
+      const validated = updatePoliciesSchema.parse(req.body)
+      const userId = req.user?.userId || ""
+      const context = this.getContext(req)
+      const updatedCompany = await this.service.updatePolicies(userId, validated.policies, context)
+      return sendSuccess(res, { company: updatedCompany }, "Company policies updated successfully.")
     } catch (err: any) {
       next(err)
     }

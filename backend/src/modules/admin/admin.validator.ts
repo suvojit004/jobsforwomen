@@ -1,10 +1,17 @@
 import { z } from "zod"
-import { CompanyStatus, UserStatus } from "@prisma/client"
+import { CompanyStatus, UserStatus, PerkStatus } from "@prisma/client"
 
 // Company Verification Schema
 export const verifyCompanySchema = z.object({
   status: z.nativeEnum(CompanyStatus),
   notes: z.string().optional(),
+})
+
+// Perk Request Review Schema (Parts 6/7 -- entirely independent from
+// company verification above)
+export const reviewPerkRequestSchema = z.object({
+  status: z.nativeEnum(PerkStatus),
+  comment: z.string().optional(),
 })
 
 // Job Moderation actions:

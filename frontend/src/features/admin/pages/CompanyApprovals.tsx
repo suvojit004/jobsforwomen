@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react"
+import { useNavigate } from "react-router-dom"
 import {
   Search,
   Check,
@@ -7,6 +8,8 @@ import {
   AlertCircle,
   Building,
   Globe,
+  Eye,
+  Mail,
 } from "lucide-react"
 import { DataTable } from "@/components/shared/DataTable"
 import type { ColumnDef } from "@/components/shared/DataTable"
@@ -14,19 +17,29 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { DashboardCard } from "@/components/shared/DashboardCard"
 import { AdminApi } from "../services/adminApi"
+import { getSocket } from "@/api/socket"
 
+// Company Registration Requests (Part 2 of the recruiter-onboarding spec).
+// This module is intentionally kept independent from Company Perks Approval
+// -- it shows registration/verification status only. Perk claims used to be
+// displayed here too (a "Claimed Perks / Credentials" column); that's been
+// removed since Part 12/20 of the spec explicitly require these two
+// workflows never be mixed in the same module.
 interface AdminCompany {
   id: string
   name: string
   website: string
   location: string
   industry: string
-  claimedPerks: string[]
+  recruiterName: string
+  recruiterEmail: string
+  registeredAt: string
   status: string
   feedback?: string
 }
 
 export function CompanyApprovals() {
+  const navigate = useNavigate()
   const [companies, setCompanies] = useState<AdminCompany[]>([])
   const [searchQuery, setSearchQuery] = useState("")
   const [filterMode, setFilterMode] = useState<"all" | "pending" | "approved" | "info_requested" | "rejected">("all")
@@ -51,29 +64,55 @@ export function CompanyApprovals() {
   } | null>(null)
   const [modalFeedbackText, setModalFeedbackText] = useState("")
 
-  const loadCompanies = async () => {
+  const loadCompanies = async (silent = false) => {
     try {
-      setLoading(true)
+      if (!silent) setLoading(true)
       const data = await AdminApi.getCompanies()
-      setCompanies((data || []).map((c: any) => ({
-        id: c.id,
-        name: c.name,
-        website: c.website || "Not specified",
-        location: c.location || "Not Specified",
-        industry: c.industry?.name || "Not specified",
-        claimedPerks: (c.benefits || []).map((b: any) => b.benefitName),
-        status: c.status,
-        feedback: c.feedback || ""
-      })))
+      setCompanies((data || []).map((c: any) => {
+        const recruiter = (c.recruiters || [])[0]
+        return {
+          id: c.id,
+          name: c.name,
+          website: c.website || "Not specified",
+          location: c.location || "Not Specified",
+          industry: c.industry?.name || "Not specified",
+          recruiterName: recruiter?.fullName || recruiter?.user?.email?.split("@")[0] || "Not specified",
+          recruiterEmail: recruiter?.user?.email || "Not specified",
+          registeredAt: c.createdAt
+            ? new Date(c.createdAt).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })
+            : "Not specified",
+          status: c.status,
+          feedback: c.feedback || ""
+        }
+      }))
     } catch (err) {
       console.error("Failed to load companies:", err)
     } finally {
-      setLoading(false)
+      if (!silent) setLoading(false)
     }
   }
 
   useEffect(() => {
     loadCompanies()
+  }, [])
+
+  // Part 18: live refresh instead of requiring a manual reload. New
+  // registrations, resubmissions, and document uploads all fan out a
+  // "Moderation" notification to every active admin (notification.listener.ts)
+  // pointed at this exact page -- listen for that and refetch, following the
+  // same getSocket("admin") + socket.on("notification") pattern already used
+  // by the recruiter/candidate Messages pages.
+  useEffect(() => {
+    const socket = getSocket("admin")
+    const handleNotification = (data: any) => {
+      if (data?.category === "Moderation" && data?.actionUrl === "/admin/company-approvals") {
+        loadCompanies(true)
+      }
+    }
+    socket.on("notification", handleNotification)
+    return () => {
+      socket.off("notification", handleNotification)
+    }
   }, [])
 
   const handleApprove = async (companyId: string) => {
@@ -151,22 +190,28 @@ export function CompanyApprovals() {
       ),
     },
     {
+      header: "Recruiter",
+      cell: (row) => (
+        <div className="space-y-0.5">
+          <p className="text-xs font-bold text-slate-900 dark:text-white">{row.recruiterName}</p>
+          <a
+            href={`mailto:${row.recruiterEmail}`}
+            className="text-[10px] font-semibold text-slate-450 dark:text-slate-500 hover:underline flex items-center gap-0.5"
+          >
+            <Mail className="size-2.5" />
+            {row.recruiterEmail}
+          </a>
+        </div>
+      ),
+    },
+    {
       header: "Industry",
       accessorKey: "industry",
     },
     {
-      header: "Claimed Perks / Credentials",
+      header: "Registered",
       cell: (row) => (
-        <div className="flex flex-wrap gap-1 max-w-sm">
-          {row.claimedPerks.map((perk, i) => (
-            <span
-              key={i}
-              className="text-[9px] font-black bg-[#6B2C91]/5 text-[#6B2C91] border border-[#6B2C91]/15 dark:bg-pink-900/10 dark:text-pink-300 dark:border-pink-900/20 px-2 py-0.5 rounded"
-            >
-              {perk}
-            </span>
-          ))}
-        </div>
+        <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400">{row.registeredAt}</span>
       ),
     },
     {
@@ -178,10 +223,15 @@ export function CompanyApprovals() {
         switch (row.status) {
           case "approved":
             badgeStyle = "bg-emerald-100/60 text-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-350"
-            statusLabel = "Approved Champion"
+            statusLabel = "Approved"
             break
+          // Part 17 accessible status colors: Pending -> Blue (was amber,
+          // an ambiguous/lower-contrast color the spec explicitly calls out
+          // to replace), Need More Info -> Purple/Indigo (was blue here,
+          // which collided with the Pending color below it -- swapped so
+          // each status has its own distinct, WCAG-accessible color).
           case "pending":
-            badgeStyle = "bg-amber-100/60 text-amber-800 dark:bg-amber-955/30 dark:text-amber-300"
+            badgeStyle = "bg-blue-100/60 text-blue-800 dark:bg-blue-950/30 dark:text-blue-350"
             statusLabel = "Pending Verification"
             break
           // These 3 statuses didn't have a case at all before, so any
@@ -189,15 +239,15 @@ export function CompanyApprovals() {
           // since recruiter.service.ts's onboardCompany sets "submitted") got
           // a blank, unstyled badge with no label.
           case "submitted":
-            badgeStyle = "bg-amber-100/60 text-amber-800 dark:bg-amber-955/30 dark:text-amber-300"
+            badgeStyle = "bg-blue-100/60 text-blue-800 dark:bg-blue-950/30 dark:text-blue-350"
             statusLabel = "Submitted for Review"
             break
           case "pending_verification":
-            badgeStyle = "bg-amber-100/60 text-amber-800 dark:bg-amber-955/30 dark:text-amber-300"
+            badgeStyle = "bg-blue-100/60 text-blue-800 dark:bg-blue-950/30 dark:text-blue-350"
             statusLabel = "Pending Verification"
             break
           case "under_review":
-            badgeStyle = "bg-amber-100/60 text-amber-800 dark:bg-amber-955/30 dark:text-amber-300"
+            badgeStyle = "bg-blue-100/60 text-blue-800 dark:bg-blue-950/30 dark:text-blue-350"
             statusLabel = "Under Review"
             break
           case "draft":
@@ -205,7 +255,7 @@ export function CompanyApprovals() {
             statusLabel = "Draft (Not Submitted)"
             break
           case "info_requested":
-            badgeStyle = "bg-blue-100/60 text-blue-800 dark:bg-blue-950/30 dark:text-blue-350"
+            badgeStyle = "bg-indigo-100/60 text-indigo-800 dark:bg-indigo-950/30 dark:text-indigo-300"
             statusLabel = "More Info Requested"
             break
           case "rejected":
@@ -228,7 +278,20 @@ export function CompanyApprovals() {
       header: "Actions",
       className: "text-right",
       cell: (row) => (
-        <div className="flex justify-end gap-1.5">
+        // Part 15: up to 4 buttons here with no flex-wrap forced the whole
+        // table into horizontal-scroll mode on mobile just to reach a
+        // primary action -- wrapping keeps the table itself narrower.
+        <div className="flex flex-wrap justify-end gap-1.5">
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 text-[10px] font-bold border-slate-200 dark:border-slate-800"
+            onClick={() => navigate(`/admin/company-details?companyId=${row.id}`)}
+          >
+            <Eye className="size-3 mr-0.5" />
+            View Details
+          </Button>
+
           {row.status !== "approved" && (
             <Button
               size="sm"
@@ -254,7 +317,7 @@ export function CompanyApprovals() {
               }
             >
               <HelpCircle className="size-3 mr-0.5" />
-              Request Info
+              Request More Information
             </Button>
           )}
 
@@ -285,10 +348,10 @@ export function CompanyApprovals() {
       {/* Header Banner */}
       <div>
         <h1 className="text-2xl font-black tracking-normal text-slate-950 dark:text-white">
-          Company Approvals Portal
+          Company Registration Requests
         </h1>
         <p className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">
-          Approve or audit corporate status claims for Menstrual Leave Champion and return-to-work certifications.
+          Review and verify new company registrations. Company perk/credential claims are managed separately.
         </p>
       </div>
 
@@ -308,7 +371,7 @@ export function CompanyApprovals() {
             onClick={() => setFilterMode("pending")}
           >
             Pending
-            <span className="ml-1.5 bg-amber-100 text-amber-700 dark:bg-amber-955/20 dark:text-amber-300 text-[9px] px-1 rounded-full font-black">
+            <span className="ml-1.5 bg-blue-100 text-blue-700 dark:bg-blue-950/20 dark:text-blue-300 text-[9px] px-1 rounded-full font-black">
               {companies.filter((c) => isPendingLike(c.status)).length}
             </span>
           </Button>
@@ -372,7 +435,7 @@ export function CompanyApprovals() {
             <div className="px-5 py-4 border-b border-slate-100 dark:border-slate-850 flex items-center justify-between">
               <h3 className="text-xs font-black text-slate-900 uppercase dark:text-white flex items-center gap-1.5">
                 <AlertCircle className={`size-4 ${activeModal.type === "reject" ? "text-pink-500" : "text-blue-500"}`} />
-                {activeModal.type === "reject" ? "Reject Perks Claim" : "Request Documentation"}
+                {activeModal.type === "reject" ? "Reject Company Registration" : "Request More Information"}
               </h3>
               <button
                 onClick={() => {
@@ -386,13 +449,13 @@ export function CompanyApprovals() {
             </div>
             <div className="p-5 space-y-3.5">
               <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 leading-relaxed">
-                Provide notes for <strong className="text-slate-800 dark:text-slate-200">{activeModal.companyName}</strong>. This message will be sent to the recruiter dashboard.
+                Provide notes for <strong className="text-slate-800 dark:text-slate-200">{activeModal.companyName}</strong>. This message will be emailed to the registering recruiter.
               </p>
               <textarea
                 placeholder={
                   activeModal.type === "reject"
-                    ? "Enter rejection reason (e.g. Perks checklist does not meet requirements...)"
-                    : "Describe what documentation is needed (e.g. Please provide HR leave policies PDF...)"
+                    ? "Enter rejection reason (e.g. Company details could not be verified...)"
+                    : "Describe what's needed (e.g. Please upload your GST/PAN/CIN or a company registration certificate...)"
                 }
                 value={modalFeedbackText}
                 onChange={(e) => setModalFeedbackText(e.target.value)}

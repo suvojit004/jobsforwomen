@@ -1,7 +1,7 @@
 import prisma from "../../shared/database/db"
 import { logger } from "../../shared/utils/logger"
 import EventBus from "../../shared/eventBus/eventBus"
-import { CompanyStatus, JobStatus, ApplicationStatus, WorkMode } from "@prisma/client"
+import { CompanyStatus, JobStatus, ApplicationStatus, WorkMode, PerkStatus } from "@prisma/client"
 import { deleteFromCloudinary } from "../../shared/utils/cloudinary"
 import crypto from "crypto"
 
@@ -63,7 +63,7 @@ export class RecruiterService {
     const profile = await prisma.recruiterProfile.findUnique({
       where: { userId },
       include: {
-        company: { include: { benefits: true } },
+        company: { include: { benefits: true, perkRequests: true } },
       },
     })
 
@@ -207,9 +207,21 @@ export class RecruiterService {
     })
     const applicationTrend = trendDays.map(({ key }) => ({ name: key, ...trendMap[key] }))
 
+    // Perk claim summary for the recruiter Dashboard status card (Part 9) --
+    // counts derived from the real, independently-reviewed CompanyPerkRequest
+    // rows rather than the old CompanyBenefit boolean list.
+    const perkRequestsList = (company as any).perkRequests || []
+    const perkSummary = {
+      total: perkRequestsList.length,
+      approved: perkRequestsList.filter((p: any) => p.status === "approved").length,
+      pending: perkRequestsList.filter((p: any) => p.status === "pending" || p.status === "info_requested").length,
+      rejected: perkRequestsList.filter((p: any) => p.status === "rejected").length,
+    }
+
     return {
       profileCompletion: completion,
       verificationStatus: company.status,
+      perkSummary,
       // The full company object was previously never included in this
       // response at all -- the frontend's `dash?.company` lookup was always
       // undefined, so every recruiter dashboard load silently fell back to
@@ -405,6 +417,158 @@ export class RecruiterService {
     }
 
     return updatedCompany
+  }
+
+  // ==========================================
+  // COMPANY PERK REQUESTS (Parts 6/7 -- independent from company
+  // registration approval; see CompanyPerkRequest in schema.prisma)
+  // ==========================================
+
+  private async getOwnCompanyId(userId: string): Promise<string> {
+    const profile = await prisma.recruiterProfile.findUnique({ where: { userId } })
+    if (!profile) {
+      throw new Error("Recruiter profile not found")
+    }
+    return profile.companyId
+  }
+
+  // Single entry point for both first submission (no comment) and
+  // resubmission after rejected/info_requested (comment describing what
+  // changed) -- keeps "select perk, attach proof, click Submit for
+  // Verification" and "Resubmit" (Part 7) as the same underlying action
+  // instead of two parallel code paths that could drift apart.
+  async submitOrResubmitPerk(userId: string, perkName: string, comment: string | undefined, context?: ServiceContext) {
+    const companyId = await this.getOwnCompanyId(userId)
+
+    const existing = await prisma.companyPerkRequest.findFirst({ where: { companyId, perkName } })
+
+    if (existing?.status === PerkStatus.pending) {
+      throw new Error("This perk is already pending review.")
+    }
+    if (existing?.status === PerkStatus.approved) {
+      throw new Error("This perk has already been approved.")
+    }
+
+    let request
+    if (existing) {
+      request = await prisma.companyPerkRequest.update({
+        where: { id: existing.id },
+        data: {
+          status: PerkStatus.pending,
+          recruiterComment: comment ?? existing.recruiterComment,
+          submittedAt: new Date(),
+          reviewedAt: null,
+        },
+      })
+    } else {
+      request = await prisma.companyPerkRequest.create({
+        data: { companyId, perkName, recruiterComment: comment },
+      })
+    }
+
+    const company = await prisma.company.findUnique({ where: { id: companyId } })
+
+    EventBus.publish("PerkSubmitted", {
+      perkRequestId: request.id,
+      companyId,
+      companyName: company?.name,
+      perkName,
+      isResubmission: !!existing,
+      context,
+    })
+
+    return request
+  }
+
+  async listPerkRequests(userId: string) {
+    const companyId = await this.getOwnCompanyId(userId)
+    return prisma.companyPerkRequest.findMany({ where: { companyId }, orderBy: { createdAt: "desc" } })
+  }
+
+  async addPerkDocument(
+    userId: string,
+    perkRequestId: string,
+    doc: { url: string; publicId: string; size: number; mimetype: string; category: string }
+  ) {
+    const companyId = await this.getOwnCompanyId(userId)
+    const request = await prisma.companyPerkRequest.findUnique({ where: { id: perkRequestId } })
+
+    if (!request || request.companyId !== companyId) {
+      throw new Error("Perk request not found")
+    }
+
+    const existingDocs: any[] = Array.isArray(request.documents) ? (request.documents as any[]) : []
+    const version = existingDocs.filter((d) => d.category === doc.category).length + 1
+    const newDoc = { ...doc, uploadedAt: new Date().toISOString(), version }
+
+    // Append, never replace -- Part 13 requires upload history to be
+    // maintained across resubmissions.
+    await prisma.companyPerkRequest.update({
+      where: { id: perkRequestId },
+      data: { documents: [...existingDocs, newDoc] },
+    })
+
+    // Confirmed gap: this previously fired no event at all -- Part 11
+    // explicitly lists "Recruiter Uploaded Additional Documents" as its own
+    // realtime admin-notification trigger, distinct from submitting/
+    // resubmitting the perk claim itself (PerkSubmitted).
+    const company = await prisma.company.findUnique({ where: { id: companyId }, select: { name: true } })
+    EventBus.publish("PerkDocumentUploaded", {
+      companyId,
+      companyName: company?.name,
+      perkRequestId,
+      perkName: request.perkName,
+      category: doc.category,
+      uploadedAt: newDoc.uploadedAt,
+    })
+
+    return newDoc
+  }
+
+  // ==========================================
+  // APPROVAL TRACKER (Part 8) -- consolidated read view of the recruiter's
+  // Company Registration status/history plus their Perk Requests, so they
+  // don't have to piece it together from Company Profile and Perks
+  // separately. Interactive actions (resubmitting a perk, uploading
+  // documents) still live solely on Perks.tsx to avoid a second, duplicate
+  // perk-editing UI -- this page is deliberately read + navigate only.
+  // ==========================================
+  async getApprovalTracker(userId: string) {
+    const profile = await prisma.recruiterProfile.findUnique({
+      where: { userId },
+      include: {
+        company: {
+          include: {
+            perkRequests: { orderBy: { createdAt: "desc" } },
+            history: { orderBy: { createdAt: "desc" }, include: { admin: true } },
+          },
+        },
+      },
+    })
+
+    if (!profile) {
+      throw new Error("Recruiter profile not found")
+    }
+
+    const company = profile.company
+
+    return {
+      company: {
+        name: company.name,
+        status: company.status,
+        feedback: company.feedback,
+        createdAt: company.createdAt,
+        recruiterResubmissionComment: company.recruiterResubmissionComment,
+        resubmittedAt: company.resubmittedAt,
+      },
+      history: company.history.map((h) => ({
+        status: h.status,
+        notes: h.notes,
+        adminEmail: h.admin?.email || "Admin",
+        createdAt: h.createdAt,
+      })),
+      perkRequests: company.perkRequests,
+    }
   }
 
   // ==========================================
@@ -1230,6 +1394,119 @@ export class RecruiterService {
     })
 
     return updatedCompany
+  }
+
+  // ==========================================
+  // COMPANY PROFILE: OFFICE PHOTO GALLERY (Part 5) -- appended-only Json
+  // array, same versioned/never-overwritten shape used for verification and
+  // perk documents (Part 13), so re-uploads never silently destroy history.
+  // Deletion is still supported (a recruiter may want to remove an outdated
+  // photo), but it's an explicit action distinct from the upload-always-appends
+  // behavior.
+  // ==========================================
+  async addGalleryPhoto(
+    userId: string,
+    photo: { url: string; publicId: string; size: number; mimetype: string; caption?: string },
+    context?: ServiceContext
+  ) {
+    const profile = await prisma.recruiterProfile.findUnique({
+      where: { userId },
+      include: { company: true },
+    })
+    if (!profile) {
+      throw new Error("Recruiter profile not found")
+    }
+
+    const companyId = profile.companyId
+    const existing: any[] = Array.isArray(profile.company.galleryImages) ? (profile.company.galleryImages as any[]) : []
+
+    if (existing.length >= 20) {
+      throw new Error("Maximum of 20 gallery photos allowed. Remove an existing photo before adding a new one.")
+    }
+
+    const newPhoto = { ...photo, uploadedAt: new Date().toISOString() }
+    const updated = await prisma.company.update({
+      where: { id: companyId },
+      data: { galleryImages: [...existing, newPhoto] as any },
+    })
+
+    EventBus.publish("AuditCreated", {
+      ...context,
+      category: "RECRUITER",
+      action: "ADD_GALLERY_PHOTO",
+      entity: "Company",
+      entityId: companyId,
+      newValue: { url: photo.url, caption: photo.caption },
+    })
+
+    return updated
+  }
+
+  async deleteGalleryPhoto(userId: string, publicId: string, context?: ServiceContext) {
+    const profile = await prisma.recruiterProfile.findUnique({
+      where: { userId },
+      include: { company: true },
+    })
+    if (!profile) {
+      throw new Error("Recruiter profile not found")
+    }
+
+    const companyId = profile.companyId
+    const existing: any[] = Array.isArray(profile.company.galleryImages) ? (profile.company.galleryImages as any[]) : []
+    const target = existing.find((p) => p.publicId === publicId)
+    if (!target) {
+      throw new Error("Gallery photo not found")
+    }
+
+    const remaining = existing.filter((p) => p.publicId !== publicId)
+
+    const updated = await prisma.company.update({
+      where: { id: companyId },
+      data: { galleryImages: remaining as any },
+    })
+
+    try {
+      await deleteFromCloudinary(publicId, false)
+    } catch (err: any) {
+      logger.warn(`[Cloudinary] Failed to delete gallery photo asset: ${err.message}`)
+    }
+
+    EventBus.publish("AuditCreated", {
+      ...context,
+      category: "RECRUITER",
+      action: "DELETE_GALLERY_PHOTO",
+      entity: "Company",
+      entityId: companyId,
+      oldValue: { url: target.url },
+    })
+
+    return updated
+  }
+
+  // ==========================================
+  // COMPANY PROFILE: WORKPLACE POLICIES (Part 5) -- full-array replace
+  // (unlike the gallery, which appends). Policies are short text statements
+  // the recruiter authors and edits freely, so there's no "history" to lose
+  // by overwriting -- an edit here is a genuine edit, not a resubmission.
+  // ==========================================
+  async updatePolicies(userId: string, policies: { title: string; description: string }[], context?: ServiceContext) {
+    const companyId = await this.getOwnCompanyId(userId)
+
+    const updated = await prisma.company.update({
+      where: { id: companyId },
+      data: { policies: policies as any },
+    })
+
+    EventBus.publish("AuditCreated", {
+      ...context,
+      category: "RECRUITER",
+      action: "UPDATE_COMPANY_POLICIES",
+      entity: "Company",
+      entityId: companyId,
+      newValue: { policyCount: policies.length },
+    })
+
+    return updated
   }
 
   async getTeam(userId: string) {

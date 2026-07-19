@@ -6,6 +6,7 @@ import { Settings as SettingsIcon, ShieldAlert, Save, AlertCircle, Lock } from "
 import { DashboardCard } from "@/components/shared/DashboardCard"
 import { Button } from "@/components/ui/button"
 import { AdminApi } from "../services/adminApi"
+import { isValidPassword, PASSWORD_HELP_TEXT } from "@/utils/validators"
 
 // CONFIRMED BUG (fixed here, Final Implementation Pass Part 4):
 // `sessionTimeout` and `twoFactorEnabled` used to be real form fields here,
@@ -41,13 +42,17 @@ const adminSettingsSchema = z
   })
   .refine(
     (data) => {
+      // Part 16: standardized to the same 8-char + letter/number complexity
+      // rule used by every other password field in the app (this was the
+      // one outlier at `.min(6)` with no complexity requirement, letting
+      // admins set weaker passwords than candidates/recruiters).
       if (data.newPassword && data.newPassword.length > 0) {
-        return data.newPassword.length >= 6
+        return isValidPassword(data.newPassword)
       }
       return true
     },
     {
-      message: "New password must be at least 6 characters.",
+      message: PASSWORD_HELP_TEXT,
       path: ["newPassword"],
     }
   )
@@ -245,10 +250,11 @@ export function Settings() {
                     </label>
                     <input
                       type="password"
-                      placeholder="Min 6 chars"
+                      placeholder="Min 8 chars"
                       {...register("newPassword")}
                       className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-[#6B2C91]/30 dark:border-slate-800 dark:bg-slate-950 dark:text-white"
                     />
+                    <p className="text-[10px] text-slate-400 dark:text-slate-500">{PASSWORD_HELP_TEXT}</p>
                     {errors.newPassword && (
                       <p className="text-[10px] text-red-500 font-bold flex items-center gap-1">
                         <AlertCircle className="size-3 shrink-0" />

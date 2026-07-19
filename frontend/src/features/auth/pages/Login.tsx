@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Logo } from "@/components/shared/Logo"
 import { useAuth } from "@/hooks/useAuth"
+import { isValidEmail } from "@/utils/validators"
 
 export function Login() {
   const navigate = useNavigate()
@@ -16,6 +17,7 @@ export function Login() {
   const [password, setPassword] = useState("")
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [emailError, setEmailError] = useState<string | null>(null)
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -23,6 +25,15 @@ export function Login() {
       toast.error("Please fill in all fields")
       return
     }
+
+    // Part 16: catch an obvious typo (e.g. missing "@") before round-tripping
+    // to the server -- doesn't change what the backend enforces, just gives
+    // faster feedback for the most common mistake.
+    if (!isValidEmail(email)) {
+      setEmailError("Please enter a valid email address.")
+      return
+    }
+    setEmailError(null)
 
     try {
       setLoading(true)
@@ -84,10 +95,14 @@ export function Login() {
                   required
                   placeholder="name@company.com"
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  onChange={(e) => {
+                    setEmail(e.target.value)
+                    if (emailError) setEmailError(null)
+                  }}
                   className="pl-10 h-11 border-slate-200 dark:border-slate-800 focus-visible:ring-[#6B2C91]/30 rounded-xl"
                 />
               </div>
+              {emailError && <p className="text-[10px] font-bold text-red-500">{emailError}</p>}
             </div>
 
             <div className="space-y-1.5">

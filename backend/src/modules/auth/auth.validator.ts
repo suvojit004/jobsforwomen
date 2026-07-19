@@ -1,16 +1,35 @@
 import { z } from "zod"
 
+// Part 16 (inline field validation): every password field in this file
+// previously enforced length only (`.min(8)`), so "aaaaaaaa" or "11111111"
+// passed -- add a real complexity requirement (at least one letter + one
+// number). Only applied to fields that create/replace a password (register,
+// reset, accept-invitation, change-password's newPassword) -- NOT to login's
+// password or deleteAccountSchema's re-auth password, since those must keep
+// accepting whatever a user's *existing* password already is.
+const passwordComplexity = z
+  .string()
+  .min(8, "Password must be at least 8 characters long")
+  .regex(/(?=.*[A-Za-z])(?=.*\d)/, "Password must include at least one letter and one number")
+
+// Phone previously only checked length (`.min(10)`), so "aaaaaaaaaa" (10
+// letters) passed. Real digits-only format check (with optional leading
+// `+`), matching frontend/src/utils/validators.ts's PHONE_REGEX.
+const phoneNumber = z
+  .string()
+  .regex(/^\+?[0-9]{10,14}$/, "Please enter a valid phone number (10-14 digits).")
+
 export const registerCandidateSchema = z.object({
   email: z.string().email("Invalid email format"),
-  password: z.string().min(8, "Password must be at least 8 characters long"),
+  password: passwordComplexity,
   fullName: z.string().min(2, "Full name must be at least 2 characters long"),
 })
 
 export const registerRecruiterSchema = z.object({
   email: z.string().email("Invalid email format"),
-  password: z.string().min(8, "Password must be at least 8 characters long"),
+  password: passwordComplexity,
   fullName: z.string().min(2, "Full name must be at least 2 characters long"),
-  phone: z.string().min(10, "Phone number must be at least 10 characters long"),
+  phone: phoneNumber,
   companyName: z.string().min(2, "Company name must be at least 2 characters long"),
   website: z.string().url("Invalid website URL"),
   location: z.string().min(2, "Location must be at least 2 characters long"),
@@ -37,19 +56,19 @@ export const forgotPasswordSchema = z.object({
 
 export const resetPasswordSchema = z.object({
   token: z.string().min(1, "Token is required"),
-  password: z.string().min(8, "Password must be at least 8 characters long"),
+  password: passwordComplexity,
 })
 
 export const acceptInvitationSchema = z.object({
   token: z.string().min(1, "Token is required"),
-  password: z.string().min(8, "Password must be at least 8 characters long").optional(),
+  password: passwordComplexity.optional(),
   googleToken: z.string().optional(),
   fullName: z.string().min(2, "Full name must be at least 2 characters long"),
 })
 
 export const changePasswordSchema = z.object({
   currentPassword: z.string().min(1, "Current password is required"),
-  newPassword: z.string().min(8, "New password must be at least 8 characters long"),
+  newPassword: passwordComplexity,
 })
 
 export const deleteAccountSchema = z.object({

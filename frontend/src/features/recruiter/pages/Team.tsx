@@ -214,10 +214,13 @@ export function Team() {
                         <ShieldCheck className="size-3 text-slate-500" />
                         Recruiter
                       </span>
+                      {/* Part 17 accessible status colors: non-Active
+                          (PendingVerification/PendingApproval etc.) moved
+                          from amber to Blue. */}
                       <span className={`rounded-full px-2 py-0.5 text-[9px] font-black ${
                         member.status === "Active"
                           ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-300"
-                          : "bg-amber-50 text-amber-600 dark:bg-amber-950/40 dark:text-amber-300"
+                          : "bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-300"
                       }`}>
                         {member.status}
                       </span>

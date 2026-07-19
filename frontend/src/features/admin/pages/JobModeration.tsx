@@ -219,7 +219,9 @@ export function JobModeration() {
       header: "Actions",
       className: "text-right",
       cell: (row) => (
-        <div className="flex justify-end gap-1.5">
+        // Part 15: flex-wrap keeps up to 4 action buttons from forcing this
+        // table into horizontal-scroll mode on mobile.
+        <div className="flex flex-wrap justify-end gap-1.5">
           {/* Approve/Reject must be available for any job actually awaiting
               or previously failing moderation (pending_approval, flagged),
               not just reported ones -- gating Approve on `reported` alone

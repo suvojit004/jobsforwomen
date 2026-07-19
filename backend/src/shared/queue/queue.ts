@@ -228,13 +228,15 @@ async function processJobMock(queueName: string, jobName: string, data: any) {
 }
 
 async function handleEmailJob(jobName: string, data: any) {
-  const { to, token, roleName, companyName, status, notes, jobTitle, recipientName, jobs, scheduledAt, location, offerDetails } = data
+  const { to, token, roleName, companyName, status, notes, jobTitle, recipientName, jobs, scheduledAt, location, offerDetails, actionLink, actionLabel, perkName, comment } = data
   if (jobName === "sendWelcome") {
     await EmailService.sendWelcomeEmail(to, token)
   } else if (jobName === "sendEmployeeInvitation") {
     await EmailService.sendEmployeeInvitation(to, token, roleName)
   } else if (jobName === "sendCompanyVerification") {
-    await EmailService.sendCompanyVerificationEmail(to, companyName, status, notes)
+    await EmailService.sendCompanyVerificationEmail(to, companyName, status, notes, actionLink, actionLabel)
+  } else if (jobName === "sendPerkVerification") {
+    await EmailService.sendPerkVerificationEmail(to, companyName, perkName, status, comment, actionLink)
   } else if (jobName === "sendJobModeration") {
     await EmailService.sendJobModerationEmail(to, jobTitle, status, notes)
   } else if (jobName === "sendPasswordReset") {

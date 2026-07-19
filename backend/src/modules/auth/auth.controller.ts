@@ -278,7 +278,15 @@ export class AuthController {
       const frontendUrl = process.env.FRONTEND_URL || env.CLIENT_URL || "http://localhost:3000"
       return res.redirect(`${frontendUrl}/oauth/callback?token=${result.accessToken}`)
     } catch (err: any) {
-      next(err)
+      // This is a full-page browser redirect, not a fetch/XHR -- letting a
+      // thrown error (e.g. the recruiter company-approval gate in
+      // AuthService.createAuthSession, or any other OAuth failure) reach the
+      // generic Express error handler would render a bare JSON blob instead
+      // of anything inside the SPA. Redirect back into the app with the
+      // message instead so OAuthCallback.tsx can display it properly.
+      const frontendUrl = process.env.FRONTEND_URL || env.CLIENT_URL || "http://localhost:3000"
+      const message = err?.message || "Google sign-in failed. Please try again."
+      return res.redirect(`${frontendUrl}/oauth/callback?error=${encodeURIComponent(message)}`)
     }
   }
 }

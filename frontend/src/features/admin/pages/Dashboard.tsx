@@ -376,7 +376,7 @@ export function Dashboard() {
                       <span className={cn(
                         "text-[9px] font-black uppercase px-1.5 py-0.5 rounded",
                         row.badge === "Pending Review"
-                          ? "bg-amber-100 text-amber-800 dark:bg-amber-950/20 dark:text-amber-400"
+                          ? "bg-blue-100 text-blue-800 dark:bg-blue-950/20 dark:text-blue-400"
                           : row.badge === "Not Claimed"
                           ? "bg-slate-100 text-slate-655 dark:bg-slate-800 dark:text-slate-400"
                           : "bg-pink-100 text-pink-700 dark:bg-pink-950/20 dark:text-pink-300"
@@ -425,7 +425,9 @@ export function Dashboard() {
             </Link>
           </div>
 
-          <div className="grid grid-cols-4 gap-2">
+          {/* Part 15: no responsive breakpoint meant 4 equal columns got
+              extremely cramped on narrow cards -- 2 columns below sm. */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             <div className="bg-purple-50/50 p-2 rounded-xl dark:bg-slate-950/20 text-center space-y-1">
               <span className="text-xs font-black text-[#6B2C91] dark:text-pink-300">{candidateStats.total.toLocaleString()}</span>
               <p className="text-[8px] font-bold text-slate-400 uppercase tracking-tight">Candidates</p>
@@ -725,12 +727,17 @@ export function Dashboard() {
                   </tr>
                 ) : (
                   companies.map((item, idx) => {
+                    // Part 17 accessible status colors: Approved was
+                    // inconsistently rendered pink here (every other
+                    // approval-status badge in the app uses green for
+                    // Approved) and the pending case was amber -- both
+                    // brought in line with the rest of the app.
                     const style =
                       item.badge === "Approved"
-                        ? "bg-pink-100 text-pink-700 dark:bg-pink-950/20 dark:text-pink-300"
+                        ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/20 dark:text-emerald-300"
                         : item.badge === "Rejected"
                         ? "bg-red-100 text-red-700 dark:bg-red-950/20 dark:text-red-400"
-                        : "bg-amber-100 text-amber-800 dark:bg-amber-950/20 dark:text-amber-400"
+                        : "bg-blue-100 text-blue-800 dark:bg-blue-950/20 dark:text-blue-400"
                     return (
                       <tr key={item.id || idx} className="hover:bg-slate-50/30 dark:hover:bg-slate-900/10">
                         <td className="py-1.5 font-extrabold text-slate-900 dark:text-white max-w-[80px] truncate">{item.name}</td>

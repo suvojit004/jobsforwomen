@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react"
 import { useTheme } from "next-themes"
 import { motion } from "framer-motion"
+import { toast } from "sonner"
 import {
   User,
   Paintbrush,
@@ -17,6 +18,7 @@ import { Button } from "@/components/ui/button"
 import { DashboardCard } from "@/components/dashboard/DashboardCard"
 import { candidateApi } from "../services/candidateApi"
 import { cn } from "@/lib/utils"
+import { isValidPhone, isValidPassword, PASSWORD_HELP_TEXT } from "@/utils/validators"
 
 type TabType = "account" | "appearance" | "security" | "notifications" | "privacy"
 
@@ -89,6 +91,11 @@ export function Settings() {
 
   const handleAccountSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    // Part 16: phone previously had no format validation at all.
+    if (phone && !isValidPhone(phone)) {
+      toast.error("Please enter a valid phone number (10-14 digits).")
+      return
+    }
     try {
       await candidateApi.updateProfile({
         fullName,
@@ -97,8 +104,12 @@ export function Settings() {
       })
       setSaveSuccess(true)
       setTimeout(() => setSaveSuccess(false), 3000)
-    } catch (err) {
+    } catch (err: any) {
+      // Previously only logged to the console -- a failed save (e.g. the
+      // backend's own phone-format rejection) looked identical to a
+      // successful one, since no error ever reached the user.
       console.error("Failed to update profile", err)
+      toast.error(err?.message || "Couldn't save your changes. Please try again.")
     }
   }
 
@@ -108,6 +119,12 @@ export function Settings() {
     if (!currentPassword || !newPassword) return
     if (newPassword !== confirmPassword) {
       setPasswordError("New password and confirmation do not match.")
+      return
+    }
+    // Part 16: previously no complexity/length check at all client-side --
+    // a one-character new password would pass this gate entirely.
+    if (!isValidPassword(newPassword)) {
+      setPasswordError(PASSWORD_HELP_TEXT)
       return
     }
     try {
@@ -294,6 +311,9 @@ export function Settings() {
                       onChange={(e) => setPhone(e.target.value)}
                       className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6B2C91]/30 dark:border-slate-800 dark:bg-slate-900 dark:text-white"
                     />
+                    {phone && !isValidPhone(phone) && (
+                      <p className="text-[10px] font-bold text-red-500">Please enter a valid phone number (10-14 digits).</p>
+                    )}
                   </div>
                 </div>
 
@@ -403,6 +423,7 @@ export function Settings() {
                       required
                       className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6B2C91]/30 dark:border-slate-800 dark:bg-slate-900 dark:text-white"
                     />
+                    <p className="text-[10px] text-slate-400 dark:text-slate-500">{PASSWORD_HELP_TEXT}</p>
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400">Confirm Password</label>

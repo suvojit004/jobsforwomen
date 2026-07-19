@@ -45,7 +45,7 @@ export function Help() {
     },
     {
       question: "Are candidate resumes verified?",
-      answer: "Yes, candidates who upload credentials that pass our screening receive a 'Verified Resume' indicator. Recruiters can view or download these verified documents directly from the candidate preview panel.",
+      answer: "No -- resumes are not screened or manually verified by the platform. A candidate's profile simply shows whether they've uploaded a resume ('Resume Uploaded'). Recruiters can view or download the file directly from the candidate preview panel, but its contents are not independently checked.",
       category: "account",
     },
   ]

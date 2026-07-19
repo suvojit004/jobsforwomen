@@ -6,7 +6,7 @@ import {
   requireApprovedCompany,
   requireOwnership,
 } from "../rbac/rbac.middleware"
-import { uploadLogoMiddleware } from "../../shared/middleware/upload.middleware"
+import { uploadLogoMiddleware, uploadPerkDocumentMiddleware, uploadGalleryPhotoMiddleware } from "../../shared/middleware/upload.middleware"
 
 const router = Router()
 const controller = new RecruiterController()
@@ -23,6 +23,28 @@ router.get("/analytics", controller.getAnalytics)
 router.post("/company/onboard", controller.onboardCompany)
 router.post("/company/logo", uploadLogoMiddleware, controller.uploadCompanyLogo)
 router.delete("/company/logo", controller.deleteCompanyLogo)
+
+// Company Profile expansion (Part 5) -- office photo gallery + workplace
+// policies. Gated behind requireApprovedCompany like Perks, since this is
+// part of the post-approval Company Profile area, not the initial
+// onboarding wizard.
+router.post("/company/gallery", requireApprovedCompany, uploadGalleryPhotoMiddleware, controller.uploadGalleryPhoto)
+// publicId is passed in the request body, not a URL param -- Cloudinary
+// public_ids contain folder slashes (e.g. "jfw/gallery/xyz"), which would
+// otherwise need awkward double-encoding to survive as a single path segment.
+router.delete("/company/gallery", requireApprovedCompany, controller.deleteGalleryPhoto)
+router.put("/company/policies", requireApprovedCompany, controller.updatePolicies)
+
+// Company Perk Requests (Parts 6/7 -- independent from company registration
+// approval, requires approved company since it's part of the post-approval
+// Company Profile area per Part 5)
+router.post("/perks/submit", requireApprovedCompany, controller.submitPerk)
+router.get("/perks", requireApprovedCompany, controller.getPerkRequests)
+router.post("/perks/:id/documents", requireApprovedCompany, uploadPerkDocumentMiddleware, controller.addPerkDocument)
+
+// Approval Requests tracker (Part 8) -- consolidated Company Registration
+// status/history + Perk Requests overview
+router.get("/approvals", requireApprovedCompany, controller.getApprovalTracker)
 
 // Settings Management
 router.get("/settings", controller.getSettings)

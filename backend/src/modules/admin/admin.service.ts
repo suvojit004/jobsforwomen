@@ -2,12 +2,12 @@ import prisma from "../../shared/database/db"
 import { logger } from "../../shared/utils/logger"
 import EventBus from "../../shared/eventBus/eventBus"
 import { PermissionCacheManager } from "../../shared/utils/permissionCache"
-import { CompanyStatus, JobStatus, ApplicationStatus, UserStatus, JobVisibility } from "@prisma/client"
+import { CompanyStatus, JobStatus, ApplicationStatus, UserStatus, JobVisibility, PerkStatus } from "@prisma/client"
 import crypto from "crypto"
 import redis from "../../shared/utils/redis"
 import { verifyEmailTransport, EmailService } from "../../shared/utils/email"
 import env from "../../shared/config/env"
-import { verifyCloudinaryConnection, runOrphanAssetCleanup } from "../../shared/utils/cloudinary"
+import { verifyCloudinaryConnection, runOrphanAssetCleanup, deleteFromCloudinary } from "../../shared/utils/cloudinary"
 import { io as socketIo } from "../../shared/socket/socket"
 import { createAuditLog } from "../../shared/utils/audit"
 import { invalidateFeatureFlagCache } from "../../shared/utils/featureFlags"
@@ -367,6 +367,7 @@ export class AdminService {
         industry: true,
         recruiters: { include: { user: true } },
         benefits: true,
+        perkRequests: true,
       },
       orderBy: { name: "asc" },
     })
@@ -422,7 +423,6 @@ export class AdminService {
     }
 
     const admin = await prisma.user.findUnique({ where: { id: adminId } })
-    const adminName = admin?.email || "Admin"
 
     // Save Verification History audit trail
     await prisma.companyVerificationHistory.create({
@@ -450,15 +450,13 @@ export class AdminService {
         data: { verified: true },
       })
 
-      // Verify claimed perks
-      await prisma.companyBenefit.updateMany({
-        where: { companyId },
-        data: {
-          verified: true,
-          verifiedBy: adminName,
-          verifiedAt: new Date(),
-        },
-      })
+      // Perk claims are NOT auto-verified here anymore (Part 6 explicitly
+      // requires the perk workflow to "remain completely independent from
+      // Company Registration" -- approving the company used to bulk-flip
+      // every CompanyBenefit to verified regardless of whether any admin
+      // ever actually reviewed that specific perk claim). Perks now go
+      // through their own CompanyPerkRequest workflow exclusively
+      // (see admin.service.ts's reviewPerkRequest()).
 
       EventBus.publish("CompanyApproved", { companyId, context })
     } else if (status === CompanyStatus.rejected) {
@@ -467,6 +465,27 @@ export class AdminService {
         data: { verified: false },
       })
       EventBus.publish("CompanyRejected", { companyId, context })
+    } else if (status === CompanyStatus.info_requested) {
+      // Confirmed gap: this branch never existed before -- setting a company
+      // to info_requested via the "Request Documentation" admin action fired
+      // no event at all, so the recruiter never got an email and admins never
+      // got an audit entry for it. Communication for this state is
+      // email-only (per spec), so there is no analogous
+      // recruiterProfile.verified change here (that only happens on the
+      // terminal approved/rejected outcomes).
+      //
+      // Also generate the secure, single-use, 7-day resubmission token here
+      // (Part 3): a fresh token is minted on every info-request, overwriting
+      // any previous unused one, so only the most recent email link is ever
+      // valid.
+      const verificationToken = crypto.randomBytes(32).toString("hex")
+      const verificationTokenExpiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+      await prisma.company.update({
+        where: { id: companyId },
+        data: { verificationToken, verificationTokenExpiresAt },
+      })
+
+      EventBus.publish("CompanyInfoRequested", { companyId, notes, verificationToken, context })
     }
 
     EventBus.publish("AuditCreated", {
@@ -481,6 +500,72 @@ export class AdminService {
     })
 
     return updatedCompany
+  }
+
+  // ==========================================
+  // COMPANY PERK REQUESTS (Parts 6/7 -- deliberately independent from
+  // verifyCompany() above; a company's registration approval must never
+  // auto-approve or auto-reject its perk claims)
+  // ==========================================
+
+  async listPerkRequests(status?: string) {
+    const where: any = {}
+    if (status && status !== "all") {
+      where.status = status
+    }
+
+    return prisma.companyPerkRequest.findMany({
+      where,
+      include: {
+        company: {
+          include: {
+            recruiters: { include: { user: true } },
+          },
+        },
+      },
+      orderBy: { submittedAt: "desc" },
+    })
+  }
+
+  async reviewPerkRequest(adminId: string, perkRequestId: string, status: PerkStatus, comment?: string, context?: ServiceContext) {
+    const request = await prisma.companyPerkRequest.findUnique({
+      where: { id: perkRequestId },
+      include: { company: true },
+    })
+
+    if (!request) {
+      throw new Error("Perk request not found")
+    }
+
+    const admin = await prisma.user.findUnique({ where: { id: adminId } })
+
+    const updated = await prisma.companyPerkRequest.update({
+      where: { id: perkRequestId },
+      data: {
+        status,
+        adminComment: comment,
+        reviewedAt: new Date(),
+      },
+    })
+
+    // Unlike company registration (email-only), perk communication is BOTH
+    // a dashboard notification AND an email per Part 7 -- both, plus the
+    // audit log entry, are handled by notification.listener.ts's
+    // PerkReviewed subscription (and email.listener.ts's, for the email) so
+    // there's a single place logging this action, not a duplicate here.
+    EventBus.publish("PerkReviewed", {
+      perkRequestId,
+      companyId: request.companyId,
+      companyName: request.company.name,
+      perkName: request.perkName,
+      status,
+      comment,
+      operatorId: adminId,
+      operatorEmail: admin?.email,
+      context,
+    })
+
+    return updated
   }
 
   // ==========================================
@@ -641,6 +726,71 @@ export class AdminService {
     })
 
     return updatedUser
+  }
+
+  // Permanent user deletion (User Moderation page). Relies on the same
+  // cascade-delete design already used by auth.service.ts's self-service
+  // deleteOwnAccount(): every relation a User owns in schema.prisma
+  // (CandidateProfile/RecruiterProfile and everything hanging off them --
+  // applications, saved jobs, notifications, sessions, refresh tokens,
+  // conversations) is declared `onDelete: Cascade`, so a single
+  // `prisma.user.delete()` genuinely removes all of it, not just the User
+  // row. The one thing Prisma's cascade can't reach is the actual resume
+  // file sitting in Cloudinary (only the DB pointer to it), so that's
+  // cleaned up explicitly first, best-effort, the same way
+  // deleteCompanyLogo() already does for company logos.
+  async deleteUser(adminId: string, targetUserId: string, context?: ServiceContext) {
+    if (adminId === targetUserId) {
+      throw new Error("You cannot delete your own account from this screen.")
+    }
+
+    const admin = await prisma.user.findUnique({ where: { id: adminId } })
+    const target = await prisma.user.findUnique({
+      where: { id: targetUserId },
+      include: {
+        roles: { include: { role: true } },
+        candidateProfile: true,
+      },
+    })
+
+    if (!target) {
+      throw new Error("Target user account not found")
+    }
+
+    const targetRoleNames: string[] = (target.roles || []).map((r: any) => r.role?.name).filter(Boolean)
+    if (targetRoleNames.includes("Super Admin")) {
+      throw new Error("Super Admin accounts cannot be deleted from this screen.")
+    }
+
+    const resumePublicId = target.candidateProfile?.resumePublicId
+    if (resumePublicId) {
+      try {
+        await deleteFromCloudinary(resumePublicId, true)
+      } catch (err: any) {
+        logger.warn(`[Cloudinary] Failed to delete resume asset for deleted user ${targetUserId}: ${err.message}`)
+      }
+    }
+
+    await prisma.user.delete({ where: { id: targetUserId } })
+
+    await PermissionCacheManager.invalidateUser(targetUserId)
+
+    // The row is now gone, so this audit entry (with a snapshot of who/what
+    // was deleted) is the only remaining record that this account ever
+    // existed -- entityId is retained for traceability even though it no
+    // longer resolves to a live row.
+    EventBus.publish("AuditCreated", {
+      ...context,
+      operatorId: adminId,
+      operatorEmail: admin?.email,
+      category: "ADMIN",
+      action: "DELETE_USER",
+      entity: "User",
+      entityId: targetUserId,
+      oldValue: { email: target.email, roles: targetRoleNames, status: target.status },
+    })
+
+    return { success: true }
   }
 
   async userAdministrativeAction(
@@ -842,6 +992,20 @@ export class AdminService {
       context,
     })
 
+    // Part 14 audit-completeness fix: this regenerates a fresh, live
+    // invitation token (a real security-sensitive action -- it extends who
+    // can still redeem staff access) but previously left no audit trail at
+    // all, unlike its sibling inviteEmployee/cancelInvitation actions below.
+    EventBus.publish("AuditCreated", {
+      ...context,
+      operatorId: adminId,
+      category: "ADMIN",
+      action: "RESEND_INVITATION",
+      entity: "Invitation",
+      entityId: invitationId,
+      newValue: { email: invitation.email },
+    })
+
     return {
       ...updated,
       status: "Pending",
@@ -874,6 +1038,18 @@ export class AdminService {
     const updated = await prisma.invitation.update({
       where: { id: invitationId },
       data: { expiresAt: new Date(0) },
+    })
+
+    // Part 14 audit-completeness fix: this performs the exact same
+    // destructive mutation as cancelInvitation() above (immediately expires
+    // a pending invitation), but previously had no audit trail at all.
+    EventBus.publish("AuditCreated", {
+      ...context,
+      operatorId: adminId,
+      category: "ADMIN",
+      action: "EXPIRE_INVITATION",
+      entity: "Invitation",
+      entityId: invitationId,
     })
 
     return {
@@ -959,6 +1135,22 @@ export class AdminService {
     const deleted = await prisma.featureFlag.delete({ where: { id: flagId } })
     await PermissionCacheManager.invalidateAll()
     invalidateFeatureFlagCache(deleted.key)
+
+    // Part 14 audit-completeness fix: deleting a feature flag is a
+    // permanent, platform-wide configuration change -- its sibling
+    // create/update actions above are both audited via
+    // "AdminFeatureFlagUpdated", but delete previously published no event
+    // at all.
+    EventBus.publish("AuditCreated", {
+      ...context,
+      operatorId: adminId,
+      category: "ADMIN",
+      action: "DELETE_FEATURE_FLAG",
+      entity: "FeatureFlag",
+      entityId: flagId,
+      oldValue: { key: deleted.key },
+    })
+
     return { success: true }
   }
 
@@ -1510,12 +1702,28 @@ export class AdminService {
     return user?.preferences || {}
   }
 
-  async updateAdminSettings(adminId: string, preferences: any) {
+  async updateAdminSettings(adminId: string, preferences: any, context?: ServiceContext) {
     const updated = await prisma.user.update({
       where: { id: adminId },
       data: { preferences },
       select: { preferences: true }
     })
+
+    // Part 14 audit-completeness fix: the recruiter and candidate
+    // equivalents of "save my own settings" are both audited
+    // (UPDATE_SETTINGS / UPDATE_FEATURE_FLAG respectively) -- this admin
+    // one previously wasn't, despite admin preferences including things
+    // like notification routing that are worth being able to trace.
+    EventBus.publish("AuditCreated", {
+      ...context,
+      operatorId: adminId,
+      category: "ADMIN",
+      action: "UPDATE_SETTINGS",
+      entity: "User",
+      entityId: adminId,
+      newValue: preferences,
+    })
+
     return updated.preferences
   }
 

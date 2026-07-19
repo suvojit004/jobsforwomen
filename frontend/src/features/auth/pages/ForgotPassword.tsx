@@ -7,11 +7,13 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Logo } from "@/components/shared/Logo"
 import apiClient from "@/api/client"
+import { isValidEmail } from "@/utils/validators"
 
 export function ForgotPassword() {
   const [email, setEmail] = useState("")
   const [loading, setLoading] = useState(false)
   const [submitted, setSubmitted] = useState(false)
+  const [emailError, setEmailError] = useState<string | null>(null)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -19,6 +21,11 @@ export function ForgotPassword() {
       toast.error("Please enter your email address")
       return
     }
+    if (!isValidEmail(email)) {
+      setEmailError("Please enter a valid email address.")
+      return
+    }
+    setEmailError(null)
 
     try {
       setLoading(true)
@@ -67,10 +74,14 @@ export function ForgotPassword() {
                   required
                   placeholder="name@email.com"
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  onChange={(e) => {
+                    setEmail(e.target.value)
+                    if (emailError) setEmailError(null)
+                  }}
                   className="pl-10 h-11 border-slate-200 dark:border-slate-800 focus-visible:ring-[#6B2C91]/30 rounded-xl"
                 />
               </div>
+              {emailError && <p className="text-[10px] font-bold text-red-500">{emailError}</p>}
             </div>
 
             <Button

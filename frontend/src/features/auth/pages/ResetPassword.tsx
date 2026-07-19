@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Logo } from "@/components/shared/Logo"
 import apiClient from "@/api/client"
+import { isValidPassword, PASSWORD_HELP_TEXT } from "@/utils/validators"
 
 export function ResetPassword() {
   const [searchParams] = useSearchParams()
@@ -31,8 +32,8 @@ export function ResetPassword() {
       return
     }
 
-    if (password.length < 8) {
-      toast.error("Password must be at least 8 characters long")
+    if (!isValidPassword(password)) {
+      toast.error(PASSWORD_HELP_TEXT)
       return
     }
 
@@ -93,6 +94,7 @@ export function ResetPassword() {
                     className="pl-10 h-11 border-slate-200 dark:border-slate-800 focus-visible:ring-[#6B2C91]/30 rounded-xl"
                   />
                 </div>
+                <p className="text-[10px] font-semibold text-slate-400 dark:text-slate-500">{PASSWORD_HELP_TEXT}</p>
               </div>
 
               <div className="space-y-1.5">

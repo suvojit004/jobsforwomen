@@ -22,6 +22,8 @@ import {
   CircleHelp,
   LogOut,
   Bell,
+  Award,
+  ClipboardCheck,
 } from "lucide-react"
 
 const recruiterMenuItems = [
@@ -32,6 +34,8 @@ const recruiterMenuItems = [
   { label: "Messages", icon: MessageSquare, href: "/recruiter/messages" },
   { label: "Notifications", icon: Bell, href: "/recruiter/notifications" },
   { label: "Company Profile", icon: Building, href: "/recruiter/company" },
+  { label: "Perks & Certifications", icon: Award, href: "/recruiter/perks" },
+  { label: "Approval Requests", icon: ClipboardCheck, href: "/recruiter/approvals" },
   { label: "Manage Team", icon: Users, href: "/recruiter/team" },
   { label: "Analytics", icon: LineChart, href: "/recruiter/analytics" },
   { label: "Settings", icon: Settings, href: "/recruiter/settings" },

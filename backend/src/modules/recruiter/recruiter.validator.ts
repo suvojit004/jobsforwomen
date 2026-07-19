@@ -4,7 +4,22 @@ import { WorkMode, ApplicationStatus } from "@prisma/client"
 // Explicit states for Company Verification Onboarding Document Types
 export const AllowedDocumentFormats = ["application/pdf", "image/png", "image/jpeg", "image/jpg"]
 export const MaxDocumentSize = 10 * 1024 * 1024 // 10 MB
-export const AllowedDocumentCategories = ["GovernmentIssuedID", "TaxRegistration", "BusinessLicense", "UtilityBill"]
+// Extended to match the document types named explicitly in Part 3 of the
+// recruiter-onboarding spec (GST/PAN/CIN/registration certificate/website
+// ownership proof/other); the original 4 are kept for backward compatibility
+// since nothing else in the codebase restricts to only these.
+export const AllowedDocumentCategories = [
+  "GovernmentIssuedID",
+  "TaxRegistration",
+  "BusinessLicense",
+  "UtilityBill",
+  "GST",
+  "PAN",
+  "CIN",
+  "CompanyRegistrationCertificate",
+  "WebsiteOwnershipProof",
+  "Other",
+]
 
 // Company Verification Document schema helper
 export const verificationDocumentSchema = z.object({
@@ -25,6 +40,15 @@ export const logoMetadataSchema = z.object({
   publicId: z.string().min(1, "Logo public ID is required"),
   size: z.number().max(2 * 1024 * 1024, "Logo size must not exceed 2 MB").optional(),
   mimetype: z.string().optional(),
+})
+
+// Perk submission/resubmission (Parts 6/7). One endpoint covers both first
+// submission (no comment) and resubmission after rejected/info_requested
+// (comment describing what changed) -- see recruiter.service.ts's
+// submitOrResubmitPerk().
+export const submitPerkSchema = z.object({
+  perkName: z.string().min(2, "Perk name is required"),
+  comment: z.string().max(2000).optional(),
 })
 
 // Company Onboarding Schema
@@ -143,11 +167,35 @@ export const recruiterSettingsSchema = z.object({
   // jobTitle has no dedicated column, so it's stored in the same
   // preferences JSON blob as the notification settings.
   fullName: z.string().min(2, "Name must be at least 2 characters.").optional(),
-  phone: z.string().min(8, "Phone number must be at least 8 digits.").optional(),
+  // Part 16: was length-only (`.min(8)`), so "aaaaaaaa" passed. Real format
+  // check, consistent with candidate.validator.ts and
+  // frontend/src/utils/validators.ts's PHONE_REGEX.
+  phone: z.string().regex(/^\+?[0-9]{10,14}$/, "Please enter a valid phone number (10-14 digits).").optional(),
   jobTitle: z.string().min(2, "Job title must be at least 2 characters.").optional(),
 })
 
 // Invite Colleague Schema
 export const inviteColleagueSchema = z.object({
   email: z.string().email("Invalid email address"),
+})
+
+// Company Policies (Part 5 -- expanded Company Profile). Deliberately a
+// free-form list of named statements rather than fixed enum fields, matching
+// the same "extensible, not an enum" philosophy already used for
+// CompanyPerkRequest.perkName -- recruiters name whichever policies are
+// relevant to them (POSH, maternity leave, equal pay, grievance redressal,
+// etc.) rather than being limited to a hardcoded set this schema would have
+// to keep guessing at.
+export const companyPolicySchema = z.object({
+  title: z.string().min(2, "Policy title must be at least 2 characters.").max(150),
+  description: z.string().min(5, "Policy description must be at least 5 characters.").max(3000),
+})
+
+export const updatePoliciesSchema = z.object({
+  policies: z.array(companyPolicySchema).max(30, "A maximum of 30 policies can be listed."),
+})
+
+// Gallery photo caption -- optional, attached at upload time
+export const galleryPhotoCaptionSchema = z.object({
+  caption: z.string().max(150, "Caption cannot exceed 150 characters.").optional(),
 })

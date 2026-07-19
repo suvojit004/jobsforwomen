@@ -239,10 +239,15 @@ export function JobDetails() {
                   <span
                     className={cn(
                       "inline-flex h-5 items-center rounded-md px-2 text-[10px] font-black uppercase ring-1 ring-inset shrink-0",
+                      // Part 17 accessible status colors: Pending -> Blue
+                      // (was amber, shared with the unrelated "Paused" state
+                      // which made both look like the same status), Paused
+                      // -> Gray (a "disabled"/not-currently-live state,
+                      // distinct from awaiting-admin-review).
                       displayStatus === "Active"
                         ? "bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-500/15 dark:text-emerald-300"
-                        : displayStatus === "Paused" || displayStatus === "Pending Approval"
-                        ? "bg-amber-50 text-amber-700 ring-amber-200 dark:bg-amber-500/15 dark:text-amber-300"
+                        : displayStatus === "Pending Approval"
+                        ? "bg-blue-50 text-blue-700 ring-blue-200 dark:bg-blue-500/15 dark:text-blue-300"
                         : displayStatus === "Rejected"
                         ? "bg-red-50 text-red-700 ring-red-200 dark:bg-red-500/15 dark:text-red-300"
                         : "bg-slate-100 text-slate-600 ring-slate-200 dark:bg-slate-800 dark:text-slate-400"
@@ -294,7 +299,7 @@ export function JobDetails() {
                   </Button>
                 )}
                 {displayStatus === "Pending Approval" && (
-                  <span className="h-9 inline-flex items-center px-3 text-xs font-bold text-amber-600 dark:text-amber-300">
+                  <span className="h-9 inline-flex items-center px-3 text-xs font-bold text-blue-600 dark:text-blue-300">
                     Awaiting admin approval
                   </span>
                 )}

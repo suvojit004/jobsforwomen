@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react"
+import { useSearchParams } from "react-router-dom"
 import {
   Mail,
   MapPin,
@@ -21,16 +22,32 @@ interface CompanyRecruiterContact {
   verified: boolean
 }
 
+interface VerificationDocument {
+  url: string
+  category: string
+  uploadedAt: string
+  version: number
+}
+
+interface PerkRequestSummary {
+  perkName: string
+  status: string
+  adminComment: string | null
+}
+
 interface AdminCompany {
   id: string
   name: string
   website: string
   location: string
   industry: string
-  claimedPerks: string[]
+  perkRequests: PerkRequestSummary[]
   status: string
   recruiters: CompanyRecruiterContact[]
   hiredCount: number
+  verificationDocuments: VerificationDocument[]
+  recruiterResubmissionComment: string | null
+  resubmittedAt: string | null
 }
 
 interface AdminJob {
@@ -44,6 +61,11 @@ interface AdminJob {
 }
 
 export function CompanyDetails() {
+  // Deep-linked from the "View Details" action on the Company Registration
+  // Requests table (CompanyApprovals.tsx), which navigates here with
+  // ?companyId=<id> so the admin lands directly on the right company instead
+  // of having to find it again in the dropdown below.
+  const [searchParams] = useSearchParams()
   const [companies, setCompanies] = useState<AdminCompany[]>([])
   const [selectedCompanyId, setSelectedCompanyId] = useState("")
   const [allJobs, setAllJobs] = useState<AdminJob[]>([])
@@ -63,7 +85,11 @@ export function CompanyDetails() {
           website: c.website || "Not specified",
           location: c.location || "Not specified",
           industry: c.industry?.name || "Not specified",
-          claimedPerks: (c.benefits || []).map((b: any) => b.benefitName),
+          perkRequests: (c.perkRequests || []).map((p: any) => ({
+            perkName: p.perkName,
+            status: p.status,
+            adminComment: p.adminComment || null,
+          })),
           status: c.status,
           recruiters: (c.recruiters || []).map((r: any) => ({
             name: r.fullName || r.user?.email?.split("@")[0] || "Unknown",
@@ -72,6 +98,9 @@ export function CompanyDetails() {
             verified: !!r.verified,
           })),
           hiredCount: c.hiredCount || 0,
+          verificationDocuments: Array.isArray(c.verificationDocuments) ? c.verificationDocuments : [],
+          recruiterResubmissionComment: c.recruiterResubmissionComment || null,
+          resubmittedAt: c.resubmittedAt || null,
         }))
         setCompanies(formattedComps)
         setAllJobs((jobs || []).map((j: any) => ({
@@ -87,7 +116,11 @@ export function CompanyDetails() {
           applicantsCount: j._count?.applications || 0,
           status: j.status
         })))
-        if (formattedComps.length > 0) {
+        const requestedCompanyId = searchParams.get("companyId")
+        const requestedExists = requestedCompanyId && formattedComps.some((c: { id: string }) => c.id === requestedCompanyId)
+        if (requestedExists) {
+          setSelectedCompanyId(requestedCompanyId as string)
+        } else if (formattedComps.length > 0) {
           setSelectedCompanyId(formattedComps[0].id)
         }
       } catch (err) {
@@ -109,14 +142,16 @@ export function CompanyDetails() {
   const companyRecruiters = selectedCompany?.recruiters || []
 
   // The "Menstrual Leave Champion" badge previously just checked
-  // status === "approved" -- so *every* approved company was labeled a
-  // Champion regardless of whether it ever claimed that specific perk, and
-  // a company that claimed it but wasn't approved yet was labeled "Standard
-  // Partner". It should reflect the actual claimed benefit.
+  // status === "approved" on the whole company -- so *every* approved
+  // company was labeled a Champion regardless of whether it ever claimed
+  // that specific perk. Perk approval is now a wholly separate, per-perk
+  // workflow (CompanyPerkRequest) from company registration approval, so
+  // this must check that specific perk request's own status instead.
   const isMenstrualLeaveChampion =
     !!selectedCompany &&
-    selectedCompany.status === "approved" &&
-    selectedCompany.claimedPerks.includes("Menstrual Leave Support")
+    selectedCompany.perkRequests.some(
+      (p) => p.perkName === "Menstrual Leave Champion" && p.status === "approved"
+    )
 
   return (
     <div className="space-y-6 select-none animate-fadeIn">
@@ -214,32 +249,100 @@ export function CompanyDetails() {
               </div>
             </DashboardCard>
 
-            {/* Workplace Equality Benefits Checklist */}
+            {/* Workplace Equality Perks Checklist -- each perk now has its own
+                independent CompanyPerkRequest status (pending/approved/
+                rejected/more info required), reviewed separately from company
+                registration on the dedicated Company Perk Requests admin page,
+                so this reflects real per-perk status rather than assuming
+                every claimed perk is automatically "verified". */}
             <DashboardCard className="p-6 space-y-4">
               <h3 className="text-xs font-black text-slate-900 uppercase tracking-widest dark:text-white flex items-center gap-1.5">
                 <Award className="size-4 text-[#6B2C91]" />
-                Workplace Equality Benefits Checklist
+                Workplace Equality Perks Checklist
               </h3>
               <div className="grid gap-3 sm:grid-cols-2">
-                {selectedCompany.claimedPerks.map((perk, i) => (
-                  <div key={i} className="flex items-start gap-2.5 p-3 rounded-lg border border-slate-100 dark:border-slate-800/80 bg-slate-50/30 dark:bg-slate-950/10">
-                    <CheckCircle className="size-4.5 text-emerald-500 shrink-0 mt-0.5" />
-                    <div>
-                      <p className="text-xs font-bold text-slate-900 dark:text-white">{perk}</p>
-                      <p className="text-[10px] text-slate-450 dark:text-slate-500 leading-normal mt-0.5">
-                        Verified policy credential claim cleared in compliance review.
-                      </p>
+                {selectedCompany.perkRequests.map((perk, i) => {
+                  const statusStyles: Record<string, string> = {
+                    approved: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300",
+                    pending: "bg-blue-100 text-blue-700 dark:bg-blue-950/30 dark:text-blue-300",
+                    info_requested: "bg-indigo-100 text-indigo-700 dark:bg-indigo-950/30 dark:text-indigo-300",
+                    rejected: "bg-pink-100 text-pink-800 dark:bg-pink-950/30 dark:text-pink-300",
+                  }
+                  return (
+                    <div key={i} className="flex items-start gap-2.5 p-3 rounded-lg border border-slate-100 dark:border-slate-800/80 bg-slate-50/30 dark:bg-slate-950/10">
+                      <CheckCircle className={cn("size-4.5 shrink-0 mt-0.5", perk.status === "approved" ? "text-emerald-500" : "text-slate-300 dark:text-slate-600")} />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-xs font-bold text-slate-900 dark:text-white truncate">{perk.perkName}</p>
+                          <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[9px] font-black uppercase", statusStyles[perk.status] || statusStyles.pending)}>
+                            {perk.status === "info_requested" ? "More Info" : perk.status}
+                          </span>
+                        </div>
+                        {perk.adminComment && (
+                          <p className="text-[10px] text-slate-450 dark:text-slate-500 leading-normal mt-0.5 italic">
+                            "{perk.adminComment}"
+                          </p>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ))}
-                {selectedCompany.claimedPerks.length === 0 && (
+                  )
+                })}
+                {selectedCompany.perkRequests.length === 0 && (
                   <div className="sm:col-span-2 py-4 flex items-center gap-2 text-slate-400">
                     <HelpCircle className="size-4" />
-                    <span className="text-xs font-bold">No verified benefits declared yet.</span>
+                    <span className="text-xs font-bold">No perks claimed yet.</span>
                   </div>
                 )}
               </div>
             </DashboardCard>
+
+            {/* Verification Documents & Recruiter Response (Part 3) -- surfaces
+                what changed after a recruiter resubmits via the secure
+                /company-verification/:token page, so admins see updated
+                info, uploaded documents, and comments immediately without
+                digging through audit logs. */}
+            {(selectedCompany.verificationDocuments.length > 0 || selectedCompany.recruiterResubmissionComment) && (
+              <DashboardCard className="p-6 space-y-4">
+                <h3 className="text-xs font-black text-slate-900 uppercase tracking-widest dark:text-white flex items-center gap-1.5">
+                  <FileCheck className="size-4 text-[#6B2C91]" />
+                  Verification Documents & Recruiter Response
+                </h3>
+
+                {selectedCompany.resubmittedAt && (
+                  <p className="text-[10px] font-bold text-slate-450 dark:text-slate-500 uppercase tracking-wider">
+                    Last resubmitted: {new Date(selectedCompany.resubmittedAt).toLocaleString()}
+                  </p>
+                )}
+
+                {selectedCompany.recruiterResubmissionComment && (
+                  <p className="text-[11px] italic font-semibold text-slate-600 bg-slate-50 dark:bg-slate-900 dark:text-slate-300 p-2.5 rounded border border-slate-100 dark:border-slate-800/80">
+                    <span className="font-bold not-italic text-[9px] uppercase tracking-wider text-slate-450 mr-1">
+                      Recruiter Comment:
+                    </span>
+                    "{selectedCompany.recruiterResubmissionComment}"
+                  </p>
+                )}
+
+                {selectedCompany.verificationDocuments.length > 0 && (
+                  <div className="space-y-1.5">
+                    {selectedCompany.verificationDocuments.map((doc, i) => (
+                      <a
+                        key={i}
+                        href={doc.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center justify-between rounded-lg bg-slate-50 dark:bg-slate-950/40 px-3 py-2 text-[11px] font-semibold text-slate-600 dark:text-slate-300 hover:underline"
+                      >
+                        <span>
+                          {doc.category} <span className="text-slate-400">v{doc.version}</span>
+                        </span>
+                        <span className="text-slate-400">{new Date(doc.uploadedAt).toLocaleDateString()}</span>
+                      </a>
+                    ))}
+                  </div>
+                )}
+              </DashboardCard>
+            )}
 
             {/* Published Opportunities */}
             <DashboardCard className="p-6 space-y-4">

@@ -27,30 +27,68 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
+// CONFIRMED ROOT CAUSE of the Google OAuth "We couldn't complete your Google
+// sign-in" flash-error (which then silently works after a manual refresh):
+//
+// The backend's googleCallback issues a single-use, ROTATING refresh-token
+// cookie and does a real server-side 302 redirect to
+// `${FRONTEND_URL}/oauth/callback?token=...` -- a genuine full browser page
+// load, not client-side SPA navigation. That means the entire React tree,
+// including this AuthProvider, mounts fresh. AuthProvider's own mount-time
+// effect below (`initAuth`) immediately calls `refreshSession()` to bootstrap
+// the session exactly like it does on any normal page load -- but
+// `OAuthCallback.tsx` ALSO calls `refreshSession()` itself, in its own effect,
+// for the same reason. Both fire nearly simultaneously against
+// `POST /api/v1/auth/refresh`, which validates-then-revokes the refresh
+// cookie's current value and issues a brand new one (rotation). Whichever of
+// the two concurrent requests reaches the backend second is validating an
+// already-revoked token and gets a real "Invalid or expired refresh token"
+// failure -- and if that's the request OAuthCallback's own call happens to be
+// waiting on, its local `error` state renders the failure UI even though the
+// OTHER (winning) call may have already set a perfectly valid `user` in this
+// very context. A manual refresh only ever fires one clean `initAuth()` call
+// with no concurrent competitor, so it always succeeds.
+//
+// Fix: make `refreshSession` single-flight, the same pattern already used in
+// api/client.ts's `tryRefreshToken` for the 401-retry path. Every caller
+// within the same tick/in-flight window now awaits the one real network
+// call instead of each firing (and racing) their own.
+let refreshSessionInFlight: Promise<any> | null = null
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
 
   const refreshSession = async (): Promise<User | null> => {
-    try {
-      const refreshRes = await apiClient.post("/api/v1/auth/refresh", {})
-      if (refreshRes && refreshRes.success && refreshRes.data?.accessToken) {
-        const token = refreshRes.data.accessToken
-        localStorage.setItem("jwt_token", token)
-        
-        const meRes = await apiClient.get("/api/v1/auth/me")
-        if (meRes && meRes.success && meRes.data?.user) {
-          const fetchedUser = meRes.data.user
-          setUser(fetchedUser)
-          localStorage.setItem("userRole", fetchedUser.roles[0])
-          return fetchedUser
+    if (refreshSessionInFlight) return refreshSessionInFlight
+
+    refreshSessionInFlight = (async () => {
+      try {
+        const refreshRes = await apiClient.post("/api/v1/auth/refresh", {})
+        if (refreshRes && refreshRes.success && refreshRes.data?.accessToken) {
+          const token = refreshRes.data.accessToken
+          localStorage.setItem("jwt_token", token)
+
+          const meRes = await apiClient.get("/api/v1/auth/me")
+          if (meRes && meRes.success && meRes.data?.user) {
+            const fetchedUser = meRes.data.user
+            setUser(fetchedUser)
+            localStorage.setItem("userRole", fetchedUser.roles[0])
+            return fetchedUser
+          }
         }
+      } catch (err) {
+        localStorage.removeItem("jwt_token")
+        setUser(null)
       }
-    } catch (err) {
-      localStorage.removeItem("jwt_token")
-      setUser(null)
+      return null
+    })()
+
+    try {
+      return await refreshSessionInFlight
+    } finally {
+      refreshSessionInFlight = null
     }
-    return null
   }
 
   useEffect(() => {

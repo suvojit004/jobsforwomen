@@ -13,8 +13,9 @@ import {
   updateRoleSchema,
   supportTicketSchema,
   auditLogsQuerySchema,
+  reviewPerkRequestSchema,
 } from "./admin.validator"
-import { CompanyStatus, UserStatus } from "@prisma/client"
+import { CompanyStatus, UserStatus, PerkStatus } from "@prisma/client"
 
 export class AdminController {
   private service = new AdminService()
@@ -100,6 +101,39 @@ export class AdminController {
     }
   }
 
+  // ==========================================
+  // COMPANY PERK REQUESTS (Parts 6/7 -- separate module from company
+  // verification above; see admin.routes.ts's "/perks" mount)
+  // ==========================================
+
+  listPerkRequests = async (req: Request, res: Response, next: any) => {
+    try {
+      const status = req.query.status as string | undefined
+      const result = await this.service.listPerkRequests(status)
+      return sendSuccess(res, { perkRequests: result }, "Fetched perk requests successfully.")
+    } catch (err: any) {
+      next(err)
+    }
+  }
+
+  reviewPerkRequest = async (req: Request, res: Response, next: any) => {
+    try {
+      const validated = reviewPerkRequestSchema.parse(req.body)
+      const adminId = req.user?.userId || ""
+      const context = this.getContext(req)
+      const result = await this.service.reviewPerkRequest(
+        adminId,
+        req.params.id as string,
+        validated.status as PerkStatus,
+        validated.comment,
+        context
+      )
+      return sendSuccess(res, result, `Perk request updated to ${validated.status} successfully.`)
+    } catch (err: any) {
+      next(err)
+    }
+  }
+
   moderateJob = async (req: Request, res: Response, next: any) => {
     try {
       const validated = moderateJobSchema.parse(req.body)
@@ -130,6 +164,17 @@ export class AdminController {
         context
       )
       return sendSuccess(res, result, `User account status updated to ${validated.status} successfully.`)
+    } catch (err: any) {
+      next(err)
+    }
+  }
+
+  deleteUser = async (req: Request, res: Response, next: any) => {
+    try {
+      const adminId = req.user?.userId || ""
+      const context = this.getContext(req)
+      const result = await this.service.deleteUser(adminId, req.params.id as string, context)
+      return sendSuccess(res, result, "User account permanently deleted successfully.")
     } catch (err: any) {
       next(err)
     }
@@ -421,7 +466,8 @@ export class AdminController {
   updateAdminSettings = async (req: Request, res: Response, next: any) => {
     try {
       const adminId = req.user?.userId || ""
-      const settings = await this.service.updateAdminSettings(adminId, req.body.preferences)
+      const context = this.getContext(req)
+      const settings = await this.service.updateAdminSettings(adminId, req.body.preferences, context)
       return sendSuccess(res, { settings }, "Admin settings updated successfully.")
     } catch (err: any) {
       next(err)

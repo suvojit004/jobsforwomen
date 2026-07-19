@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Logo } from "@/components/shared/Logo"
 import { useAuth } from "@/hooks/useAuth"
+import { isValidEmail, isValidPhone, isValidPassword, isValidWebsite, normalizeWebsite, PASSWORD_HELP_TEXT } from "@/utils/validators"
 
 export function RecruiterRegister() {
   const navigate = useNavigate()
@@ -22,8 +23,23 @@ export function RecruiterRegister() {
   const [location, setLocation] = useState("")
   const [industry, setIndustry] = useState("")
 
+  // Part 16: this form previously did length-only checks (password >= 8
+  // chars, phone >= 10 chars -- so "aaaaaaaaaa" passed as a "phone number")
+  // via toast-only feedback with no per-field indication of what was wrong.
+  // Real format validation now runs inline, field-by-field.
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
+
   const [loading, setLoading] = useState(false)
   const [registered, setRegistered] = useState(false)
+
+  const clearFieldError = (field: string) => {
+    setFieldErrors((prev) => {
+      if (!prev[field]) return prev
+      const next = { ...prev }
+      delete next[field]
+      return next
+    })
+  }
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -32,15 +48,17 @@ export function RecruiterRegister() {
       return
     }
 
-    if (password.length < 8) {
-      toast.error("Password must be at least 8 characters long")
+    const errors: Record<string, string> = {}
+    if (!isValidEmail(email)) errors.email = "Please enter a valid email address."
+    if (!isValidPassword(password)) errors.password = PASSWORD_HELP_TEXT
+    if (!isValidPhone(phone)) errors.phone = "Please enter a valid phone number (10-14 digits)."
+    if (!isValidWebsite(website)) errors.website = "Please enter a valid website URL (e.g. company.com)."
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors)
+      toast.error("Please fix the highlighted fields.")
       return
     }
-
-    if (phone.length < 10) {
-      toast.error("Phone number must be at least 10 digits")
-      return
-    }
+    setFieldErrors({})
 
     try {
       setLoading(true)
@@ -50,7 +68,7 @@ export function RecruiterRegister() {
         password,
         phone,
         companyName,
-        website,
+        website: normalizeWebsite(website),
         location,
         industry,
       })
@@ -76,10 +94,11 @@ export function RecruiterRegister() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
             </svg>
           </div>
-          <h2 className="text-2xl font-extrabold text-slate-900">Check your email</h2>
+          <h2 className="text-2xl font-extrabold text-slate-900">Registration Submitted Successfully</h2>
           <p className="text-sm font-medium text-slate-500 leading-relaxed">
-            We have sent a verification link to <span className="font-bold text-[#6B2C91]">{email}</span>. 
-            Once you verify your email, JFW admins will review and verify your company details so you can begin posting jobs.
+            Your company registration has been submitted for verification. Our team will review it within 24-48 hours.
+            First, verify your email at <span className="font-bold text-[#6B2C91]">{email}</span> -- you'll receive
+            another email once your company verification is complete.
           </p>
           <Button className="w-full h-11 rounded-xl bg-gradient-to-r from-[#6B2C91] to-pink-600 font-bold text-white shadow-md" onClick={() => navigate("/auth/login")}>
             Go to Login
@@ -138,10 +157,14 @@ export function RecruiterRegister() {
                   required
                   placeholder="9876543210"
                   value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
+                  onChange={(e) => {
+                    setPhone(e.target.value)
+                    clearFieldError("phone")
+                  }}
                   className="pl-10 h-11 border-slate-200 dark:border-slate-800 focus-visible:ring-[#6B2C91]/30 rounded-xl"
                 />
               </div>
+              {fieldErrors.phone && <p className="text-[10px] font-bold text-red-500">{fieldErrors.phone}</p>}
             </div>
           </div>
 
@@ -157,10 +180,14 @@ export function RecruiterRegister() {
                   required
                   placeholder="preeti@jfw.info"
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  onChange={(e) => {
+                    setEmail(e.target.value)
+                    clearFieldError("email")
+                  }}
                   className="pl-10 h-11 border-slate-200 dark:border-slate-800 focus-visible:ring-[#6B2C91]/30 rounded-xl"
                 />
               </div>
+              {fieldErrors.email && <p className="text-[10px] font-bold text-red-500">{fieldErrors.email}</p>}
             </div>
 
             <div className="space-y-1.5">
@@ -174,7 +201,10 @@ export function RecruiterRegister() {
                   required
                   placeholder="••••••••"
                   value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  onChange={(e) => {
+                    setPassword(e.target.value)
+                    clearFieldError("password")
+                  }}
                   className="pl-10 pr-10 h-11 border-slate-200 dark:border-slate-800 focus-visible:ring-[#6B2C91]/30 rounded-xl"
                 />
                 <button
@@ -185,6 +215,8 @@ export function RecruiterRegister() {
                   {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
                 </button>
               </div>
+              <p className="text-[10px] font-semibold text-slate-400 dark:text-slate-500">{PASSWORD_HELP_TEXT}</p>
+              {fieldErrors.password && <p className="text-[10px] font-bold text-red-500">{fieldErrors.password}</p>}
             </div>
           </div>
 
@@ -218,10 +250,14 @@ export function RecruiterRegister() {
                   required
                   placeholder="https://google.co.in"
                   value={website}
-                  onChange={(e) => setWebsite(e.target.value)}
+                  onChange={(e) => {
+                    setWebsite(e.target.value)
+                    clearFieldError("website")
+                  }}
                   className="pl-10 h-11 border-slate-200 dark:border-slate-800 focus-visible:ring-[#6B2C91]/30 rounded-xl"
                 />
               </div>
+              {fieldErrors.website && <p className="text-[10px] font-bold text-red-500">{fieldErrors.website}</p>}
             </div>
           </div>
 

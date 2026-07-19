@@ -86,6 +86,77 @@ export function initEmailListener() {
     }
   })
 
+  // 3b. Company More-Information-Required trigger -- confirmed gap fix.
+  // admin.service.ts's verifyCompany() previously only published an event
+  // for the approved/rejected branches; setting a company to info_requested
+  // (the "Request Documentation" admin action) fired nothing at all, so the
+  // recruiter never received any email. Per spec, this state is communicated
+  // by email only, reusing the same generic sendCompanyVerification job as
+  // Approved/Rejected above.
+  EventBus.subscribe("CompanyInfoRequested", async (payload: any) => {
+    try {
+      const company = await prisma.company.findUnique({
+        where: { id: payload.companyId },
+        include: { recruiters: { include: { user: true } } },
+      })
+      if (company) {
+        const recruiter = company.recruiters?.[0]
+        const recruiterUserId = recruiter?.userId
+        const toEmail = recruiter?.user?.email || "recruiter@jobsforwomen.info"
+        const isEnabled = recruiterUserId ? await shouldSendEmail(recruiterUserId, "applicationUpdates") : true
+
+        if (isEnabled && toEmail) {
+          logger.info(`[EmailListener] Enqueueing Company Info Requested email to: ${toEmail}`)
+          const baseUrl = process.env.FRONTEND_URL || "https://jobsforwomen.info"
+          await addJob("email", "sendCompanyVerification", {
+            to: toEmail,
+            companyName: company.name,
+            status: "More Information Required",
+            notes: payload.notes || "Please provide the requested documentation to continue verification.",
+            actionLink: payload.verificationToken ? `${baseUrl}/company-verification/${payload.verificationToken}` : undefined,
+            actionLabel: "Update Company Details",
+          })
+        }
+      }
+    } catch (err: any) {
+      logger.error(`[EmailListener] CompanyInfoRequested trigger failed: ${err.message}`)
+    }
+  })
+
+  // 3c. Perk request reviewed (Parts 6/7) -- email is the SECOND channel
+  // here (notification.listener.ts's PerkReviewed subscriber handles the
+  // dashboard notification); per spec, perks are communicated via both,
+  // unlike company registration which is email-only.
+  EventBus.subscribe("PerkReviewed", async (payload: any) => {
+    try {
+      const company = await prisma.company.findUnique({
+        where: { id: payload.companyId },
+        include: { recruiters: { include: { user: true } } },
+      })
+      if (company) {
+        const recruiter = company.recruiters?.[0]
+        const recruiterUserId = recruiter?.userId
+        const toEmail = recruiter?.user?.email || "recruiter@jobsforwomen.info"
+        const isEnabled = recruiterUserId ? await shouldSendEmail(recruiterUserId, "applicationUpdates") : true
+
+        if (isEnabled && toEmail) {
+          logger.info(`[EmailListener] Enqueueing Perk Reviewed email to: ${toEmail}`)
+          const baseUrl = process.env.FRONTEND_URL || "https://jobsforwomen.info"
+          await addJob("email", "sendPerkVerification", {
+            to: toEmail,
+            companyName: company.name,
+            perkName: payload.perkName,
+            status: payload.status,
+            comment: payload.comment,
+            actionLink: `${baseUrl}/recruiter/perks`,
+          })
+        }
+      }
+    } catch (err: any) {
+      logger.error(`[EmailListener] PerkReviewed trigger failed: ${err.message}`)
+    }
+  })
+
   // 4. Job Approved trigger
   EventBus.subscribe("JobApproved", async (payload: any) => {
     try {

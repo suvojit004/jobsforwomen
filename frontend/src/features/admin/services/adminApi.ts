@@ -63,6 +63,18 @@ export const AdminApi = {
     return res?.data
   },
 
+  // Company Perk Requests (Parts 6/7) -- deliberately a separate endpoint
+  // family from getCompanies/verifyCompany above.
+  async getPerkRequests() {
+    const res = await apiClient.get("/api/v1/admins/perks")
+    return res?.data?.perkRequests || []
+  },
+
+  async reviewPerkRequest(perkRequestId: string, status: string, comment?: string) {
+    const res = await apiClient.post(`/api/v1/admins/perks/${perkRequestId}/review`, { status, comment })
+    return res?.data
+  },
+
   async getJobs() {
     const res = await apiClient.get("/api/v1/admins/jobs")
     return res?.data?.jobs || res?.data || []
@@ -87,6 +99,11 @@ export const AdminApi = {
 
   async updateUserStatus(userId: string, status: string) {
     const res = await apiClient.put(`/api/v1/admins/users/${userId}/status`, { status })
+    return res?.data
+  },
+
+  async deleteUser(userId: string) {
+    const res = await apiClient.delete(`/api/v1/admins/users/${userId}`)
     return res?.data
   },
 

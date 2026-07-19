@@ -134,19 +134,36 @@ export function ManageJobs() {
       header: "Status",
       cell: (row) => {
         const displayStatus = toDisplayStatus(row.status)
+        // Part 17 accessible status colors. "Paused" moved from amber to
+        // gray to match the same status's color on the single-job Details
+        // page. "pending_approval" and "flagged" both collapse into the
+        // generic "Closed" bucket for toDisplayStatus/filtering purposes,
+        // but were previously always rendered with the same slate "Closed"
+        // color even where the label was overridden to say "Pending
+        // Approval" below -- a job awaiting review looked identical to one
+        // rejected or permanently closed. Now Pending Approval gets its own
+        // Blue, and a rejected (flagged) job gets Red, matching JobDetails.tsx.
         const statusMap = {
           Active: "bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-500/15 dark:text-emerald-300",
-          Paused: "bg-amber-50 text-amber-700 ring-amber-200 dark:bg-amber-500/15 dark:text-amber-300",
+          Paused: "bg-slate-100 text-slate-600 ring-slate-200 dark:bg-slate-800 dark:text-slate-400",
           Closed: "bg-slate-100 text-slate-600 ring-slate-200 dark:bg-slate-800 dark:text-slate-400",
         }
+        const badgeStyle =
+          row.status === "pending_approval"
+            ? "bg-blue-50 text-blue-700 ring-blue-200 dark:bg-blue-500/15 dark:text-blue-300"
+            : row.status === "flagged"
+            ? "bg-red-50 text-red-700 ring-red-200 dark:bg-red-500/15 dark:text-red-300"
+            : statusMap[displayStatus]
+        const label =
+          row.status === "pending_approval" ? "Pending Approval" : row.status === "flagged" ? "Rejected" : displayStatus
         return (
           <span
             className={cn(
               "inline-flex h-5 items-center rounded-md px-2 text-[10px] font-black ring-1 ring-inset uppercase",
-              statusMap[displayStatus]
+              badgeStyle
             )}
           >
-            {row.status === "pending_approval" ? "Pending Approval" : displayStatus}
+            {label}
           </span>
         )
       },

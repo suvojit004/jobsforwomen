@@ -92,3 +92,100 @@ export const uploadLogoMiddleware = (req: Request, res: Response, next: NextFunc
   })
 }
 
+// Office gallery photos (Part 5 -- expanded Company Profile). Same image
+// constraints as the company logo (2MB, JPEG/PNG/GIF/WEBP); kept as its own
+// export rather than reusing uploadLogoMiddleware directly so the two upload
+// surfaces (single logo vs. multi-photo gallery) can diverge independently,
+// and so the multipart field name can be "photo" instead of "logo".
+export const uploadGalleryPhotoMiddleware = (req: Request, res: Response, next: NextFunction) => {
+  const upload = logoUploader.single("photo")
+  upload(req, res, async (err: any) => {
+    if (err) {
+      return sendError(res, err.message, null, 400)
+    }
+
+    const file = (req as any).file
+    if (file) {
+      try {
+        const isClean = await scanFileForVirus(file.buffer, file.mimetype)
+        if (!isClean) {
+          return sendError(res, "File rejected: it is empty or its contents do not match the declared file type.", null, 400)
+        }
+      } catch (scanErr: any) {
+        return sendError(res, "File security verification failed.", null, 400)
+      }
+    }
+    next()
+  })
+}
+
+// Company verification documents (GST/PAN/CIN/registration certificate/
+// website ownership proof/etc. -- Part 3 & 13 of the recruiter-onboarding
+// spec). Same PDF/PNG/JPEG + 10MB constraints already defined for this
+// purpose in recruiter.validator.ts's AllowedDocumentFormats/MaxDocumentSize,
+// duplicated here as literals since multer's fileFilter runs before Zod ever
+// sees the request.
+const verificationDocumentFilter = (req: Request, file: any, cb: any) => {
+  const allowedMimeTypes = ["application/pdf", "image/png", "image/jpeg", "image/jpg"]
+  if (allowedMimeTypes.includes(file.mimetype)) {
+    cb(null, true)
+  } else {
+    cb(new Error("Invalid file type. Only PDF, PNG, and JPEG documents are allowed."))
+  }
+}
+
+const verificationDocumentUploader = multer({
+  storage,
+  limits: { fileSize: MAX_SIZE },
+  fileFilter: verificationDocumentFilter,
+})
+
+export const uploadVerificationDocumentMiddleware = (req: Request, res: Response, next: NextFunction) => {
+  const upload = verificationDocumentUploader.single("document")
+  upload(req, res, async (err: any) => {
+    if (err) {
+      return sendError(res, err.message, null, 400)
+    }
+
+    const file = (req as any).file
+    if (file) {
+      try {
+        const isClean = await scanFileForVirus(file.buffer, file.mimetype)
+        if (!isClean) {
+          return sendError(res, "File rejected: it is empty or its contents do not match the declared file type.", null, 400)
+        }
+      } catch (scanErr: any) {
+        return sendError(res, "File security verification failed.", null, 400)
+      }
+    }
+    next()
+  })
+}
+
+// Perk proof documents (Parts 6/7 -- e.g. HR leave policy PDFs, WFH policy
+// docs). Same constraints as verification documents; kept as a separate
+// export (rather than reusing uploadVerificationDocumentMiddleware directly)
+// so the two upload surfaces can diverge independently later without one
+// change accidentally affecting the other.
+export const uploadPerkDocumentMiddleware = (req: Request, res: Response, next: NextFunction) => {
+  const upload = verificationDocumentUploader.single("document")
+  upload(req, res, async (err: any) => {
+    if (err) {
+      return sendError(res, err.message, null, 400)
+    }
+
+    const file = (req as any).file
+    if (file) {
+      try {
+        const isClean = await scanFileForVirus(file.buffer, file.mimetype)
+        if (!isClean) {
+          return sendError(res, "File rejected: it is empty or its contents do not match the declared file type.", null, 400)
+        }
+      } catch (scanErr: any) {
+        return sendError(res, "File security verification failed.", null, 400)
+      }
+    }
+    next()
+  })
+}
+

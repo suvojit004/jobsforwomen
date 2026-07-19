@@ -14,6 +14,9 @@ import {
   Heart,
   Globe,
   PlusCircle,
+  ClipboardCheck,
+  Bell,
+  Building2,
 } from "lucide-react"
 import {
   ResponsiveContainer,
@@ -47,6 +50,28 @@ interface RecentApplicant {
   role: string
   appliedOn: string
   avatarLetters: string
+}
+
+// Accessible status colors (Part 17) -- consistent with the palette used on
+// the Perks and Approval Requests pages: Pending Blue, Approved Green,
+// Rejected Red/Pink, More Info Purple/Indigo.
+function verificationStatusStyle(status?: string) {
+  switch (status) {
+    case "approved":
+      return "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300"
+    case "info_requested":
+      return "bg-indigo-100 text-indigo-700 dark:bg-indigo-950/30 dark:text-indigo-300"
+    case "rejected":
+      return "bg-pink-100 text-pink-800 dark:bg-pink-950/30 dark:text-pink-300"
+    default:
+      return "bg-blue-100 text-blue-700 dark:bg-blue-950/30 dark:text-blue-300"
+  }
+}
+
+function verificationStatusLabel(status?: string) {
+  if (!status) return "Unknown"
+  if (status === "info_requested") return "More Info Required"
+  return status.charAt(0).toUpperCase() + status.slice(1)
 }
 
 export function Dashboard() {
@@ -88,20 +113,22 @@ export function Dashboard() {
 
         const comp = dash?.company
         if (comp) {
-          // "Menstrual Leave Champion" is a claimed CompanyBenefit that an
-          // admin verifies -- there is no such boolean field on Company
-          // itself, so it must be derived from the real benefits list rather
-          // than read from a field that doesn't exist (which always
-          // evaluated to false) or hardcoded to true (the old fallback path).
-          const championBenefit = (comp.benefits || []).find(
-            (b: any) => b.benefitName === "Menstrual Leave Champion"
-          )
+          // Perks now live in CompanyPerkRequest (Parts 6/7 of the spec),
+          // reviewed independently per-perk by an admin -- the old
+          // CompanyBenefit boolean list is superseded and no longer written
+          // to. "Menstrual Leave Champion" is derived from the matching
+          // perk request's real status rather than a field that was never
+          // actually set ("Menstrual Leave Champion" was never the string
+          // written by the claim UI, which wrote "Menstrual Leave Support" --
+          // so this card was permanently stuck showing "Inactive" before).
+          const perkRequests = (comp.perkRequests || []) as Array<{ perkName: string; status: string }>
+          const championRequest = perkRequests.find((p) => p.perkName === "Menstrual Leave Champion")
           setCompany({
             name: comp.name || "Unnamed Company",
             website: comp.website || "Not specified",
             description: comp.description || "No description set yet.",
-            menstrualLeaveChampion: !!championBenefit?.verified,
-            perks: (comp.benefits || []).map((b: any) => b.benefitName)
+            menstrualLeaveChampion: championRequest?.status === "approved",
+            perkRequests,
           })
         } else {
           // Honest empty state -- no company record found for this recruiter
@@ -236,6 +263,71 @@ export function Dashboard() {
           Here's what's happening with your jobs today.
         </p>
       </div>
+
+      {/* Approval & Profile Status Card (Part 9) -- surfaces data the
+          backend has always computed (profileCompletion, verificationStatus,
+          perkSummary, unread notifications count) but which the dashboard
+          never actually rendered anywhere. */}
+      <DashboardCard className="p-4 sm:p-5">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-slate-100 dark:divide-slate-800">
+          <button
+            type="button"
+            onClick={() => navigate("/recruiter/approvals")}
+            className="flex items-center justify-between gap-2 pb-3 sm:pb-0 sm:pr-4 text-left cursor-pointer"
+          >
+            <div>
+              <p className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500">Company Registration</p>
+              <span className={cn("mt-1 inline-flex rounded-full px-2 py-0.5 text-[10px] font-black uppercase", verificationStatusStyle(dashboardData?.verificationStatus))}>
+                {verificationStatusLabel(dashboardData?.verificationStatus)}
+              </span>
+            </div>
+            <ClipboardCheck className="size-5 text-[#6B2C91] dark:text-pink-300 shrink-0" />
+          </button>
+
+          <button
+            type="button"
+            onClick={() => navigate("/recruiter/company")}
+            className="flex items-center justify-between gap-2 py-3 sm:py-0 sm:px-4 text-left cursor-pointer"
+          >
+            <div>
+              <p className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500">Profile Completion</p>
+              <p className="mt-1 text-lg font-black text-slate-950 dark:text-white">
+                {dashboardData?.profileCompletion ?? 0}%
+              </p>
+            </div>
+            <Building2 className="size-5 text-[#6B2C91] dark:text-pink-300 shrink-0" />
+          </button>
+
+          <button
+            type="button"
+            onClick={() => navigate("/recruiter/perks")}
+            className="flex items-center justify-between gap-2 py-3 sm:py-0 sm:px-4 text-left cursor-pointer"
+          >
+            <div>
+              <p className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500">Perks Verified</p>
+              <p className="mt-1 text-lg font-black text-slate-950 dark:text-white">
+                {dashboardData?.perkSummary?.approved ?? 0}
+                <span className="text-xs font-bold text-slate-400 dark:text-slate-500"> / {dashboardData?.perkSummary?.total ?? 0}</span>
+              </p>
+            </div>
+            <Award className="size-5 text-[#6B2C91] dark:text-pink-300 shrink-0" />
+          </button>
+
+          <button
+            type="button"
+            onClick={() => navigate("/recruiter/notifications")}
+            className="flex items-center justify-between gap-2 pt-3 sm:pt-0 sm:pl-4 text-left cursor-pointer"
+          >
+            <div>
+              <p className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500">Unread Notifications</p>
+              <p className="mt-1 text-lg font-black text-slate-950 dark:text-white">
+                {dashboardData?.notificationsSummary?.unreadCount ?? 0}
+              </p>
+            </div>
+            <Bell className="size-5 text-[#6B2C91] dark:text-pink-300 shrink-0" />
+          </button>
+        </div>
+      </DashboardCard>
 
       {/* Stats Cards Row */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -402,22 +494,23 @@ export function Dashboard() {
             <hr className="border-slate-100 dark:border-slate-800" />
 
             {/* Menstrual Leave Champion status card -- read-only. Verification
-                is an admin-gated action (CompanyBenefit.verified), so this can
+                is an admin-gated action on CompanyPerkRequest, so this can
                 no longer be flipped client-side with no persistence; it just
-                reflects real status and links to where it's actually claimed. */}
+                reflects real status and links to the Perks page where it's
+                actually claimed and tracked. */}
             <div className="bg-gradient-to-br from-violet-50/50 to-pink-50/50 p-3.5 rounded-xl border border-violet-100 dark:from-violet-500/10 dark:to-pink-500/5 dark:border-violet-400/20">
               <div className="flex items-start justify-between gap-2.5">
                 <div className="space-y-0.5">
                   <div className="flex items-center gap-1.5">
                     <Heart className="size-3.5 text-pink-500 fill-pink-500" />
                     <p className="text-xs font-black text-slate-900 dark:text-white">
-                      Menstrual Leave Support
+                      Menstrual Leave Champion
                     </p>
                   </div>
                   <p className="text-[10px] text-slate-500 leading-normal dark:text-slate-400">
                     {company.menstrualLeaveChampion
                       ? "Verified Menstrual Leave Champion. Shown to candidates on your job listings."
-                      : "Claim this perk and submit for admin verification from your Company Profile."}
+                      : "Claim this perk and submit proof for admin verification on the Perks page."}
                   </p>
                 </div>
                 {company.menstrualLeaveChampion ? (
@@ -427,7 +520,7 @@ export function Dashboard() {
                 ) : (
                   <button
                     type="button"
-                    onClick={() => navigate("/recruiter/company")}
+                    onClick={() => navigate("/recruiter/perks")}
                     className="rounded-md px-2 py-1 text-[9px] font-black uppercase shrink-0 cursor-pointer bg-slate-200 text-slate-500 hover:bg-slate-350 dark:bg-slate-800 dark:text-slate-400"
                   >
                     Inactive
@@ -440,18 +533,29 @@ export function Dashboard() {
           {/* Company Perks */}
           <DashboardCard className="p-5 space-y-3.5">
             <h3 className="text-xs font-black text-slate-950 dark:text-white">
-              Company Perks & Benefits
+              Company Perks & Certifications
             </h3>
-            {company.perks.length === 0 ? (
+            {company.perkRequests.length === 0 ? (
               <p className="text-xs font-semibold text-slate-400 dark:text-slate-500">
                 No perks claimed yet.
               </p>
             ) : (
             <ul className="space-y-2.5">
-              {company.perks.map((perk: string, idx: number) => (
-                <li key={idx} className="flex items-center gap-2 text-xs font-semibold text-slate-700 dark:text-slate-300 animate-fadeIn">
-                  <CheckCircle className="size-4 text-emerald-500 shrink-0" />
-                  {perk}
+              {company.perkRequests.map((perk: { perkName: string; status: string }, idx: number) => (
+                <li key={idx} className="flex items-center justify-between gap-2 text-xs font-semibold text-slate-700 dark:text-slate-300 animate-fadeIn">
+                  <span className="flex items-center gap-2 min-w-0">
+                    <CheckCircle className={cn("size-4 shrink-0", perk.status === "approved" ? "text-emerald-500" : "text-slate-300 dark:text-slate-600")} />
+                    <span className="truncate">{perk.perkName}</span>
+                  </span>
+                  <span className={cn(
+                    "shrink-0 rounded-full px-2 py-0.5 text-[9px] font-black uppercase",
+                    perk.status === "approved" && "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300",
+                    perk.status === "pending" && "bg-blue-100 text-blue-700 dark:bg-blue-950/30 dark:text-blue-300",
+                    perk.status === "info_requested" && "bg-indigo-100 text-indigo-700 dark:bg-indigo-950/30 dark:text-indigo-300",
+                    perk.status === "rejected" && "bg-pink-100 text-pink-800 dark:bg-pink-950/30 dark:text-pink-300",
+                  )}>
+                    {perk.status === "info_requested" ? "More Info" : perk.status}
+                  </span>
                 </li>
               ))}
             </ul>
@@ -459,11 +563,11 @@ export function Dashboard() {
             <div className="pt-2">
               <Button
                 variant="outline"
-                onClick={() => navigate("/recruiter/company")}
+                onClick={() => navigate("/recruiter/perks")}
                 className="w-full h-8 text-[11px] font-bold border-slate-200 dark:border-slate-800 gap-1"
               >
                 <PlusCircle className="size-3.5" />
-                Manage Benefits
+                Manage Perks
               </Button>
             </div>
           </DashboardCard>
@@ -515,33 +619,43 @@ export function Dashboard() {
         </div>
       </div>
 
-      {/* Premium Menstrual Leave Champion Banner */}
-      <DashboardCard className="p-5 border-[#6B2C91]/30 bg-gradient-to-r from-violet-50/50 via-white to-pink-50/50 dark:from-violet-950/20 dark:via-slate-900 dark:to-pink-950/15 relative overflow-hidden flex flex-col md:flex-row md:items-center justify-between gap-4 select-none">
-        <div className="flex items-start gap-4">
-          <div className="size-11 rounded-full bg-violet-100 text-[#6B2C91] flex items-center justify-center shrink-0 dark:bg-violet-900/30 dark:text-pink-100">
-            <Heart className="size-5 text-pink-500 fill-pink-500" />
+      {/* Menstrual Leave Champion Banner -- previously rendered
+          unconditionally claiming "Your company IS listed as a Menstrual
+          Leave Champion" for every recruiter regardless of actual
+          verification status. Now honestly reflects company.menstrualLeaveChampion
+          (derived from the real, admin-reviewed CompanyPerkRequest status)
+          and prompts recruiters who haven't claimed/been approved yet to do
+          so via the Perks page, instead of asserting a false badge state. */}
+      {company && (
+        <DashboardCard className="p-5 border-[#6B2C91]/30 bg-gradient-to-r from-violet-50/50 via-white to-pink-50/50 dark:from-violet-950/20 dark:via-slate-900 dark:to-pink-950/15 relative overflow-hidden flex flex-col md:flex-row md:items-center justify-between gap-4 select-none">
+          <div className="flex items-start gap-4">
+            <div className="size-11 rounded-full bg-violet-100 text-[#6B2C91] flex items-center justify-center shrink-0 dark:bg-violet-900/30 dark:text-pink-100">
+              <Heart className="size-5 text-pink-500 fill-pink-500" />
+            </div>
+            <div className="space-y-1 max-w-xl">
+              <h4 className="text-sm font-black text-slate-900 dark:text-white flex items-center gap-2">
+                Menstrual Leave Champion — Premium Partner
+                <span className="rounded-full bg-pink-100 px-2 py-0.5 text-[9px] font-black text-pink-700 dark:bg-pink-950/40 dark:text-pink-200">
+                  Premium
+                </span>
+              </h4>
+              <p className="text-xs leading-5 text-slate-600 dark:text-slate-350">
+                {company.menstrualLeaveChampion
+                  ? "Your company is a verified Menstrual Leave Champion. This badge is displayed on your recruiter posts, search indexes, and company cards to attract top progressive talent."
+                  : "Claim the Menstrual Leave Champion badge and submit proof for admin verification to display it on your job listings and attract top progressive talent."}
+              </p>
+            </div>
           </div>
-          <div className="space-y-1 max-w-xl">
-            <h4 className="text-sm font-black text-slate-900 dark:text-white flex items-center gap-2">
-              Menstrual Leave Champion — Premium Partner
-              <span className="rounded-full bg-pink-100 px-2 py-0.5 text-[9px] font-black text-pink-700 dark:bg-pink-950/40 dark:text-pink-200">
-                Premium
-              </span>
-            </h4>
-            <p className="text-xs leading-5 text-slate-600 dark:text-slate-350">
-              Your company is listed as a Menstrual Leave Champion. This verification badge is automatically displayed on your recruiter posts, search indexes, and company cards to attract top progressive talent.
-            </p>
+          <div className="shrink-0 flex items-center gap-3">
+            <Button
+              onClick={() => navigate("/recruiter/perks")}
+              className="bg-[#6B2C91] text-white hover:bg-[#5a237b] h-9 px-5 font-extrabold text-xs cursor-pointer dark:bg-pink-600 dark:hover:bg-pink-700"
+            >
+              {company.menstrualLeaveChampion ? "View Badge" : "Claim Badge"}
+            </Button>
           </div>
-        </div>
-        <div className="shrink-0 flex items-center gap-3">
-          <Button
-            onClick={() => navigate("/recruiter/company")}
-            className="bg-[#6B2C91] text-white hover:bg-[#5a237b] h-9 px-5 font-extrabold text-xs cursor-pointer dark:bg-pink-600 dark:hover:bg-pink-700"
-          >
-            Learn More
-          </Button>
-        </div>
-      </DashboardCard>
+        </DashboardCard>
+      )}
     </div>
   )
 }

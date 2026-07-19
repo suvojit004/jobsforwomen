@@ -16,7 +16,7 @@ type ResumeCardProps = {
   resume?: {
     name: string
     uploadDate: string
-    verified: boolean
+    uploaded: boolean
     url: string
     publicId?: string
     size?: number
@@ -114,9 +114,11 @@ export function ResumeCard({ resume, onChanged, onUpload, onDelete }: ResumeCard
         <h2 className="text-sm font-extrabold text-slate-950 dark:text-white">
           Resume
         </h2>
-        {resume.verified && (
+        {/* Was "Verified" -- resumes aren't reviewed by anyone here, this
+            just reflects whether a file is on record. */}
+        {hasResume && (
           <span className="rounded-full bg-emerald-50 px-2 py-1 text-[11px] font-bold text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-200">
-            Verified
+            Uploaded
           </span>
         )}
       </div>

@@ -141,10 +141,11 @@ export function CandidateManagement() {
         // pill; now each real UserStatus value gets its own label so an
         // admin can tell "hasn't verified their email yet" apart from
         // "I suspended this account".
+        // Part 17 accessible status colors: Pending -> Blue (was amber).
         const styles: Record<string, string> = {
           Active: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/20 dark:text-emerald-400",
-          PendingVerification: "bg-amber-100 text-amber-800 dark:bg-amber-950/20 dark:text-amber-400",
-          PendingApproval: "bg-amber-100 text-amber-800 dark:bg-amber-950/20 dark:text-amber-400",
+          PendingVerification: "bg-blue-100 text-blue-800 dark:bg-blue-950/20 dark:text-blue-400",
+          PendingApproval: "bg-blue-100 text-blue-800 dark:bg-blue-950/20 dark:text-blue-400",
           Rejected: "bg-red-100 text-red-800 dark:bg-red-950/20 dark:text-red-400",
           Suspended: "bg-red-100 text-red-800 dark:bg-red-950/20 dark:text-red-400",
           Blocked: "bg-red-100 text-red-800 dark:bg-red-950/20 dark:text-red-400",

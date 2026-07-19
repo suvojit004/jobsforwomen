@@ -155,6 +155,12 @@ app.use("/api/v1/recruiters", recruiterRouter)
 import adminRouter from "./modules/admin/admin.routes"
 app.use("/api/v1/admins", adminRouter)
 
+// Company Verification Routes mount (public, token-authenticated -- Part 3
+// of the recruiter onboarding/approval spec). Deliberately not behind
+// authenticateToken: see company-verification.routes.ts.
+import companyVerificationRouter from "./modules/company-verification/company-verification.routes"
+app.use("/api/v1/company-verification", companyVerificationRouter)
+
 // Swagger API Documentation routes mount
 import { serveSwaggerJson, serveSwaggerUi } from "./shared/utils/swagger"
 app.get("/api/v1/api-docs.json", serveSwaggerJson)

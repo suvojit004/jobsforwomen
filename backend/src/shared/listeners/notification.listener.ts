@@ -240,7 +240,75 @@ export function initNotificationListener() {
     })
   })
 
-  // 10. Recruiter Company Submissions / Audits
+  // 9a. Part 14 audit-completeness fix: password changes (both the
+  // "forgot password" reset-token flow and the authenticated
+  // change-password flow in auth.service.ts both publish this same event)
+  // previously fired zero audit trail at all -- a security-relevant account
+  // change with no record of who/when/from-where it happened.
+  EventBus.subscribe("PasswordChanged", (payload: any) => {
+    EventBus.publish("AuditCreated", {
+      operatorId: payload.userId,
+      operatorEmail: payload.email,
+      category: "AUTH",
+      action: "PASSWORD_CHANGED",
+    })
+  })
+
+  // 9b. Part 14 audit-completeness fix: permanent self-service account
+  // deletion previously had no audit trail whatsoever -- the single most
+  // destructive action a user can take on their own account.
+  EventBus.subscribe("AccountDeleted", (payload: any) => {
+    EventBus.publish("AuditCreated", {
+      operatorId: payload.userId,
+      operatorEmail: payload.email,
+      category: "AUTH",
+      action: "ACCOUNT_DELETED",
+    })
+  })
+
+  // 9c. Part 14 audit-completeness fix: a password-reset *request* is
+  // unauthenticated (anyone can trigger one for any email), which is
+  // exactly why it's worth a record -- repeated reset requests against the
+  // same account are a common account-takeover/enumeration signal that a
+  // real audit trail should be able to surface.
+  EventBus.subscribe("PasswordResetRequested", (payload: any) => {
+    EventBus.publish("AuditCreated", {
+      operatorEmail: payload.email,
+      category: "AUTH",
+      action: "PASSWORD_RESET_REQUESTED",
+    })
+  })
+
+  // 10a. Recruiter Company Registration (new registration submitted -- fires
+  // once at registerRecruiter() time, distinct from CompanySubmitted below
+  // which fires later on company-profile onboarding/resubmission). Per spec,
+  // recruiters only ever hear about registration/approval status via email
+  // (see email.listener.ts's CompanyApproved/CompanyRejected handlers);
+  // admins get a realtime in-app notification so a new request doesn't go
+  // unnoticed.
+  EventBus.subscribe("CompanyRegistered", async (payload: any) => {
+    try {
+      EventBus.publish("AuditCreated", {
+        category: "RECRUITER",
+        action: "COMPANY_REGISTERED",
+        entity: "Company",
+        entityId: payload.companyId,
+        newValue: { companyName: payload.companyName, recruiterEmail: payload.recruiterEmail },
+      })
+
+      await notifyActiveAdmins({
+        title: "New Company Registration",
+        message: `${payload.companyName} has submitted a registration and is awaiting verification.`,
+        category: "Moderation",
+        actionUrl: "/admin/company-approvals",
+        dedupeKeyPrefix: `company-registered:${payload.companyId}`,
+      })
+    } catch (err: any) {
+      logger.error(`[NotificationListener] CompanyRegistered trigger failed: ${err.message}`)
+    }
+  })
+
+  // 10b. Recruiter Company Submissions / Audits
   EventBus.subscribe("CompanySubmitted", (payload: any) => {
     EventBus.publish("AuditCreated", {
       ...payload.context,
@@ -269,6 +337,183 @@ export function initNotificationListener() {
       entity: "Company",
       entityId: payload.companyId,
     })
+  })
+
+  // Audit trail for the info_requested branch (see email.listener.ts for the
+  // corresponding email side of this same event).
+  EventBus.subscribe("CompanyInfoRequested", (payload: any) => {
+    EventBus.publish("AuditCreated", {
+      ...payload.context,
+      category: "RECRUITER",
+      action: "REQUEST_COMPANY_INFO",
+      entity: "Company",
+      entityId: payload.companyId,
+      newValue: { notes: payload.notes },
+    })
+  })
+
+  // Recruiter resubmission via the public /company-verification/:token page
+  // (Part 3). Unlike registration/approval, this is NOT communicated to the
+  // recruiter by email (they're the one who just acted) -- it's an
+  // admin-facing signal only: audit trail + realtime dashboard notification,
+  // matching Part 11's explicit "Company Resubmission" admin-notification
+  // requirement.
+  EventBus.subscribe("CompanyVerificationResubmitted", async (payload: any) => {
+    try {
+      EventBus.publish("AuditCreated", {
+        category: "RECRUITER",
+        action: "RESUBMIT_COMPANY_VERIFICATION",
+        entity: "Company",
+        entityId: payload.companyId,
+        newValue: { comment: payload.comment },
+      })
+
+      await notifyActiveAdmins({
+        title: "Company Resubmission",
+        message: `${payload.companyName} has resubmitted company verification details for review.`,
+        category: "Moderation",
+        actionUrl: "/admin/company-approvals",
+        // Keyed on the resubmission's own timestamp (not Date.now() at
+        // listener-invocation time) so a genuine retry of the same request
+        // is deduplicated, while a second, later resubmission by the same
+        // company still gets its own notification.
+        dedupeKeyPrefix: `company-resubmitted:${payload.companyId}:${payload.resubmittedAt || "unknown"}`,
+      })
+    } catch (err: any) {
+      logger.error(`[NotificationListener] CompanyVerificationResubmitted trigger failed: ${err.message}`)
+    }
+  })
+
+  // Recruiter uploaded a document to the public company-verification page
+  // (Part 3/11/18) -- admin-facing realtime signal, distinct from a full
+  // resubmission (CompanyVerificationResubmitted). Confirmed gap: this event
+  // never fired at all before, so an admin had no way to know a requested
+  // document had arrived unless the recruiter also clicked "Resubmit".
+  EventBus.subscribe("CompanyDocumentUploaded", async (payload: any) => {
+    try {
+      EventBus.publish("AuditCreated", {
+        category: "RECRUITER",
+        action: "UPLOAD_COMPANY_DOCUMENT",
+        entity: "Company",
+        entityId: payload.companyId,
+        newValue: { category: payload.category },
+      })
+
+      await notifyActiveAdmins({
+        title: "Company Document Uploaded",
+        message: `${payload.companyName} uploaded a "${payload.category}" document for verification review.`,
+        category: "Moderation",
+        actionUrl: "/admin/company-approvals",
+        // Keyed on the upload's own server-set timestamp (not Date.now() at
+        // listener-invocation time), same rationale as
+        // CompanyVerificationResubmitted above: a genuine retry of the same
+        // request is deduplicated, while a distinct later upload still
+        // notifies separately.
+        dedupeKeyPrefix: `company-doc-uploaded:${payload.companyId}:${payload.category}:${payload.uploadedAt || "unknown"}`,
+      })
+    } catch (err: any) {
+      logger.error(`[NotificationListener] CompanyDocumentUploaded trigger failed: ${err.message}`)
+    }
+  })
+
+  // Recruiter uploaded a document against a perk claim (Part 11/18) --
+  // admin-facing realtime signal, distinct from submitting/resubmitting the
+  // perk claim itself (PerkSubmitted). Same confirmed-gap rationale as
+  // CompanyDocumentUploaded above.
+  EventBus.subscribe("PerkDocumentUploaded", async (payload: any) => {
+    try {
+      EventBus.publish("AuditCreated", {
+        category: "RECRUITER",
+        action: "UPLOAD_PERK_DOCUMENT",
+        entity: "CompanyPerkRequest",
+        entityId: payload.perkRequestId,
+        newValue: { category: payload.category },
+      })
+
+      await notifyActiveAdmins({
+        title: "Perk Document Uploaded",
+        message: `${payload.companyName || "A recruiter"} uploaded a document for "${payload.perkName}" verification.`,
+        category: "Moderation",
+        actionUrl: "/admin/company-perk-requests",
+        dedupeKeyPrefix: `perk-doc-uploaded:${payload.perkRequestId}:${payload.category}:${payload.uploadedAt || "unknown"}`,
+      })
+    } catch (err: any) {
+      logger.error(`[NotificationListener] PerkDocumentUploaded trigger failed: ${err.message}`)
+    }
+  })
+
+  // Perk request submitted/resubmitted (Parts 6/7/11) -- admin-facing side.
+  // Part 11 lists "New Perk Request" and "Perk Resubmission" as two distinct
+  // realtime admin-notification triggers; payload.isResubmission picks
+  // between them.
+  EventBus.subscribe("PerkSubmitted", async (payload: any) => {
+    try {
+      EventBus.publish("AuditCreated", {
+        ...payload.context,
+        category: "RECRUITER",
+        action: payload.isResubmission ? "RESUBMIT_PERK_REQUEST" : "SUBMIT_PERK_REQUEST",
+        entity: "CompanyPerkRequest",
+        entityId: payload.perkRequestId,
+        newValue: { perkName: payload.perkName },
+      })
+
+      await notifyActiveAdmins({
+        title: payload.isResubmission ? "Perk Resubmission" : "New Perk Request",
+        message: `${payload.companyName || "A recruiter"} ${payload.isResubmission ? "resubmitted" : "submitted"} "${payload.perkName}" for verification.`,
+        category: "Moderation",
+        actionUrl: "/admin/company-perk-requests",
+        dedupeKeyPrefix: `perk-submitted:${payload.perkRequestId}:${payload.isResubmission ? "resubmit" : "new"}`,
+      })
+    } catch (err: any) {
+      logger.error(`[NotificationListener] PerkSubmitted trigger failed: ${err.message}`)
+    }
+  })
+
+  // Perk request reviewed (Parts 6/7) -- recruiter-facing side. Unlike
+  // company registration (email-only), perk decisions are communicated via
+  // BOTH a dashboard notification (here) AND an email
+  // (email.listener.ts's PerkReviewed subscriber).
+  EventBus.subscribe("PerkReviewed", async (payload: any) => {
+    try {
+      const company = await prisma.company.findUnique({
+        where: { id: payload.companyId },
+        include: { recruiters: true },
+      })
+      const recruiterUserId = company?.recruiters?.[0]?.userId
+      if (recruiterUserId) {
+        const titleByStatus: Record<string, string> = {
+          approved: "Perk Approved",
+          rejected: "Perk Rejected",
+          info_requested: "More Information Needed for Perk",
+        }
+        const messageByStatus: Record<string, string> = {
+          approved: `Your "${payload.perkName}" claim has been approved and is now public.`,
+          rejected: `Your "${payload.perkName}" claim was rejected. See the reason and resubmit from your dashboard.`,
+          info_requested: `Please provide more information for your "${payload.perkName}" claim.`,
+        }
+
+        await createAndEmitNotification({
+          recipientId: recruiterUserId,
+          title: titleByStatus[payload.status] || "Perk Status Updated",
+          message: messageByStatus[payload.status] || `Your "${payload.perkName}" claim status was updated.`,
+          category: "Moderation",
+          actionUrl: "/recruiter/perks",
+        })
+      }
+
+      EventBus.publish("AuditCreated", {
+        ...payload.context,
+        operatorId: payload.operatorId,
+        operatorEmail: payload.operatorEmail,
+        category: "ADMIN",
+        action: "REVIEW_PERK_REQUEST",
+        entity: "CompanyPerkRequest",
+        entityId: payload.perkRequestId,
+        newValue: { status: payload.status, comment: payload.comment },
+      })
+    } catch (err: any) {
+      logger.error(`[NotificationListener] PerkReviewed trigger failed: ${err.message}`)
+    }
   })
 
   // 11. Recruiter Job Lifecycle updates

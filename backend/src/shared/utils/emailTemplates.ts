@@ -13,6 +13,24 @@ export interface VerificationParams {
   companyName: string
   status: string
   notes?: string
+  // Used for the "More Information Required" case (Part 3 of the recruiter
+  // onboarding spec) to link recruiters to the secure, token-based
+  // resubmission page. Optional so the existing Approved/Rejected calls
+  // (which have no such action) are unaffected.
+  actionLink?: string
+  actionLabel?: string
+}
+
+// Perk approval workflow (Parts 6/7) -- deliberately separate from
+// VerificationParams (company registration). Per spec, perk communication
+// happens BOTH via dashboard notification AND email, unlike company
+// registration which is email-only.
+export interface PerkVerificationParams {
+  companyName: string
+  perkName: string
+  status: string
+  comment?: string
+  actionLink?: string
 }
 
 export interface JobModerationParams {
@@ -47,96 +65,311 @@ export interface OfferReleasedParams {
   offerDetails: string
 }
 
+// ==========================================================================
+// Part 19: shared branded shell + accessible status badge, so every
+// transactional email looks like it comes from the same product instead of
+// each being a one-off bare <div> with no header, footer, or mobile
+// consideration. Previously every template here was a plain
+// `<div style="font-family: Arial...">` fragment -- functional, but neither
+// "professional" (no logo/header/footer) nor "responsive" (no viewport
+// meta, no max-width container, no mobile breakpoint) as Part 19 requires.
+// ==========================================================================
+
+const BRAND_PURPLE = "#6B2C91"
+const BRAND_PINK = "#EC4899"
+
+// Part 17's accessible status colors, reused here so the color language a
+// recruiter learns in the dashboard (Pending/Approved/Rejected/More Info
+// Required) matches what they see in their inbox.
+function statusBadge(status: string): string {
+  const normalized = status.toLowerCase()
+  const styles: Record<string, { bg: string; fg: string; label: string }> = {
+    approved: { bg: "#D1FAE5", fg: "#065F46", label: "Approved" },
+    rejected: { bg: "#FCE7F3", fg: "#9D174D", label: "Rejected" },
+    info_requested: { bg: "#E0E7FF", fg: "#3730A3", label: "More Information Required" },
+    pending: { bg: "#DBEAFE", fg: "#1E40AF", label: "Pending Review" },
+    under_review: { bg: "#DBEAFE", fg: "#1E40AF", label: "Under Review" },
+    submitted: { bg: "#DBEAFE", fg: "#1E40AF", label: "Submitted" },
+  }
+  const s = styles[normalized] || { bg: "#F1F5F9", fg: "#475569", label: status }
+  return `<span style="display:inline-block; background-color:${s.bg}; color:${s.fg}; font-size:12px; font-weight:700; letter-spacing:0.3px; text-transform:uppercase; padding:4px 12px; border-radius:999px;">${s.label}</span>`
+}
+
+function ctaButton(link: string, label: string, color = BRAND_PURPLE): string {
+  return `
+    <table role="presentation" cellpadding="0" cellspacing="0" style="margin:24px 0;">
+      <tr>
+        <td style="border-radius:8px;" bgcolor="${color}">
+          <a href="${link}" target="_blank" style="display:inline-block; padding:12px 28px; font-size:14px; font-weight:700; color:#ffffff; text-decoration:none; border-radius:8px;">
+            ${label}
+          </a>
+        </td>
+      </tr>
+    </table>
+  `
+}
+
+// Table-based layout (not flex/grid, which most email clients strip) with an
+// embedded <style> media query for the clients that do honor it (Gmail app,
+// Apple Mail, Outlook.com, etc.) -- Outlook desktop's rendering engine
+// ignores the media query and simply falls back to the fixed 600px layout,
+// which still renders correctly, just without the extra mobile padding
+// tweak. A hidden preheader span sets the inbox preview text.
+function renderShell(opts: { preheader: string; heading: string; bodyHtml: string }): string {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>JobsForWomen</title>
+<style>
+  @media only screen and (max-width: 620px) {
+    .jfw-container { width: 100% !important; }
+    .jfw-padding { padding-left: 20px !important; padding-right: 20px !important; }
+  }
+</style>
+</head>
+<body style="margin:0; padding:0; background-color:#F8FAFC; font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif;">
+  <span style="display:none; max-height:0; overflow:hidden; opacity:0;">${opts.preheader}</span>
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#F8FAFC; padding:32px 0;">
+    <tr>
+      <td align="center">
+        <table role="presentation" class="jfw-container" width="600" cellpadding="0" cellspacing="0" style="width:600px; max-width:600px; background-color:#ffffff; border-radius:16px; overflow:hidden; border:1px solid #E2E8F0;">
+          <tr>
+            <td style="background: linear-gradient(135deg, ${BRAND_PURPLE}, ${BRAND_PINK}); padding:24px 32px;">
+              <span style="font-size:20px; font-weight:800; color:#ffffff; letter-spacing:0.3px;">JobsForWomen</span>
+            </td>
+          </tr>
+          <tr>
+            <td class="jfw-padding" style="padding:32px;">
+              <h1 style="margin:0 0 16px; font-size:20px; font-weight:800; color:#0F172A;">${opts.heading}</h1>
+              <div style="font-size:14px; line-height:1.7; color:#334155;">
+                ${opts.bodyHtml}
+              </div>
+            </td>
+          </tr>
+          <tr>
+            <td class="jfw-padding" style="padding:20px 32px; background-color:#F8FAFC; border-top:1px solid #E2E8F0;">
+              <p style="margin:0; font-size:11px; color:#94A3B8; line-height:1.6;">
+                This is an automated message from JobsForWomen.info. Please do not reply directly to this email.
+                If you weren't expecting this message, you can safely ignore it.
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`
+}
+
 export const EmailTemplates = {
-  welcome: (params: WelcomeParams): string => `
-    <div style="font-family: Arial, sans-serif; padding: 20px; line-height: 1.6;">
-      <h2>Welcome to JobsForWomen.info!</h2>
-      <p>Thank you for registering. Please verify your email address to activate your account:</p>
-      <p style="margin: 20px 0;">
-        <a href="${params.verificationLink}" style="background-color: #d53f8c; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Verify Email</a>
-      </p>
-      <p>This verification link will expire in 24 hours.</p>
-    </div>
-  `,
+  // Scenario 1/7: Email Verification (sent immediately on registration, both
+  // candidate and recruiter).
+  welcome: (params: WelcomeParams): string =>
+    renderShell({
+      preheader: "Verify your email to activate your JobsForWomen account.",
+      heading: "Welcome to JobsForWomen!",
+      bodyHtml: `
+        <p>Thank you for registering. Please verify your email address to activate your account.</p>
+        ${ctaButton(params.verificationLink, "Verify Email")}
+        <p style="font-size:12px; color:#94A3B8;">This verification link will expire in 24 hours.</p>
+      `,
+    }),
 
-  invitation: (params: InvitationParams): string => `
-    <div style="font-family: Arial, sans-serif; padding: 20px; line-height: 1.6;">
-      <h2>JobsForWomen Staff Onboarding</h2>
-      <p>You have been invited to join the JobsForWomen administration team as a <strong>${params.roleName}</strong>.</p>
-      <p>Click the link below to accept the invitation and complete your profile setup:</p>
-      <p style="margin: 20px 0;">
-        <a href="${params.invitationLink}" style="background-color: #4a5568; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Accept Invitation</a>
-      </p>
-    </div>
-  `,
+  invitation: (params: InvitationParams): string =>
+    renderShell({
+      preheader: `You've been invited to join JobsForWomen as a ${params.roleName}.`,
+      heading: "Staff Onboarding Invitation",
+      bodyHtml: `
+        <p>You have been invited to join the JobsForWomen administration team as a <strong>${params.roleName}</strong>.</p>
+        <p>Click the button below to accept the invitation and complete your profile setup:</p>
+        ${ctaButton(params.invitationLink, "Accept Invitation", "#4A5568")}
+      `,
+    }),
 
-  companyVerification: (params: VerificationParams): string => `
-    <div style="font-family: Arial, sans-serif; padding: 20px; line-height: 1.6;">
-      <h2>Company Verification Update</h2>
-      <p>Your company profile for <strong>${params.companyName}</strong> status has been updated to: <strong>${params.status}</strong>.</p>
-      ${params.notes ? `<p><strong>Feedback:</strong> ${params.notes}</p>` : ""}
-    </div>
-  `,
+  // Scenarios 2/7, 3/7, 4/7: Company Registration Approved / Rejected /
+  // More Information Required. Kept as a single exported function
+  // (companyVerification) so existing call sites in email.ts/queue.ts don't
+  // need to change, but each status now gets genuinely distinct, tailored
+  // copy and subject-appropriate framing rather than one generic "status has
+  // been updated to: X" sentence reused for every outcome.
+  companyVerification: (params: VerificationParams): string => {
+    const normalized = params.status.toLowerCase()
+    const copyByStatus: Record<string, { heading: string; intro: string; preheader: string }> = {
+      approved: {
+        heading: "Your Company Is Verified!",
+        intro: `Great news -- <strong>${params.companyName}</strong>'s registration has been reviewed and approved. You can now sign in and start posting jobs.`,
+        preheader: `${params.companyName} has been approved. You can now log in.`,
+      },
+      rejected: {
+        heading: "Registration Update Required",
+        intro: `<strong>${params.companyName}</strong>'s registration was not approved this time. Please review the feedback below and resubmit your registration.`,
+        preheader: `${params.companyName}'s registration was not approved -- see details inside.`,
+      },
+      info_requested: {
+        heading: "More Information Needed",
+        intro: `To continue verifying <strong>${params.companyName}</strong>, our team needs a bit more information or documentation from you.`,
+        preheader: `Action needed: more information required for ${params.companyName}.`,
+      },
+    }
+    const copy = copyByStatus[normalized] || {
+      heading: "Company Verification Update",
+      intro: `Your company profile for <strong>${params.companyName}</strong> has a status update.`,
+      preheader: `An update on ${params.companyName}'s verification status.`,
+    }
 
-  jobModeration: (params: JobModerationParams): string => `
-    <div style="font-family: Arial, sans-serif; padding: 20px; line-height: 1.6;">
-      <h2>Job Moderation Notification</h2>
-      <p>Your job posting for <strong>${params.jobTitle}</strong> has been: <strong>${params.status.toUpperCase()}</strong>.</p>
-      ${params.notes ? `<p><strong>Moderator Notes:</strong> ${params.notes}</p>` : ""}
-    </div>
-  `,
+    return renderShell({
+      preheader: copy.preheader,
+      heading: copy.heading,
+      bodyHtml: `
+        <p>${copy.intro}</p>
+        <p style="margin:16px 0;">${statusBadge(params.status)}</p>
+        ${params.notes ? `
+        <div style="background-color:#F8FAFC; border:1px solid #E2E8F0; border-radius:8px; padding:12px 16px; margin:16px 0;">
+          <p style="margin:0 0 4px; font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:0.3px; color:#94A3B8;">Admin Note</p>
+          <p style="margin:0;">${params.notes}</p>
+        </div>` : ""}
+        ${params.actionLink ? `
+        ${ctaButton(params.actionLink, params.actionLabel || "Take Action")}
+        <p style="font-size:12px; color:#94A3B8;">This link expires in 7 days and can only be used once.</p>
+        ` : ""}
+      `,
+    })
+  },
 
-  interviewScheduled: (params: InterviewScheduledParams): string => `
-    <div style="font-family: Arial, sans-serif; padding: 20px; line-height: 1.6;">
-      <h2>Interview Scheduled</h2>
-      <p>Hi ${params.recipientName},</p>
-      <p>Good news! <strong>${params.companyName}</strong> has scheduled an interview with you for the <strong>${params.jobTitle}</strong> role.</p>
-      <p><strong>When:</strong> ${params.scheduledAt}</p>
-      ${params.location ? `<p><strong>Where:</strong> ${params.location}</p>` : ""}
-      <p>Log in to your JobsForWomen account for full details.</p>
-    </div>
-  `,
+  // Scenarios 5/7, 6/7, 7/7: Perk Approved / Rejected / More Information
+  // Required. Always paired with a dashboard notification (see
+  // notification.listener.ts's PerkReviewed subscriber) -- this email is the
+  // second, not the only, channel, per spec.
+  perkVerification: (params: PerkVerificationParams): string => {
+    const normalized = params.status.toLowerCase()
+    const copyByStatus: Record<string, { heading: string; intro: string; preheader: string }> = {
+      approved: {
+        heading: "Perk Claim Approved!",
+        intro: `Your claim for <strong>${params.perkName}</strong> has been verified and is now publicly displayed on <strong>${params.companyName}</strong>'s job listings.`,
+        preheader: `${params.perkName} is now verified and public.`,
+      },
+      rejected: {
+        heading: "Perk Claim Update Required",
+        intro: `Your claim for <strong>${params.perkName}</strong> was not approved this time. Please review the reason below and resubmit from your dashboard.`,
+        preheader: `${params.perkName} was not approved -- see the reason inside.`,
+      },
+      info_requested: {
+        heading: "More Information Needed",
+        intro: `To verify your <strong>${params.perkName}</strong> claim, our team needs a bit more information or supporting documentation.`,
+        preheader: `Action needed: more information required for ${params.perkName}.`,
+      },
+    }
+    const copy = copyByStatus[normalized] || {
+      heading: "Perk Verification Update",
+      intro: `<strong>${params.companyName}</strong>'s claim for <strong>${params.perkName}</strong> has a status update.`,
+      preheader: `An update on your ${params.perkName} claim.`,
+    }
 
-  offerReleased: (params: OfferReleasedParams): string => `
-    <div style="font-family: Arial, sans-serif; padding: 20px; line-height: 1.6;">
-      <h2>You've Received an Offer!</h2>
-      <p>Hi ${params.recipientName},</p>
-      <p>Congratulations! <strong>${params.companyName}</strong> has released an offer for the <strong>${params.jobTitle}</strong> role.</p>
-      <p><strong>Offer details:</strong> ${params.offerDetails}</p>
-      <p>Log in to your JobsForWomen account to review and respond.</p>
-    </div>
-  `,
+    return renderShell({
+      preheader: copy.preheader,
+      heading: copy.heading,
+      bodyHtml: `
+        <p>${copy.intro}</p>
+        <p style="margin:16px 0;">${statusBadge(params.status)}</p>
+        ${params.comment ? `
+        <div style="background-color:#F8FAFC; border:1px solid #E2E8F0; border-radius:8px; padding:12px 16px; margin:16px 0;">
+          <p style="margin:0 0 4px; font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:0.3px; color:#94A3B8;">Admin Comment</p>
+          <p style="margin:0;">${params.comment}</p>
+        </div>` : ""}
+        ${params.actionLink ? ctaButton(params.actionLink, "View in Dashboard") : ""}
+      `,
+    })
+  },
 
-  passwordReset: (params: ResetParams): string => `
-    <div style="font-family: Arial, sans-serif; padding: 20px; line-height: 1.6;">
-      <h2>Password Reset Request</h2>
-      <p>You requested a password reset for your JobsForWomen account.</p>
-      <p>Click the link below to set a new password:</p>
-      <p style="margin: 20px 0;">
-        <a href="${params.resetLink}" style="background-color: #e53e3e; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Reset Password</a>
-      </p>
-    </div>
-  `,
+  jobModeration: (params: JobModerationParams): string =>
+    renderShell({
+      preheader: `Your job posting "${params.jobTitle}" has been ${params.status}.`,
+      heading: "Job Moderation Update",
+      bodyHtml: `
+        <p>Your job posting for <strong>${params.jobTitle}</strong> has been reviewed.</p>
+        <p style="margin:16px 0;">${statusBadge(params.status === "approved" ? "approved" : "rejected")}</p>
+        ${params.notes ? `
+        <div style="background-color:#F8FAFC; border:1px solid #E2E8F0; border-radius:8px; padding:12px 16px; margin:16px 0;">
+          <p style="margin:0 0 4px; font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:0.3px; color:#94A3B8;">Moderator Notes</p>
+          <p style="margin:0;">${params.notes}</p>
+        </div>` : ""}
+      `,
+    }),
 
-  dailyDigest: (params: DigestParams): string => `
-    <div style="font-family: Arial, sans-serif; padding: 20px; line-height: 1.6;">
-      <h2>Daily Jobs Digest</h2>
-      <p>Hello ${params.recipientName}, here are today's matching job recommendations (${params.jobsCount}):</p>
-      <ul>
-        ${params.jobs.map(j => `<li><strong>${j.title}</strong> at ${j.companyName} (${j.location})</li>`).join("")}
-      </ul>
-    </div>
-  `,
+  interviewScheduled: (params: InterviewScheduledParams): string =>
+    renderShell({
+      preheader: `${params.companyName} scheduled an interview with you for ${params.jobTitle}.`,
+      heading: "Interview Scheduled",
+      bodyHtml: `
+        <p>Hi ${params.recipientName},</p>
+        <p>Good news! <strong>${params.companyName}</strong> has scheduled an interview with you for the <strong>${params.jobTitle}</strong> role.</p>
+        <table role="presentation" cellpadding="0" cellspacing="0" style="margin:16px 0; width:100%;">
+          <tr>
+            <td style="padding:4px 0; font-size:11px; font-weight:800; text-transform:uppercase; color:#94A3B8; width:80px;">When</td>
+            <td style="padding:4px 0; font-weight:700; color:#0F172A;">${params.scheduledAt}</td>
+          </tr>
+          ${params.location ? `
+          <tr>
+            <td style="padding:4px 0; font-size:11px; font-weight:800; text-transform:uppercase; color:#94A3B8; width:80px;">Where</td>
+            <td style="padding:4px 0; font-weight:700; color:#0F172A;">${params.location}</td>
+          </tr>` : ""}
+        </table>
+        <p>Log in to your JobsForWomen account for full details.</p>
+      `,
+    }),
 
-  weeklyDigest: (params: DigestParams): string => `
-    <div style="font-family: Arial, sans-serif; padding: 20px; line-height: 1.6;">
-      <h2>Weekly Highlights Digest</h2>
-      <p>Hello ${params.recipientName}, here are the weekly trending recommendations matching your skills:</p>
-      <ul>
-        ${params.jobs.map(j => `<li><strong>${j.title}</strong> at ${j.companyName} (${j.location})</li>`).join("")}
-      </ul>
-    </div>
-  `,
+  offerReleased: (params: OfferReleasedParams): string =>
+    renderShell({
+      preheader: `${params.companyName} has released an offer for ${params.jobTitle}.`,
+      heading: "You've Received an Offer!",
+      bodyHtml: `
+        <p>Hi ${params.recipientName},</p>
+        <p>Congratulations! <strong>${params.companyName}</strong> has released an offer for the <strong>${params.jobTitle}</strong> role.</p>
+        <div style="background-color:#F8FAFC; border:1px solid #E2E8F0; border-radius:8px; padding:12px 16px; margin:16px 0;">
+          <p style="margin:0 0 4px; font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:0.3px; color:#94A3B8;">Offer Details</p>
+          <p style="margin:0;">${params.offerDetails}</p>
+        </div>
+        <p>Log in to your JobsForWomen account to review and respond.</p>
+      `,
+    }),
+
+  passwordReset: (params: ResetParams): string =>
+    renderShell({
+      preheader: "Reset your JobsForWomen account password.",
+      heading: "Password Reset Request",
+      bodyHtml: `
+        <p>You requested a password reset for your JobsForWomen account.</p>
+        <p>Click the button below to set a new password. If you didn't request this, you can safely ignore this email.</p>
+        ${ctaButton(params.resetLink, "Reset Password", "#DC2626")}
+      `,
+    }),
+
+  dailyDigest: (params: DigestParams): string =>
+    renderShell({
+      preheader: `${params.jobsCount} new job recommendations for you today.`,
+      heading: "Daily Jobs Digest",
+      bodyHtml: `
+        <p>Hello ${params.recipientName}, here are today's matching job recommendations (${params.jobsCount}):</p>
+        <ul style="padding-left:20px; margin:12px 0;">
+          ${params.jobs.map(j => `<li style="margin-bottom:6px;"><strong>${j.title}</strong> at ${j.companyName} (${j.location})</li>`).join("")}
+        </ul>
+      `,
+    }),
+
+  weeklyDigest: (params: DigestParams): string =>
+    renderShell({
+      preheader: `Your weekly job highlights digest (${params.jobsCount} roles).`,
+      heading: "Weekly Highlights Digest",
+      bodyHtml: `
+        <p>Hello ${params.recipientName}, here are the weekly trending recommendations matching your skills:</p>
+        <ul style="padding-left:20px; margin:12px 0;">
+          ${params.jobs.map(j => `<li style="margin-bottom:6px;"><strong>${j.title}</strong> at ${j.companyName} (${j.location})</li>`).join("")}
+        </ul>
+      `,
+    }),
 }
 
 /**
@@ -149,6 +382,7 @@ export function stripHtml(html: string): string {
     .replace(/<\/div>/ig, "\n")
     .replace(/<\/li>/ig, "\n")
     .replace(/<\/p>/ig, "\n")
+    .replace(/<\/tr>/ig, "\n")
     .replace(/<br\s*\/?>/gi, "\n")
     .replace(/<[^>]+>/g, "")
     .replace(/\n\s*\n/g, "\n\n")

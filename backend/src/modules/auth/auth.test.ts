@@ -79,6 +79,7 @@ import app from "../../app"
 import jwt from "jsonwebtoken"
 import env from "../../shared/config/env"
 import { UserStatus } from "@prisma/client"
+import EventBus from "../../shared/eventBus/eventBus"
 
 describe("Authentication Routes Integration Tests (Phase 3)", () => {
   beforeEach(() => {
@@ -143,6 +144,47 @@ describe("Authentication Routes Integration Tests (Phase 3)", () => {
       expect(res.body.success).toBe(true)
       expect(res.body.data).toHaveProperty("userId", "mock-recruiter-id")
       expect(mockCreateEmailVerification).toHaveBeenCalled()
+    })
+
+    it("publishes a CompanyRegistered domain event for the audit/admin-notification listener (Part 1)", async () => {
+      mockFindUserByEmail.mockResolvedValue(null)
+      mockCreateRecruiterUser.mockResolvedValue({
+        id: "mock-recruiter-id-2",
+        email: "recruiter2@email.com",
+        roles: [{ role: { name: "Recruiter" } }],
+        recruiterProfile: { companyId: "company-abc" },
+      })
+      mockCreateEmailVerification.mockResolvedValue({
+        id: "verify-id-2",
+        token: "token-456",
+      })
+
+      const publishSpy = jest.spyOn(EventBus, "publish")
+
+      const res = await request(app)
+        .post("/api/v1/auth/register/recruiter")
+        .send({
+          email: "recruiter2@email.com",
+          password: "password123",
+          fullName: "Anita Rao",
+          phone: "9876500000",
+          companyName: "GreenLeaf Analytics",
+          website: "https://greenleaf.io",
+          location: "Pune, IN",
+          industry: "Analytics",
+        })
+
+      expect(res.status).toBe(201)
+      expect(publishSpy).toHaveBeenCalledWith(
+        "CompanyRegistered",
+        expect.objectContaining({
+          companyId: "company-abc",
+          companyName: "GreenLeaf Analytics",
+          recruiterEmail: "recruiter2@email.com",
+        })
+      )
+
+      publishSpy.mockRestore()
     })
   })
 
@@ -210,6 +252,80 @@ describe("Authentication Routes Integration Tests (Phase 3)", () => {
       expect(res.body.success).toBe(true)
       expect(res.body.data).toHaveProperty("accessToken")
       expect(res.headers["set-cookie"]).toBeDefined()
+    })
+  })
+
+  describe("POST /api/v1/auth/login - recruiter company approval gate (Part 4)", () => {
+    const recruiterUserWithCompany = (companyStatus: string) => ({
+      id: "recruiter-id",
+      email: "recruiter@email.com",
+      status: UserStatus.PendingApproval,
+      passwordHash: "$2b$10$hashedpass",
+      roles: [
+        {
+          role: {
+            name: "Recruiter",
+            permissions: [{ permission: { name: "create:job" } }],
+          },
+        },
+      ],
+      recruiterProfile: {
+        companyId: "company-id",
+        company: { id: "company-id", status: companyStatus },
+      },
+    })
+
+    beforeEach(() => {
+      const bcrypt = require("bcrypt")
+      jest.spyOn(bcrypt, "compare").mockResolvedValue(true as never)
+    })
+
+    it("blocks login while company verification is pending", async () => {
+      mockFindUserByEmail.mockResolvedValue(recruiterUserWithCompany("pending"))
+
+      const res = await request(app)
+        .post("/api/v1/auth/login")
+        .send({ email: "recruiter@email.com", password: "password123" })
+
+      expect(res.status).toBe(403)
+      expect(res.body.success).toBe(false)
+      expect(res.body.message).toMatch(/still pending/i)
+    })
+
+    it("blocks login when company verification was rejected", async () => {
+      mockFindUserByEmail.mockResolvedValue(recruiterUserWithCompany("rejected"))
+
+      const res = await request(app)
+        .post("/api/v1/auth/login")
+        .send({ email: "recruiter@email.com", password: "password123" })
+
+      expect(res.status).toBe(403)
+      expect(res.body.message).toMatch(/rejected/i)
+    })
+
+    it("blocks login when more information is required", async () => {
+      mockFindUserByEmail.mockResolvedValue(recruiterUserWithCompany("info_requested"))
+
+      const res = await request(app)
+        .post("/api/v1/auth/login")
+        .send({ email: "recruiter@email.com", password: "password123" })
+
+      expect(res.status).toBe(403)
+      expect(res.body.message).toMatch(/additional information/i)
+    })
+
+    it("allows login once the company is approved", async () => {
+      mockFindUserByEmail.mockResolvedValue(recruiterUserWithCompany("approved"))
+      mockCreateSession.mockResolvedValue({ id: "session-id" })
+      mockCreateRefreshToken.mockResolvedValue({ id: "token-id" })
+
+      const res = await request(app)
+        .post("/api/v1/auth/login")
+        .send({ email: "recruiter@email.com", password: "password123" })
+
+      expect(res.status).toBe(200)
+      expect(res.body.success).toBe(true)
+      expect(res.body.data).toHaveProperty("accessToken")
     })
   })
 

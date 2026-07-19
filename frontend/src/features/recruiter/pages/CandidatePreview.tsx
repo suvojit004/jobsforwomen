@@ -208,7 +208,10 @@ export function CandidatePreview() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
+          {/* Part 15: no flex-wrap meant these two buttons (with fairly
+              long labels like "No Resume Uploaded") could force this row,
+              and the page, wider than a narrow mobile viewport. */}
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
             <Button
               variant="outline"
               onClick={handleMessageCandidate}

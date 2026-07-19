@@ -2,6 +2,7 @@ import { useState } from "react"
 import { Globe, Plus, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { DashboardCard } from "@/components/dashboard/DashboardCard"
+import { isValidPhone } from "@/utils/validators"
 import type { ExtendedCandidate, SocialLink } from "../../types/candidate"
 
 type PersonalDetailsFormProps = {
@@ -167,6 +168,13 @@ export function PersonalDetailsForm({
                 onChange={(e) => onChange({ phone: e.target.value })}
                 className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6B2C91]/30 dark:border-slate-800 dark:bg-slate-900"
               />
+              {/* Part 16: phone previously had no validation at all -- any
+                  string persisted as-is. This doesn't block typing (the
+                  parent owns save/submit), it just flags an invalid-looking
+                  value inline before the user hits Save. */}
+              {candidate.phone && !isValidPhone(candidate.phone) && (
+                <p className="text-[10px] font-bold text-red-500">Please enter a valid phone number (10-14 digits).</p>
+              )}
             </div>
 
             <div className="flex flex-col gap-1.5">
