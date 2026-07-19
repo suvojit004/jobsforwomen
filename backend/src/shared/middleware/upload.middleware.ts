@@ -162,13 +162,45 @@ export const uploadVerificationDocumentMiddleware = (req: Request, res: Response
   })
 }
 
-// Perk proof documents (Parts 6/7 -- e.g. HR leave policy PDFs, WFH policy
-// docs). Same constraints as verification documents; kept as a separate
-// export (rather than reusing uploadVerificationDocumentMiddleware directly)
-// so the two upload surfaces can diverge independently later without one
-// change accidentally affecting the other.
+// Perk supporting documents (Parts 6/7 -- e.g. HR leave policy PDFs, WFH
+// policy docs, insurance/benefit brochures, screenshots). Deliberately its
+// own filter/uploader (the divergence the comment on
+// uploadVerificationDocumentMiddleware already anticipated) rather than
+// reusing verificationDocumentUploader, because perk proof needs a wider
+// format allow-list than company verification/identity documents: Office
+// documents (DOC/DOCX/XLS/XLSX/PPT/PPTX) and WEBP images are legitimate perk
+// evidence (e.g. an HR policy exported as a Word doc, a benefits comparison
+// spreadsheet) but have no business being accepted as a GST certificate or
+// ID proof.
+const perkDocumentFilter = (req: Request, file: any, cb: any) => {
+  const allowedMimeTypes = [
+    "application/pdf",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.ms-excel",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/vnd.ms-powerpoint",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    "image/png",
+    "image/jpeg",
+    "image/jpg",
+    "image/webp",
+  ]
+  if (allowedMimeTypes.includes(file.mimetype)) {
+    cb(null, true)
+  } else {
+    cb(new Error("Invalid file type. Allowed: PDF, DOC, DOCX, XLS, XLSX, PPT, PPTX, PNG, JPG, JPEG, WEBP."))
+  }
+}
+
+const perkDocumentUploader = multer({
+  storage,
+  limits: { fileSize: MAX_SIZE },
+  fileFilter: perkDocumentFilter,
+})
+
 export const uploadPerkDocumentMiddleware = (req: Request, res: Response, next: NextFunction) => {
-  const upload = verificationDocumentUploader.single("document")
+  const upload = perkDocumentUploader.single("document")
   upload(req, res, async (err: any) => {
     if (err) {
       return sendError(res, err.message, null, 400)

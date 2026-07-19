@@ -8,13 +8,14 @@ import {
   GraduationCap,
   CheckCircle2,
   Upload,
-  FileText,
   HelpCircle,
 } from "lucide-react"
 import { DashboardCard } from "@/components/shared/DashboardCard"
 import { Button } from "@/components/ui/button"
 import { RecruiterApi } from "../services/recruiterApi"
 import { getSocket } from "@/api/socket"
+import { SupportingDocumentsUploader, FileTypeIcon, type StagedDocument } from "@/components/shared/forms/SupportingDocumentsUploader"
+import { openDocument, formatFileSize, getFileIconKind, SUPPORTING_DOCUMENT_ACCEPT } from "@/utils/fileHelpers"
 
 // Canonical perk registry (Parts 6/7 of the recruiter-onboarding spec).
 // "Menstrual Leave Champion" / "Flexible Hours" / "Flexible Returnship" /
@@ -42,6 +43,10 @@ interface PerkDocument {
   category: string
   uploadedAt: string
   version: number
+  mimetype?: string
+  size?: number
+  originalFilename?: string
+  format?: string
 }
 
 interface PerkRequest {
@@ -75,17 +80,49 @@ export function Perks() {
   const [uploadingPerk, setUploadingPerk] = useState<string | null>(null)
   const [commentDrafts, setCommentDrafts] = useState<Record<string, string>>({})
   const [categoryDrafts, setCategoryDrafts] = useState<Record<string, string>>({})
+  // Files staged locally (Issue 2's "Supporting Documents" section) before a
+  // perk has even been submitted -- there's no CompanyPerkRequest row (and
+  // therefore no id to upload against) until handleSubmit actually creates
+  // one, so these live purely in local state and get uploaded right after
+  // submission succeeds. Keyed by perk name, same pattern as
+  // commentDrafts/categoryDrafts above.
+  const [stagedDocs, setStagedDocs] = useState<Record<string, StagedDocument[]>>({})
 
   const load = async (silent = false) => {
     try {
       if (!silent) setLoading(true)
       const data = await RecruiterApi.getPerkRequests()
-      setRequests(data || [])
+      // Defense-in-depth: the backend now always sends `documents` as a real
+      // array (the actual fix for the null.length crash lives in
+      // recruiter.service.ts), but this normalizes again at the frontend's
+      // data boundary rather than trusting every render site downstream to
+      // remember it -- same convention CompanyDetails.tsx already uses for
+      // verificationDocuments.
+      const safeData = (data || []).map((r: any) => ({ ...r, documents: Array.isArray(r.documents) ? r.documents : [] }))
+      setRequests(safeData)
     } catch (err) {
       console.error("Failed to load perk requests:", err)
     } finally {
       if (!silent) setLoading(false)
     }
+  }
+
+  const handleStageFiles = (perkName: string, files: File[]) => {
+    setStagedDocs((prev) => ({
+      ...prev,
+      [perkName]: [
+        ...(prev[perkName] || []),
+        ...files.map((file) => ({
+          id: `${file.name}-${file.size}-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+          file,
+          status: "staged" as const,
+        })),
+      ],
+    }))
+  }
+
+  const handleRemoveStagedFile = (perkName: string, id: string) => {
+    setStagedDocs((prev) => ({ ...prev, [perkName]: (prev[perkName] || []).filter((d) => d.id !== id) }))
   }
 
   useEffect(() => {
@@ -114,9 +151,31 @@ export function Perks() {
   const handleSubmit = async (perkName: string, comment?: string) => {
     try {
       setSubmittingPerk(perkName)
-      await RecruiterApi.submitPerk(perkName, comment)
+      const request = await RecruiterApi.submitPerk(perkName, comment)
+
+      // Upload any documents the recruiter staged before submitting (Issue
+      // 2's Supporting Documents section). Sequential, not Promise.all --
+      // addPerkDocument's version numbering reads-then-writes the documents
+      // array per request, so concurrent uploads for the same perk could
+      // race and silently drop a document under the same version number.
+      const filesToUpload = stagedDocs[perkName] || []
+      if (filesToUpload.length > 0 && request?.id) {
+        let failureCount = 0
+        for (const doc of filesToUpload) {
+          try {
+            await RecruiterApi.uploadPerkDocument(request.id, doc.file, "SupportingDocument")
+          } catch {
+            failureCount++
+          }
+        }
+        if (failureCount > 0) {
+          toast.error(`${failureCount} of ${filesToUpload.length} document(s) failed to upload. Attach them again below.`)
+        }
+      }
+
       toast.success(`"${perkName}" submitted for verification.`)
       setCommentDrafts((prev) => ({ ...prev, [perkName]: "" }))
+      setStagedDocs((prev) => ({ ...prev, [perkName]: [] }))
       await load()
     } catch (err: any) {
       toast.error(err.message || "Failed to submit perk for verification.")
@@ -203,26 +262,44 @@ export function Perks() {
                   </div>
                 )}
 
-                {request && request.documents.length > 0 && (
+                {request && (request.documents || []).length > 0 && (
                   <div className="space-y-1">
                     {request.documents.map((doc, i) => (
-                      <div key={i} className="flex items-center gap-1.5 text-[10px] font-semibold text-slate-500 dark:text-slate-400">
-                        <FileText className="size-3 text-[#6B2C91] dark:text-pink-300" />
-                        {doc.category} v{doc.version}
-                      </div>
+                      <button
+                        key={i}
+                        type="button"
+                        onClick={() => openDocument(doc)}
+                        className="flex w-full items-center gap-1.5 rounded px-1 py-0.5 text-left text-[10px] font-semibold text-slate-500 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-900"
+                      >
+                        <FileTypeIcon kind={getFileIconKind(doc)} className="size-3" />
+                        <span className="truncate">{doc.originalFilename || doc.category} v{doc.version}</span>
+                        {typeof doc.size === "number" && (
+                          <span className="shrink-0 text-slate-400 dark:text-slate-550">{formatFileSize(doc.size)}</span>
+                        )}
+                      </button>
                     ))}
                   </div>
                 )}
 
                 {notSubmitted && (
-                  <Button
-                    size="sm"
-                    disabled={submittingPerk === perk.name}
-                    className="h-8 text-[11px] font-bold bg-[#6B2C91] hover:bg-[#5a237b] text-white dark:bg-pink-650 dark:hover:bg-pink-700"
-                    onClick={() => handleSubmit(perk.name)}
-                  >
-                    {submittingPerk === perk.name ? "Submitting..." : "Submit for Verification"}
-                  </Button>
+                  <div className="space-y-3">
+                    <SupportingDocumentsUploader
+                      documents={stagedDocs[perk.name] || []}
+                      onFilesSelected={(files) => handleStageFiles(perk.name, files)}
+                      onRemove={(id) => handleRemoveStagedFile(perk.name, id)}
+                      disabled={submittingPerk === perk.name}
+                      label="Supporting Documents (optional)"
+                      helperText="Policy PDFs, HR documents, screenshots, or brochures. Up to 10MB each."
+                    />
+                    <Button
+                      size="sm"
+                      disabled={submittingPerk === perk.name}
+                      className="h-8 text-[11px] font-bold bg-[#6B2C91] hover:bg-[#5a237b] text-white dark:bg-pink-650 dark:hover:bg-pink-700"
+                      onClick={() => handleSubmit(perk.name)}
+                    >
+                      {submittingPerk === perk.name ? "Submitting..." : "Submit for Verification"}
+                    </Button>
+                  </div>
                 )}
 
                 {(isPending || needsAction) && (
@@ -242,7 +319,7 @@ export function Perks() {
                         {uploadingPerk === perk.name ? "Uploading..." : "Attach Proof"}
                         <input
                           type="file"
-                          accept="application/pdf,image/png,image/jpeg"
+                          accept={SUPPORTING_DOCUMENT_ACCEPT}
                           className="hidden"
                           disabled={uploadingPerk === perk.name}
                           onChange={(e) => {

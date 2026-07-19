@@ -34,6 +34,7 @@ export class CompanyVerificationController {
       buffer: file.buffer,
       mimetype: file.mimetype,
       size: file.size,
+      originalname: file.originalname,
     })
     return sendSuccess(res, result, "Document uploaded successfully.", 201)
   }

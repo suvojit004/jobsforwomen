@@ -8,6 +8,7 @@ import redis from "../../shared/utils/redis"
 import { verifyEmailTransport, EmailService } from "../../shared/utils/email"
 import env from "../../shared/config/env"
 import { verifyCloudinaryConnection, runOrphanAssetCleanup, deleteFromCloudinary } from "../../shared/utils/cloudinary"
+import { normalizeDocuments } from "../../shared/utils/documents"
 import { io as socketIo } from "../../shared/socket/socket"
 import { createAuditLog } from "../../shared/utils/audit"
 import { invalidateFeatureFlagCache } from "../../shared/utils/featureFlags"
@@ -387,7 +388,12 @@ export class AdminService {
       hiredCountByCompany[cid] = (hiredCountByCompany[cid] || 0) + 1
     })
 
-    return companies.map((c) => ({ ...c, hiredCount: hiredCountByCompany[c.id] || 0 }))
+    return companies.map((c) => ({
+      ...c,
+      hiredCount: hiredCountByCompany[c.id] || 0,
+      verificationDocuments: normalizeDocuments(c.verificationDocuments),
+      perkRequests: c.perkRequests.map((p) => ({ ...p, documents: normalizeDocuments(p.documents) })),
+    }))
   }
 
   async listJobs(status?: string) {
@@ -545,7 +551,7 @@ export class AdminService {
       where.status = status
     }
 
-    return prisma.companyPerkRequest.findMany({
+    const requests = await prisma.companyPerkRequest.findMany({
       where,
       include: {
         company: {
@@ -556,6 +562,8 @@ export class AdminService {
       },
       orderBy: { submittedAt: "desc" },
     })
+
+    return requests.map((r) => ({ ...r, documents: normalizeDocuments(r.documents) }))
   }
 
   async reviewPerkRequest(adminId: string, perkRequestId: string, status: PerkStatus, comment?: string, context?: ServiceContext) {

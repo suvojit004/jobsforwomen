@@ -3,6 +3,7 @@ import { logger } from "../../shared/utils/logger"
 import EventBus from "../../shared/eventBus/eventBus"
 import { CompanyStatus, JobStatus, ApplicationStatus, WorkMode, PerkStatus } from "@prisma/client"
 import { deleteFromCloudinary } from "../../shared/utils/cloudinary"
+import { normalizeDocuments } from "../../shared/utils/documents"
 import crypto from "crypto"
 
 export interface ServiceContext {
@@ -462,7 +463,16 @@ export class RecruiterService {
       })
     } else {
       request = await prisma.companyPerkRequest.create({
-        data: { companyId, perkName, recruiterComment: comment },
+        // `documents` is a nullable Json column with no DB-level default
+        // (see schema.prisma) -- initializing it to `[]` here, at the one
+        // place a CompanyPerkRequest row is actually born, is the real fix
+        // for the "Cannot read properties of null (reading 'length')" crash
+        // on the recruiter Perks page: every row this creates now reads back
+        // an empty array instead of `null`, matching what every consumer
+        // (frontend `.length`/`.map`, addPerkDocument's append logic) always
+        // assumed. listPerkRequests/getApprovalTracker below still normalize
+        // defensively for the legacy rows created before this fix existed.
+        data: { companyId, perkName, recruiterComment: comment, documents: [] },
       })
     }
 
@@ -477,18 +487,32 @@ export class RecruiterService {
       context,
     })
 
-    return request
+    return { ...request, documents: normalizeDocuments(request.documents) }
   }
 
   async listPerkRequests(userId: string) {
     const companyId = await this.getOwnCompanyId(userId)
-    return prisma.companyPerkRequest.findMany({ where: { companyId }, orderBy: { createdAt: "desc" } })
+    const requests = await prisma.companyPerkRequest.findMany({ where: { companyId }, orderBy: { createdAt: "desc" } })
+    // Defensive normalization for legacy rows (created before
+    // submitOrResubmitPerk started initializing `documents: []` above) --
+    // this is the boundary every recruiter-facing read of perk requests
+    // passes through, so fixing it here covers Perks.tsx's `.length`/`.map`
+    // crash for old data too, not just newly-created requests.
+    return requests.map((r) => ({ ...r, documents: normalizeDocuments(r.documents) }))
   }
 
   async addPerkDocument(
     userId: string,
     perkRequestId: string,
-    doc: { url: string; publicId: string; size: number; mimetype: string; category: string }
+    doc: {
+      url: string
+      publicId: string
+      size: number
+      mimetype: string
+      category: string
+      originalFilename?: string
+      format?: string
+    }
   ) {
     const companyId = await this.getOwnCompanyId(userId)
     const request = await prisma.companyPerkRequest.findUnique({ where: { id: perkRequestId } })
@@ -497,7 +521,7 @@ export class RecruiterService {
       throw new Error("Perk request not found")
     }
 
-    const existingDocs: any[] = Array.isArray(request.documents) ? (request.documents as any[]) : []
+    const existingDocs: any[] = normalizeDocuments(request.documents)
     const version = existingDocs.filter((d) => d.category === doc.category).length + 1
     const newDoc = { ...doc, uploadedAt: new Date().toISOString(), version }
 
@@ -567,7 +591,7 @@ export class RecruiterService {
         adminEmail: h.admin?.email || "Admin",
         createdAt: h.createdAt,
       })),
-      perkRequests: company.perkRequests,
+      perkRequests: company.perkRequests.map((r) => ({ ...r, documents: normalizeDocuments(r.documents) })),
     }
   }
 

@@ -3,6 +3,7 @@ import { Readable } from "stream"
 import env from "../config/env"
 import { logger } from "./logger"
 import prisma from "../database/db"
+import { extractExtension } from "./documents"
 
 // Configure Cloudinary with actual credentials
 cloudinary.config({
@@ -16,6 +17,12 @@ export interface CloudinaryUploadResult {
   secureUrl: string
   publicId: string
   size: number
+  // Delivery format/extension Cloudinary actually stored the asset under
+  // (e.g. "pdf", "docx"). Only meaningful for raw (isPrivate) uploads --
+  // present so callers can persist it alongside the document's metadata and
+  // the frontend can pick a correct preview/download strategy without having
+  // to guess from a URL that may have no extension at all.
+  format?: string
 }
 
 // In-memory upload metrics hook for observability monitoring
@@ -33,17 +40,35 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 // confirm the buffer's *actual* content matches its declared MIME type,
 // independent of whatever the client claims in the multipart header (which is
 // trivially spoofable). This is structural validation, not malware detection.
+const OLE2_SIGNATURE = Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]) // legacy MS Office (.doc/.xls/.ppt)
+const ZIP_SIGNATURE = Buffer.from([0x50, 0x4b, 0x03, 0x04]) // Office Open XML (.docx/.xlsx/.pptx) is a zip archive
+
 const FILE_SIGNATURES: Record<string, Buffer[]> = {
   "application/pdf": [Buffer.from([0x25, 0x50, 0x44, 0x46])], // %PDF
   "image/jpeg": [Buffer.from([0xff, 0xd8, 0xff])],
   "image/png": [Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])],
   "image/gif": [Buffer.from("GIF87a", "ascii"), Buffer.from("GIF89a", "ascii")],
+  // WEBP has no fixed leading byte signature of its own -- it's a RIFF
+  // container ("RIFF"[4-byte size]"WEBP"), verified by the dedicated
+  // RIFF/WEBP check below (which inspects bytes 0-3 AND 8-11). The array is
+  // deliberately empty so the generic `.some()` match below always fails and
+  // falls through to that dedicated check. This entry only needs to exist so
+  // the `FILE_SIGNATURES[declaredMimeType]` lookup guard doesn't skip
+  // validation for webp entirely -- previously there was no "image/webp" key
+  // here at all, so the dedicated RIFF/WEBP check further down was
+  // unreachable dead code and every declared-webp upload skipped structural
+  // validation completely.
+  "image/webp": [],
   // application/msword (legacy .doc) uses the OLE2/CFB container signature
-  "application/msword": [Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1])],
-  // .docx is a zip archive (PK..)
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": [
-    Buffer.from([0x50, 0x4b, 0x03, 0x04]),
-  ],
+  "application/msword": [OLE2_SIGNATURE],
+  "application/vnd.ms-excel": [OLE2_SIGNATURE], // legacy .xls
+  "application/vnd.ms-powerpoint": [OLE2_SIGNATURE], // legacy .ppt
+  // Office Open XML formats (.docx/.xlsx/.pptx) are all zip archives that
+  // only differ in their internal part structure -- indistinguishable from
+  // the first 4 bytes alone, so all three share the same signature check.
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": [ZIP_SIGNATURE],
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": [ZIP_SIGNATURE],
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation": [ZIP_SIGNATURE],
 }
 
 /**
@@ -93,7 +118,8 @@ export async function uploadToCloudinary(
   fileBuffer: Buffer,
   folder: string,
   fileName: string,
-  isPrivate: boolean = false
+  isPrivate: boolean = false,
+  originalFileName?: string
 ): Promise<CloudinaryUploadResult> {
   const isClean = await scanFileForVirus(fileBuffer)
   if (!isClean) {
@@ -105,6 +131,20 @@ export async function uploadToCloudinary(
   const maxAttempts = 3
   let delay = 1000 // starts with 1s sleep
 
+  // Root cause of the "corrupted"/unopenable downloads reported for
+  // raw-resource documents (perk proof, company verification docs): the
+  // Cloudinary public_id passed in by every caller is a synthetic name
+  // (`${userId}_${category}_${Date.now()}`) with no file extension, and
+  // nothing told Cloudinary what format to store/deliver it as. A raw asset
+  // delivered with no extension comes back as generic
+  // application/octet-stream with no filename hint, so browsers can't
+  // inline-preview it (PDF/image) and, on download, the file is saved
+  // without a usable extension -- indistinguishable from "corrupted" to a
+  // user even though the underlying bytes are untouched. Passing the real
+  // extension through as Cloudinary's `format` option makes the delivery URL
+  // and Content-Type correct.
+  const extension = isPrivate ? extractExtension(originalFileName) : null
+
   while (attempts < maxAttempts) {
     try {
       attempts++
@@ -113,6 +153,10 @@ export async function uploadToCloudinary(
           folder,
           public_id: fileName.replace(/\s+/g, "_"),
           resource_type: isPrivate ? "raw" : "image",
+        }
+
+        if (extension) {
+          options.format = extension
         }
 
         if (!isPrivate) {
@@ -137,6 +181,7 @@ export async function uploadToCloudinary(
               secureUrl: res.secure_url,
               publicId: res.public_id,
               size: res.bytes,
+              format: res.format || extension || undefined,
             })
           }
         )

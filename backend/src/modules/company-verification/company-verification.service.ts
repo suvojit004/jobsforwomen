@@ -97,7 +97,11 @@ export class CompanyVerificationService {
     return { companyName: updated.name, status: updated.status }
   }
 
-  async addDocument(token: string, category: string, file: { buffer: Buffer; mimetype: string; size: number }) {
+  async addDocument(
+    token: string,
+    category: string,
+    file: { buffer: Buffer; mimetype: string; size: number; originalname?: string }
+  ) {
     if (!AllowedDocumentCategories.includes(category)) {
       throw new Error(`Invalid document category. Allowed categories: ${AllowedDocumentCategories.join(", ")}`)
     }
@@ -108,7 +112,8 @@ export class CompanyVerificationService {
       file.buffer,
       "jfw/company-verification",
       `${company.id}_${category}_${Date.now()}`,
-      true
+      true,
+      file.originalname
     )
 
     const existingDocs: any[] = Array.isArray(company.verificationDocuments) ? (company.verificationDocuments as any[]) : []
@@ -120,6 +125,8 @@ export class CompanyVerificationService {
       size: result.size,
       mimetype: file.mimetype,
       category,
+      originalFilename: file.originalname,
+      format: result.format,
       uploadedAt: new Date().toISOString(),
       version,
     }

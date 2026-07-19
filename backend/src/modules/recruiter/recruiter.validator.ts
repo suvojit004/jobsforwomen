@@ -19,6 +19,31 @@ export const AllowedDocumentCategories = [
   "CompanyRegistrationCertificate",
   "WebsiteOwnershipProof",
   "Other",
+  // Perk claim evidence (Parts 6/7) -- policy PDFs, HR/leave/insurance
+  // documents, benefit brochures, screenshots, etc. attached to a
+  // CompanyPerkRequest. Distinct from the company-identity categories above
+  // (this list is shared between both upload surfaces), so perk proof isn't
+  // forced to masquerade as a "GST Certificate" or similar.
+  "SupportingDocument",
+]
+
+// Wider format allow-list for perk supporting documents (see
+// upload.middleware.ts's perkDocumentFilter, which is the actual
+// enforcement point since multer's fileFilter runs before Zod ever sees the
+// request -- this constant documents/mirrors it for anything that validates
+// perk document metadata after the fact).
+export const AllowedPerkDocumentFormats = [
+  "application/pdf",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.ms-excel",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "application/vnd.ms-powerpoint",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  "image/png",
+  "image/jpeg",
+  "image/jpg",
+  "image/webp",
 ]
 
 // Company Verification Document schema helper

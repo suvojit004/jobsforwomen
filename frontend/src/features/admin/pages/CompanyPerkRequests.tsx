@@ -6,7 +6,6 @@ import {
   HelpCircle,
   AlertCircle,
   Award,
-  FileText,
 } from "lucide-react"
 import { DataTable } from "@/components/shared/DataTable"
 import type { ColumnDef } from "@/components/shared/DataTable"
@@ -15,12 +14,18 @@ import { Input } from "@/components/ui/input"
 import { DashboardCard } from "@/components/shared/DashboardCard"
 import { AdminApi } from "../services/adminApi"
 import { getSocket } from "@/api/socket"
+import { FileTypeIcon } from "@/components/shared/forms/SupportingDocumentsUploader"
+import { openDocument, formatFileSize, getFileIconKind } from "@/utils/fileHelpers"
 
 interface PerkDocument {
   url: string
   category: string
   uploadedAt: string
   version: number
+  mimetype?: string
+  size?: number
+  originalFilename?: string
+  format?: string
 }
 
 interface AdminPerkRequest {
@@ -169,16 +174,16 @@ export function CompanyPerkRequests() {
         row.documents.length > 0 ? (
           <div className="flex flex-col gap-1">
             {row.documents.map((doc, i) => (
-              <a
+              <button
                 key={i}
-                href={doc.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-1 text-[10px] font-bold text-[#6B2C91] dark:text-pink-300 hover:underline"
+                type="button"
+                onClick={() => openDocument(doc)}
+                className="flex items-center gap-1 text-[10px] font-bold text-[#6B2C91] dark:text-pink-300 hover:underline text-left"
               >
-                <FileText className="size-3" />
-                {doc.category} v{doc.version}
-              </a>
+                <FileTypeIcon kind={getFileIconKind(doc)} className="size-3" />
+                <span className="truncate max-w-[140px]">{doc.originalFilename || doc.category} v{doc.version}</span>
+                {typeof doc.size === "number" && <span className="text-slate-400 shrink-0">{formatFileSize(doc.size)}</span>}
+              </button>
             ))}
           </div>
         ) : (

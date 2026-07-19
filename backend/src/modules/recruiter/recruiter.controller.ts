@@ -100,7 +100,13 @@ export class RecruiterController {
       return sendError(res, "Document category is required.", null, 400)
     }
 
-    const result = await uploadToCloudinary(file.buffer, "jfw/perk-documents", `${userId}_${category}_${Date.now()}`, true)
+    const result = await uploadToCloudinary(
+      file.buffer,
+      "jfw/perk-documents",
+      `${userId}_${category}_${Date.now()}`,
+      true,
+      file.originalname
+    )
 
     const doc = await this.service.addPerkDocument(userId, perkRequestId, {
       url: result.secureUrl,
@@ -108,6 +114,8 @@ export class RecruiterController {
       size: result.size,
       mimetype: file.mimetype,
       category,
+      originalFilename: file.originalname,
+      format: result.format,
     })
     return sendSuccess(res, doc, "Document uploaded successfully.", 201)
   }

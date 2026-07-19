@@ -282,15 +282,23 @@ export const RecruiterApi = {
   },
 
   // Company Perk Requests (Parts 6/7) -- deliberately separate from
-  // onboardCompany above.
+  // onboardCompany above. The backend now always returns `documents` as a
+  // real array (recruiter.service.ts normalizes it at the source), but this
+  // is still the one place every perk-request read passes through on the
+  // frontend, so it's normalized defensively here too -- belt-and-suspenders
+  // consistent with how CompanyDetails.tsx already guards
+  // verificationDocuments, rather than trusting every call site downstream
+  // to remember `?.` / `Array.isArray`.
   async getPerkRequests() {
     const res = await apiClient.get("/api/v1/recruiters/perks")
-    return res?.data?.perkRequests || []
+    const requests = res?.data?.perkRequests || []
+    return requests.map((r: any) => ({ ...r, documents: Array.isArray(r.documents) ? r.documents : [] }))
   },
 
   async submitPerk(perkName: string, comment?: string) {
     const res = await apiClient.post("/api/v1/recruiters/perks/submit", { perkName, comment })
-    return res?.data
+    const data = res?.data
+    return data ? { ...data, documents: Array.isArray(data.documents) ? data.documents : [] } : data
   },
 
   async uploadPerkDocument(perkRequestId: string, file: File, category: string) {
