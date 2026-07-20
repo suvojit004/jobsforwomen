@@ -168,11 +168,13 @@ export function Applications() {
                                   size="sm"
                                   onClick={(e) => {
                                     e.stopPropagation()
-                                    // Desktop table already shows the details panel in the
-                                    // right-hand column -- just make sure this row is the one
-                                    // selected. handleSelectApplication (which also opens the
-                                    // mobile drawer) is reserved for the tablet/mobile card list.
+                                    // Select the row (updates the desktop right-hand panel)
+                                    // AND open the drawer, so the click always produces
+                                    // visible feedback even if the right-hand column happens
+                                    // to be out of view (short window, already-selected row,
+                                    // etc).
                                     setSelectedApp(app)
+                                    setIsDrawerOpen(true)
                                   }}
                                   className="h-7 gap-1 text-xs text-[#6B2C91] dark:text-pink-200"
                                 >
