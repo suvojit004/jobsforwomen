@@ -16,6 +16,7 @@ const ActivityLogs = lazy(() => import("@/features/admin/pages/ActivityLogs").th
 const HelpSupport = lazy(() => import("@/features/admin/pages/HelpSupport").then(m => ({ default: m.HelpSupport })))
 const FeatureConfigs = lazy(() => import("@/features/admin/pages/FeatureConfigs").then(m => ({ default: m.FeatureConfigs })))
 const RolesPermissions = lazy(() => import("@/features/admin/pages/RolesPermissions").then(m => ({ default: m.RolesPermissions })))
+const AdminManagement = lazy(() => import("@/features/admin/pages/AdminManagement").then(m => ({ default: m.AdminManagement })))
 const SystemHealth = lazy(() => import("@/features/admin/pages/SystemHealth").then(m => ({ default: m.SystemHealth })))
 const Logout = lazy(() => import("@/features/admin/pages/Logout").then(m => ({ default: m.Logout })))
 
@@ -37,6 +38,7 @@ export function AdminRoutes() {
         <Route path="activity-logs" element={<ActivityLogs />} />
         <Route path="feature-configs" element={<FeatureConfigs />} />
         <Route path="roles-permissions" element={<RolesPermissions />} />
+        <Route path="admin-management" element={<AdminManagement />} />
         <Route path="system-health" element={<SystemHealth />} />
         <Route path="help-support" element={<HelpSupport />} />
         <Route path="logout" element={<Logout />} />

@@ -27,6 +27,7 @@ import {
   Shield,
   Activity,
   Award,
+  ShieldCheck,
 } from "lucide-react"
 
 const adminMenuItems = [
@@ -43,6 +44,7 @@ const adminMenuItems = [
   { label: "Activity Logs", icon: FileText, href: "/admin/activity-logs" },
   { label: "Feature Configs", icon: Sparkles, href: "/admin/feature-configs" },
   { label: "Roles & Permissions", icon: Shield, href: "/admin/roles-permissions" },
+  { label: "Admin Management", icon: ShieldCheck, href: "/admin/admin-management", superAdminOnly: true },
   { label: "System Health", icon: Activity, href: "/admin/system-health" },
   { label: "Help & Support", icon: CircleHelp, href: "/admin/help-support" },
   { label: "Logout", icon: LogOut, href: "/admin/logout" },
@@ -57,16 +59,21 @@ const adminMobileItems = [
 ]
 
 import { NotificationProvider, useNotificationContext } from "@/contexts/NotificationContext"
+import { useAuth } from "@/hooks/useAuth"
 
 function AdminLayoutInner() {
   const [isNavigationOpen, setIsNavigationOpen] = useState(false)
   const { unreadCount } = useNotificationContext()
+  const { user } = useAuth()
+  const isSuperAdmin = (user?.roles || []).includes("Super Admin")
 
-  const menuItems = adminMenuItems.map((item) =>
-    item.label === "Notifications"
-      ? { ...item, badge: unreadCount > 0 ? String(unreadCount) : undefined }
-      : item
-  )
+  const menuItems = adminMenuItems
+    .filter((item) => !item.superAdminOnly || isSuperAdmin)
+    .map((item) =>
+      item.label === "Notifications"
+        ? { ...item, badge: unreadCount > 0 ? String(unreadCount) : undefined }
+        : item
+    )
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-slate-950 dark:bg-[#0F172A] dark:text-slate-50">

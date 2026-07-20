@@ -250,7 +250,21 @@ export class RbacService {
   // ==========================================
   // USER ROLES ASSIGNMENT
   // ==========================================
-  async assignRolesToUser(userId: string, roleIds: string[], context?: RequestContext) {
+  // CONFIRMED BUG (fixed here, per the Admin Management spec's privilege-
+  // escalation and last-Super-Admin requirements): this previously let
+  // *any* caller with "manage:users" permission (any Admin, not just Super
+  // Admin) freely add or remove the Super Admin role from anyone, including
+  // silently stripping it from the platform's last Super Admin -- which
+  // would permanently lock everyone out of Super-Admin-only actions (role
+  // management itself included) with no recovery path short of a direct DB
+  // edit. `operatorRoles` (the caller's own JWT roles) and the two guards
+  // below close both gaps.
+  async assignRolesToUser(
+    userId: string,
+    roleIds: string[],
+    context?: RequestContext,
+    operatorRoles: string[] = []
+  ) {
     const user = await prisma.user.findUnique({ where: { id: userId } })
     if (!user) {
       throw new Error("User not found")
@@ -258,9 +272,43 @@ export class RbacService {
 
     const current = await prisma.userRole.findMany({
       where: { userId },
-      select: { roleId: true },
+      select: { roleId: true, role: { select: { name: true } } },
     })
     const currentRoleIds = current.map((ur) => ur.roleId)
+    const currentRoleNames = current.map((ur) => ur.role.name)
+
+    const targetRoles = await prisma.role.findMany({
+      where: { id: { in: roleIds } },
+      select: { id: true, name: true },
+    })
+    if (targetRoles.length !== new Set(roleIds).size) {
+      throw new Error("One or more of the given role IDs do not exist.")
+    }
+    const nextRoleNames = targetRoles.map((r) => r.name)
+
+    const hadSuperAdmin = currentRoleNames.includes("Super Admin")
+    const willHaveSuperAdmin = nextRoleNames.includes("Super Admin")
+    const isOperatorSuperAdmin = operatorRoles.includes("Super Admin")
+
+    // Privilege escalation guard: only a Super Admin may grant or revoke the
+    // Super Admin role on anyone (including themselves).
+    if (hadSuperAdmin !== willHaveSuperAdmin && !isOperatorSuperAdmin) {
+      throw new Error("Only a Super Admin can grant or remove the Super Admin role.")
+    }
+
+    // Last-Super-Admin guard: block a change that would leave zero Super
+    // Admins platform-wide.
+    if (hadSuperAdmin && !willHaveSuperAdmin) {
+      const otherSuperAdmins = await prisma.userRole.count({
+        where: {
+          userId: { not: userId },
+          role: { name: "Super Admin" },
+        },
+      })
+      if (otherSuperAdmins === 0) {
+        throw new Error("Cannot remove the Super Admin role from the last remaining Super Admin.")
+      }
+    }
 
     await prisma.$transaction(async (tx) => {
       await tx.userRole.deleteMany({ where: { userId } })
@@ -275,12 +323,21 @@ export class RbacService {
       action: "ASSIGN_USER_ROLES",
       entity: "User",
       entityId: userId,
-      oldValue: { roleIds: currentRoleIds },
-      newValue: { roleIds },
+      oldValue: { roleIds: currentRoleIds, roleNames: currentRoleNames },
+      newValue: { roleIds, roleNames: nextRoleNames },
     })
 
-    // Publish event for role assignment
-    EventBus.publish("RoleAssigned", { userId, roleIds })
+    // Publish event for role assignment -- notification.listener.ts /
+    // email.listener.ts subscribe to this to let the affected admin know
+    // their access changed (Admin Management spec's notification requirement).
+    EventBus.publish("RoleAssigned", {
+      userId,
+      userEmail: user.email,
+      roleIds,
+      roleNames: nextRoleNames,
+      previousRoleNames: currentRoleNames,
+      context,
+    })
 
     // Invalidate cache for the specific user
     await PermissionCacheManager.invalidateUser(userId)

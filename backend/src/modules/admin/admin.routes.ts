@@ -6,6 +6,7 @@ import {
   requireSuperAdmin,
   requirePermission,
 } from "../rbac/rbac.middleware"
+import { adminRateLimiter } from "../../shared/middleware/rateLimit.middleware"
 
 const router = Router()
 const controller = new AdminController()
@@ -27,6 +28,10 @@ const ADMIN_TIER_ROLES = ["Admin", "Super Admin", "Moderator", "Support Executiv
 router.use(authenticateToken)
 router.use(requireActiveUser)
 router.use(requireRole(ADMIN_TIER_ROLES))
+// Moderate, user-keyed limiter -- protects against abuse (compromised admin
+// credentials, a buggy client hammering an endpoint) while staying loose
+// enough for legitimate high-volume moderation sessions.
+router.use(adminRateLimiter)
 
 // General Admin Search & Dashboard metrics (Admin, Super Admin, Moderator, Support)
 router.get("/dashboard", controller.getDashboard)
@@ -77,6 +82,15 @@ router.post("/rbac/roles", requireSuperAdmin, controller.createRole)
 router.put("/rbac/roles/:id", requireSuperAdmin, controller.updateRole)
 router.delete("/rbac/roles/:id", requireSuperAdmin, controller.deleteRole)
 router.post("/users/:id/roles", requireSuperAdmin, controller.assignUserRoles)
+
+// Admin Management module (Super Admin only, end-to-end -- create/list
+// administrator accounts and revoke a single role without recreating the
+// user; Suspend/Activate/Delete/Assign-multiple-roles reuse the existing
+// USER_MGMT_ROLES + requireSuperAdmin routes above, per the spec's
+// "uses reusable services/components" requirement).
+router.get("/management/admins", requireSuperAdmin, controller.listAdmins)
+router.post("/management/admins", requireSuperAdmin, controller.createAdmin)
+router.delete("/management/admins/:id/roles/:roleName", requireSuperAdmin, controller.removeAdminRole)
 
 // Platform settings & critical Feature Flags (Enforces Super Admin Safeguards)
 router.get("/feature-flags", controller.getFeatureFlags)

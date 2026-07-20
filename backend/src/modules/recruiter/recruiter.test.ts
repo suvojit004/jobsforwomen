@@ -528,6 +528,115 @@ describe("Recruiter Module Integration Tests (Phase 6)", () => {
         })
       )
     })
+
+    // CONFIRMED PRODUCTION BUG (fixed here): neither Applicants.tsx's status
+    // dropdown nor CandidatePreview.tsx's quick actions ever expose
+    // "Shortlisted" as a settable status -- but the old WorkflowTransitions
+    // map required an application to already be Shortlisted before
+    // InterviewScheduled was reachable. That made scheduling an interview
+    // from the two states a real application actually starts in (Applied,
+    // Reviewed/"Under Review") always fail with "Cannot schedule an
+    // interview from state: Reviewed", exactly as reported in production.
+    // getAllowedTransitions() now allows jumping straight from either state
+    // to InterviewScheduled.
+    it("allows scheduling an interview directly from 'Reviewed' (Under Review), matching what the recruiter UI actually allows", async () => {
+      mockPrisma.recruiterProfile.findUnique.mockResolvedValue({
+        id: "profile-approved",
+        userId: "rec-approved-id",
+        fullName: "Sneha Reddy",
+        companyId: "comp-approved",
+        company: { id: "comp-approved", status: CompanyStatus.approved },
+      })
+      mockPrisma.application.findUnique.mockResolvedValue({
+        id: "app-interview-2",
+        status: ApplicationStatus.Reviewed,
+        jobId: "job-9",
+        candidateId: "cand-profile-1",
+        job: { id: "job-9", companyId: "comp-approved", title: "React Developer" },
+        candidate: { id: "cand-profile-1", userId: "cand-user-1", fullName: "Anita Rao" },
+      })
+      mockPrisma.interview.create.mockResolvedValue({ id: "interview-2" })
+      mockPrisma.application.update.mockResolvedValue({
+        id: "app-interview-2",
+        status: ApplicationStatus.InterviewScheduled,
+      })
+      mockPrisma.user.findMany.mockResolvedValue([])
+
+      const res = await request(app)
+        .post("/api/v1/recruiters/applications/app-interview-2/interview")
+        .set("Authorization", `Bearer ${approvedRecruiterToken}`)
+        .send({
+          title: "Technical Round 1",
+          scheduledAt: "2026-08-01T10:00:00.000Z",
+          location: "Google Meet",
+        })
+
+      expect(res.status).toBe(201)
+      expect(mockPrisma.application.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: "app-interview-2" },
+          data: expect.objectContaining({ status: ApplicationStatus.InterviewScheduled }),
+        })
+      )
+    })
+
+    it("allows scheduling an interview directly from 'Applied'", async () => {
+      mockPrisma.recruiterProfile.findUnique.mockResolvedValue({
+        id: "profile-approved",
+        userId: "rec-approved-id",
+        fullName: "Sneha Reddy",
+        companyId: "comp-approved",
+        company: { id: "comp-approved", status: CompanyStatus.approved },
+      })
+      mockPrisma.application.findUnique.mockResolvedValue({
+        id: "app-interview-3",
+        status: ApplicationStatus.Applied,
+        jobId: "job-9",
+        candidateId: "cand-profile-1",
+        job: { id: "job-9", companyId: "comp-approved", title: "React Developer" },
+        candidate: { id: "cand-profile-1", userId: "cand-user-1", fullName: "Anita Rao" },
+      })
+      mockPrisma.interview.create.mockResolvedValue({ id: "interview-3" })
+      mockPrisma.application.update.mockResolvedValue({
+        id: "app-interview-3",
+        status: ApplicationStatus.InterviewScheduled,
+      })
+      mockPrisma.user.findMany.mockResolvedValue([])
+
+      const res = await request(app)
+        .post("/api/v1/recruiters/applications/app-interview-3/interview")
+        .set("Authorization", `Bearer ${approvedRecruiterToken}`)
+        .send({
+          title: "Screening Call",
+          scheduledAt: "2026-08-02T10:00:00.000Z",
+          location: "Google Meet",
+        })
+
+      expect(res.status).toBe(201)
+    })
+
+    it("still blocks scheduling an interview once the application is in a terminal state", async () => {
+      mockPrisma.recruiterProfile.findUnique.mockResolvedValue({
+        id: "profile-approved",
+        userId: "rec-approved-id",
+        companyId: "comp-approved",
+        company: { id: "comp-approved", status: CompanyStatus.approved },
+      })
+      mockPrisma.application.findUnique.mockResolvedValue({
+        id: "app-interview-4",
+        status: ApplicationStatus.Rejected,
+        job: { companyId: "comp-approved" },
+        candidate: { userId: "cand-1" },
+      })
+
+      const res = await request(app)
+        .post("/api/v1/recruiters/applications/app-interview-4/interview")
+        .set("Authorization", `Bearer ${approvedRecruiterToken}`)
+        .send({ title: "x", scheduledAt: "2026-08-01T10:00:00.000Z" })
+
+      expect(res.status).toBe(400)
+      expect(res.body.message).toContain("terminal")
+    })
   })
 
   describe("Applicant pipeline status workflow and invalid transitions", () => {

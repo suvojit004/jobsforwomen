@@ -1,11 +1,13 @@
 import type { Request, Response } from "express"
 import { AdminService, ServiceContext } from "./admin.service"
+import { RbacService } from "../rbac/rbac.service"
 import { sendSuccess, sendError } from "../../shared/utils/response"
 import { NotificationService } from "../../shared/services/notification.service"
 import {
   verifyCompanySchema,
   moderateJobSchema,
   updateUserStatusSchema,
+  deleteUserSchema,
   inviteEmployeeSchema,
   createFeatureFlagSchema,
   updateFeatureFlagSchema,
@@ -14,11 +16,14 @@ import {
   supportTicketSchema,
   auditLogsQuerySchema,
   reviewPerkRequestSchema,
+  createAdminSchema,
+  listAdminsQuerySchema,
 } from "./admin.validator"
 import { CompanyStatus, UserStatus, PerkStatus } from "@prisma/client"
 
 export class AdminController {
   private service = new AdminService()
+  private rbacService = new RbacService()
 
   private getContext(req: Request): ServiceContext {
     const user = req.user
@@ -161,7 +166,8 @@ export class AdminController {
         adminId,
         req.params.id as string,
         validated.status as UserStatus,
-        context
+        context,
+        req.user?.roles || []
       )
       return sendSuccess(res, result, `User account status updated to ${validated.status} successfully.`)
     } catch (err: any) {
@@ -173,7 +179,11 @@ export class AdminController {
     try {
       const adminId = req.user?.userId || ""
       const context = this.getContext(req)
-      const result = await this.service.deleteUser(adminId, req.params.id as string, context)
+      // Body is optional -- most deletes (candidates, recruiters with no
+      // active jobs) don't need it. `.parse` on an empty object is fine
+      // since every field on this schema is optional.
+      const options = deleteUserSchema.parse(req.body || {})
+      const result = await this.service.deleteUser(adminId, req.params.id as string, context, options, req.user?.roles || [])
       return sendSuccess(res, result, "User account permanently deleted successfully.")
     } catch (err: any) {
       next(err)
@@ -401,6 +411,15 @@ export class AdminController {
     }
   }
 
+  // CONFIRMED BUG (fixed here): this used to call AdminService.assignUserRoles,
+  // a bare deleteMany+createMany with no privilege-escalation or
+  // last-Super-Admin safety checks at all -- even though this specific route
+  // is already gated behind requireSuperAdmin, a Super Admin could still
+  // accidentally strip their own (or the platform's last) Super Admin role
+  // with zero recovery path. RbacService.assignRolesToUser (rbac.service.ts)
+  // is the hardened, reusable implementation the Admin Management spec asks
+  // for -- delegating to it here instead of keeping two parallel
+  // role-assignment code paths.
   assignUserRoles = async (req: Request, res: Response, next: any) => {
     try {
       const { roleIds } = req.body
@@ -409,7 +428,7 @@ export class AdminController {
       }
       const adminId = req.user?.userId || ""
       const context = this.getContext(req)
-      await this.service.assignUserRoles(adminId, req.params.id as string, roleIds, context)
+      await this.rbacService.assignRolesToUser(req.params.id as string, roleIds, context, req.user?.roles || [])
       return sendSuccess(res, null, "User roles reassigned successfully.")
     } catch (err: any) {
       next(err)
@@ -431,6 +450,49 @@ export class AdminController {
       const role = req.query.role as string | undefined
       const result = await this.service.listUsers(role)
       return sendSuccess(res, { users: result }, "Fetched users successfully.")
+    } catch (err: any) {
+      next(err)
+    }
+  }
+
+  // ==========================================
+  // SUPER ADMIN: ADMIN MANAGEMENT MODULE
+  // (routes gated by requireSuperAdmin -- see admin.routes.ts)
+  // ==========================================
+  createAdmin = async (req: Request, res: Response, next: any) => {
+    try {
+      const validated = createAdminSchema.parse(req.body)
+      const adminId = req.user?.userId || ""
+      const context = this.getContext(req)
+      const result = await this.service.createAdmin(adminId, validated, context, req.user?.roles || [])
+      return sendSuccess(res, result, "Admin account created successfully.", 201)
+    } catch (err: any) {
+      next(err)
+    }
+  }
+
+  listAdmins = async (req: Request, res: Response, next: any) => {
+    try {
+      const filters = listAdminsQuerySchema.parse(req.query)
+      const result = await this.service.listAdmins(filters)
+      return sendSuccess(res, { admins: result }, "Fetched admin accounts successfully.")
+    } catch (err: any) {
+      next(err)
+    }
+  }
+
+  removeAdminRole = async (req: Request, res: Response, next: any) => {
+    try {
+      const adminId = req.user?.userId || ""
+      const context = this.getContext(req)
+      const result = await this.service.removeAdminRole(
+        adminId,
+        req.params.id as string,
+        req.params.roleName as string,
+        req.user?.roles || [],
+        context
+      )
+      return sendSuccess(res, result, "Role removed successfully.")
     } catch (err: any) {
       next(err)
     }

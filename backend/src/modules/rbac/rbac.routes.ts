@@ -2,12 +2,16 @@ import { Router } from "express"
 import { RbacController } from "./rbac.controller"
 import { authenticateToken } from "../../shared/middleware/auth.middleware"
 import { requirePermission } from "./rbac.middleware"
+import { adminRateLimiter } from "../../shared/middleware/rateLimit.middleware"
 
 const router = Router()
 const controller = new RbacController()
 
-// Apply authentication to all RBAC endpoints
+// Apply authentication to all RBAC endpoints -- every route below is
+// permission-gated to admin-tier users, so it gets the same moderate,
+// user-keyed limiter as the rest of the admin surface.
 router.use(authenticateToken)
+router.use(adminRateLimiter)
 
 // Roles endpoints (restricted to manage:roles permission)
 router.post("/roles", requirePermission(["manage:roles"]), controller.createRole)

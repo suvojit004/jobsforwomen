@@ -12,6 +12,7 @@ import { ResumeCard } from "@/components/dashboard/ResumeCard"
 import { useAuth } from "@/hooks/useAuth"
 import { candidateApi } from "../services/candidateApi"
 import { CandidateJobsApi, mapApiApplication } from "../services/jobsApi"
+import type { DisplayApplication } from "../services/jobsApi"
 import { mapResumeData } from "../utils/resumeMapper"
 import type { ExtendedJob } from "@/types/job"
 import type { Activity } from "@/types/dashboard"
@@ -56,7 +57,7 @@ export function Dashboard() {
   const name = user?.fullName?.split(" ")[0] || "Candidate"
 
   const [profile, setProfile] = useState<any>(null)
-  const [applications, setApplications] = useState<any[]>([])
+  const [applications, setApplications] = useState<DisplayApplication[]>([])
   const [recommendedJobs, setRecommendedJobs] = useState<ExtendedJob[]>([])
   const [savedJobIds, setSavedJobIds] = useState<string[]>([])
   const [appliedJobIds, setAppliedJobIds] = useState<string[]>([])

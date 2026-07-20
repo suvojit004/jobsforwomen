@@ -8,6 +8,9 @@ import {
   ShieldAlert,
   GraduationCap,
   Trash2,
+  X,
+  Archive,
+  ArrowRightLeft,
 } from "lucide-react"
 import { DataTable } from "@/components/shared/DataTable"
 import type { ColumnDef } from "@/components/shared/DataTable"
@@ -38,6 +41,13 @@ interface RecruiterUser {
   name: string
   email: string
   company: string
+  // Needed to resolve a job-transfer target when deleting a recruiter who
+  // still owns jobs -- recruiterProfileId is what Job.recruiterId actually
+  // points at (not the User id), and companyId is required so the transfer
+  // target is restricted to a recruiter at the same company (backend
+  // enforces this too; see AdminService.deleteUser).
+  recruiterProfileId: string
+  companyId: string | null
   verified: boolean
   status: string
 }
@@ -74,6 +84,20 @@ export function UserModeration() {
   const [loading, setLoading] = useState(true)
   const [deletingId, setDeletingId] = useState<string | null>(null)
 
+  // Job-ownership conflict modal -- shown when a recruiter delete is
+  // rejected (409) because they still own job postings. See
+  // AdminService.deleteUser: the delete must be retried with an explicit
+  // resolution (archive the jobs, or transfer them to another recruiter).
+  const [jobConflict, setJobConflict] = useState<{
+    id: string
+    name: string
+    email: string
+    message: string
+  } | null>(null)
+  const [resolution, setResolution] = useState<"archive" | "transfer">("archive")
+  const [transferTargetId, setTransferTargetId] = useState("")
+  const [resolving, setResolving] = useState(false)
+
   // Load all user collections
   const loadUsers = async () => {
     try {
@@ -99,6 +123,8 @@ export function UserModeration() {
         name: u.fullName || u.email.split("@")[0],
         email: u.email,
         company: u.recruiterProfile?.company?.name || "No Company Assigned",
+        recruiterProfileId: u.recruiterProfile?.id || "",
+        companyId: u.recruiterProfile?.companyId || null,
         verified: !!u.recruiterProfile?.verified,
         status: u.status === "Active" ? "Active" : "Inactive"
       })))
@@ -169,9 +195,41 @@ export function UserModeration() {
       toast.success(`${name}'s account has been permanently deleted.`)
       loadUsers()
     } catch (err: any) {
-      toast.error(err?.message || "Failed to delete user account.")
+      // The backend rejects a recruiter delete with 409 when they still own
+      // jobs, instead of ever attempting a delete that would hit a foreign
+      // key constraint -- give the admin a way to resolve that here rather
+      // than just showing the error and dead-ending.
+      if (err?.status === 409) {
+        setJobConflict({ id: userId, name, email, message: err.message || "This recruiter still owns job postings." })
+        setResolution("archive")
+        setTransferTargetId("")
+      } else {
+        toast.error(err?.message || "Failed to delete user account.")
+      }
     } finally {
       setDeletingId(null)
+    }
+  }
+
+  const handleResolveJobConflict = async () => {
+    if (!jobConflict) return
+    if (resolution === "transfer" && !transferTargetId) {
+      toast.error("Choose a recruiter to transfer the jobs to.")
+      return
+    }
+    setResolving(true)
+    try {
+      await AdminApi.deleteUser(
+        jobConflict.id,
+        resolution === "archive" ? { archiveJobs: true } : { transferToRecruiterId: transferTargetId }
+      )
+      toast.success(`${jobConflict.name}'s account has been permanently deleted.`)
+      setJobConflict(null)
+      loadUsers()
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to delete user account.")
+    } finally {
+      setResolving(false)
     }
   }
 
@@ -586,6 +644,101 @@ export function UserModeration() {
           </div>
         )}
       </DashboardCard>
+
+      {/* Job-ownership conflict modal -- see handleDeleteUser/handleResolveJobConflict */}
+      {jobConflict && (() => {
+        const targetRecruiter = recruiters.find((r) => r.id === jobConflict.id)
+        const transferCandidates = recruiters.filter(
+          (r) => r.id !== jobConflict.id && r.companyId && r.companyId === targetRecruiter?.companyId
+        )
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+            <div className="w-full max-w-md rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl">
+              <div className="flex items-center justify-between p-4 border-b border-slate-100 dark:border-slate-800">
+                <h3 className="text-sm font-black text-slate-900 dark:text-white flex items-center gap-1.5">
+                  <ShieldAlert className="size-4 text-amber-500" />
+                  Can't Delete {jobConflict.name} Yet
+                </h3>
+                <button onClick={() => setJobConflict(null)} className="text-slate-400 hover:text-slate-700 dark:hover:text-white">
+                  <X className="size-4" />
+                </button>
+              </div>
+              <div className="p-4 space-y-3">
+                <p className="text-xs font-semibold text-slate-600 dark:text-slate-400">{jobConflict.message}</p>
+
+                <div className="space-y-2">
+                  <button
+                    type="button"
+                    onClick={() => setResolution("archive")}
+                    className={`w-full flex items-start gap-2 rounded-lg border p-3 text-left transition-colors ${
+                      resolution === "archive"
+                        ? "border-[#6B2C91] bg-[#6B2C91]/5 dark:border-pink-300"
+                        : "border-slate-200 dark:border-slate-800"
+                    }`}
+                  >
+                    <Archive className="size-4 mt-0.5 text-[#6B2C91] dark:text-pink-200 shrink-0" />
+                    <span>
+                      <span className="block text-xs font-black text-slate-900 dark:text-white">Archive their jobs</span>
+                      <span className="block text-[10px] font-semibold text-slate-500 dark:text-slate-400">
+                        Job postings are marked archived and stop accepting applicants.
+                      </span>
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setResolution("transfer")}
+                    disabled={transferCandidates.length === 0}
+                    className={`w-full flex items-start gap-2 rounded-lg border p-3 text-left transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+                      resolution === "transfer"
+                        ? "border-[#6B2C91] bg-[#6B2C91]/5 dark:border-pink-300"
+                        : "border-slate-200 dark:border-slate-800"
+                    }`}
+                  >
+                    <ArrowRightLeft className="size-4 mt-0.5 text-[#6B2C91] dark:text-pink-200 shrink-0" />
+                    <span>
+                      <span className="block text-xs font-black text-slate-900 dark:text-white">Transfer to another recruiter</span>
+                      <span className="block text-[10px] font-semibold text-slate-500 dark:text-slate-400">
+                        {transferCandidates.length === 0
+                          ? "No other recruiter at the same company is available."
+                          : "Job postings move to a recruiter at the same company."}
+                      </span>
+                    </span>
+                  </button>
+
+                  {resolution === "transfer" && transferCandidates.length > 0 && (
+                    <select
+                      value={transferTargetId}
+                      onChange={(e) => setTransferTargetId(e.target.value)}
+                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6B2C91]/30 dark:border-slate-800 dark:bg-slate-950 dark:text-white"
+                    >
+                      <option value="">Select a recruiter...</option>
+                      {transferCandidates.map((r) => (
+                        <option key={r.recruiterProfileId} value={r.recruiterProfileId}>
+                          {r.name} ({r.email})
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+              </div>
+              <div className="flex justify-end gap-2 p-4 border-t border-slate-100 dark:border-slate-800">
+                <Button variant="outline" size="sm" onClick={() => setJobConflict(null)} className="text-xs font-bold">
+                  Cancel
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={handleResolveJobConflict}
+                  disabled={resolving || (resolution === "transfer" && !transferTargetId)}
+                  className="text-xs font-black bg-red-600 hover:bg-red-700 text-white"
+                >
+                  {resolving ? "Deleting..." : "Confirm & Delete"}
+                </Button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
     </div>
   )
 }

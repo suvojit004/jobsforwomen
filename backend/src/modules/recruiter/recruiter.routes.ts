@@ -7,6 +7,7 @@ import {
   requireOwnership,
 } from "../rbac/rbac.middleware"
 import { uploadLogoMiddleware, uploadPerkDocumentMiddleware, uploadGalleryPhotoMiddleware } from "../../shared/middleware/upload.middleware"
+import { recruiterRateLimiter, uploadRateLimiter } from "../../shared/middleware/rateLimit.middleware"
 
 const router = Router()
 const controller = new RecruiterController()
@@ -14,6 +15,9 @@ const controller = new RecruiterController()
 // Apply authentication to all recruiter endpoints
 router.use(authenticateToken)
 router.use(requireActiveUser)
+// User-keyed moderate-tier limiter for everything below; file-upload routes
+// get the stricter upload tier layered on top further down.
+router.use(recruiterRateLimiter)
 
 // Recruiter Dashboard & Analytics
 router.get("/dashboard", controller.getDashboard)
@@ -21,14 +25,14 @@ router.get("/analytics", controller.getAnalytics)
 
 // Company Onboarding Wizard (Does NOT require approved company)
 router.post("/company/onboard", controller.onboardCompany)
-router.post("/company/logo", uploadLogoMiddleware, controller.uploadCompanyLogo)
+router.post("/company/logo", uploadRateLimiter, uploadLogoMiddleware, controller.uploadCompanyLogo)
 router.delete("/company/logo", controller.deleteCompanyLogo)
 
 // Company Profile expansion (Part 5) -- office photo gallery + workplace
 // policies. Gated behind requireApprovedCompany like Perks, since this is
 // part of the post-approval Company Profile area, not the initial
 // onboarding wizard.
-router.post("/company/gallery", requireApprovedCompany, uploadGalleryPhotoMiddleware, controller.uploadGalleryPhoto)
+router.post("/company/gallery", requireApprovedCompany, uploadRateLimiter, uploadGalleryPhotoMiddleware, controller.uploadGalleryPhoto)
 // publicId is passed in the request body, not a URL param -- Cloudinary
 // public_ids contain folder slashes (e.g. "jfw/gallery/xyz"), which would
 // otherwise need awkward double-encoding to survive as a single path segment.
@@ -40,7 +44,7 @@ router.put("/company/policies", requireApprovedCompany, controller.updatePolicie
 // Company Profile area per Part 5)
 router.post("/perks/submit", requireApprovedCompany, controller.submitPerk)
 router.get("/perks", requireApprovedCompany, controller.getPerkRequests)
-router.post("/perks/:id/documents", requireApprovedCompany, uploadPerkDocumentMiddleware, controller.addPerkDocument)
+router.post("/perks/:id/documents", requireApprovedCompany, uploadRateLimiter, uploadPerkDocumentMiddleware, controller.addPerkDocument)
 
 // Approval Requests tracker (Part 8) -- consolidated Company Registration
 // status/history + Perk Requests overview

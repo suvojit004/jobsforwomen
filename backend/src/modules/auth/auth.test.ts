@@ -267,6 +267,57 @@ describe("Authentication Routes Integration Tests (Phase 3)", () => {
     })
   })
 
+  // Regression coverage for the soft-delete/status-gate audit: login()
+  // already checked Blocked/Suspended/Rejected, but oauth() and refresh()
+  // didn't consistently -- see AuthService.assertAccountActive.
+  describe("Account status gate consistency across login paths (Part: soft-delete audit)", () => {
+    it("rejects an OAuth login for a Blocked user with an existing linked account", async () => {
+      mockFindOAuthAccount.mockResolvedValue({
+        user: {
+          id: "blocked-user-id",
+          email: "blocked@email.com",
+          status: UserStatus.Blocked,
+          roles: [{ role: { name: "Candidate", permissions: [] } }],
+        },
+      })
+
+      const res = await request(app)
+        .post("/api/v1/auth/oauth")
+        .send({
+          provider: "google",
+          providerUserId: "google-uid-1",
+          email: "blocked@email.com",
+          fullName: "Blocked User",
+        })
+
+      expect(res.status).toBe(403)
+      expect(res.body.message).toMatch(/blocked/i)
+    })
+
+    it("rejects refreshing a token for a Suspended user (not just Blocked)", async () => {
+      const refreshToken = jwt.sign({ userId: "suspended-user-id" }, env.JWT_REFRESH_SECRET)
+
+      mockFindRefreshToken.mockResolvedValue({
+        token: refreshToken,
+        revoked: false,
+        expiresAt: new Date(Date.now() + 1000 * 60 * 60),
+      })
+      mockFindUserById.mockResolvedValue({
+        id: "suspended-user-id",
+        email: "suspended@email.com",
+        status: UserStatus.Suspended,
+        roles: [{ role: { name: "Candidate", permissions: [] } }],
+      })
+
+      const res = await request(app)
+        .post("/api/v1/auth/refresh")
+        .send({ refreshToken })
+
+      expect(res.status).toBe(403)
+      expect(res.body.message).toMatch(/suspended/i)
+    })
+  })
+
   describe("POST /api/v1/auth/login - recruiter company approval gate (Part 4)", () => {
     const recruiterUserWithCompany = (companyStatus: string) => ({
       id: "recruiter-id",

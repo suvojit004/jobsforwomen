@@ -1,28 +1,35 @@
 import { Router } from "express"
 import { AuthController } from "./auth.controller"
 import { authenticateToken } from "../../shared/middleware/auth.middleware"
+import { authRateLimiter } from "../../shared/middleware/rateLimit.middleware"
 
 const router = Router()
 const controller = new AuthController()
 
+// Every credential-facing endpoint below sits behind authRateLimiter --
+// deliberately strict (see env.ts's RATE_LIMIT_AUTH_* defaults) since these
+// are exactly the endpoints credential-stuffing/brute-force/enumeration
+// attacks target. Applied per-route rather than router-wide so it doesn't
+// also throttle the lower-risk session-management routes further down.
+
 // Public Registration & Verification
-router.post("/register/candidate", controller.registerCandidate)
-router.post("/register/recruiter", controller.registerRecruiter)
-router.get("/verify-email", controller.verifyEmail)
+router.post("/register/candidate", authRateLimiter, controller.registerCandidate)
+router.post("/register/recruiter", authRateLimiter, controller.registerRecruiter)
+router.get("/verify-email", authRateLimiter, controller.verifyEmail)
 
 // Standard / Google Login
-router.post("/login", controller.login)
-router.post("/oauth", controller.oauth)
-router.get("/google", controller.initiateGoogleOAuth)
-router.get("/google/callback", controller.googleCallback)
+router.post("/login", authRateLimiter, controller.login)
+router.post("/oauth", authRateLimiter, controller.oauth)
+router.get("/google", authRateLimiter, controller.initiateGoogleOAuth)
+router.get("/google/callback", authRateLimiter, controller.googleCallback)
 
 // Token Refresh & Invalidation
-router.post("/refresh", controller.refresh)
+router.post("/refresh", authRateLimiter, controller.refresh)
 router.post("/logout", controller.logout)
 
 // Password Management
-router.post("/forgot-password", controller.forgotPassword)
-router.post("/reset-password", controller.resetPassword)
+router.post("/forgot-password", authRateLimiter, controller.forgotPassword)
+router.post("/reset-password", authRateLimiter, controller.resetPassword)
 
 // Invitations -- public, token-based (reached via the mailed invite link,
 // no login involved yet). GET must be registered so the frontend can look up
@@ -31,7 +38,7 @@ router.post("/reset-password", controller.resetPassword)
 // POST /invitations/accept route below despite the shared "/invitations"
 // prefix since Express matches on method + full path independently.
 router.get("/invitations/:token", controller.getInvitation)
-router.post("/invitations/accept", controller.acceptInvitation)
+router.post("/invitations/accept", authRateLimiter, controller.acceptInvitation)
 
 // Protected Account Sessions (Authentication required)
 router.get("/me", authenticateToken, controller.getMe)

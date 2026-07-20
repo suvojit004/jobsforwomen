@@ -102,8 +102,8 @@ export const AdminApi = {
     return res?.data
   },
 
-  async deleteUser(userId: string) {
-    const res = await apiClient.delete(`/api/v1/admins/users/${userId}`)
+  async deleteUser(userId: string, options?: { archiveJobs?: boolean; transferToRecruiterId?: string }) {
+    const res = await apiClient.delete(`/api/v1/admins/users/${userId}`, options || {})
     return res?.data
   },
 
@@ -204,6 +204,37 @@ export const AdminApi = {
 
   async submitSupportTicket(subject: string, category: string, message: string) {
     const res = await apiClient.post("/api/v1/admins/support-ticket", { subject, category, message })
+    return res?.data
+  },
+
+  // ==========================================
+  // Super Admin: Admin Management module
+  // ==========================================
+  async getAdmins(params: { search?: string; status?: string; role?: string } = {}) {
+    const qs = new URLSearchParams()
+    if (params.search) qs.set("search", params.search)
+    if (params.status && params.status !== "all") qs.set("status", params.status)
+    if (params.role && params.role !== "all") qs.set("role", params.role)
+    const suffix = qs.toString() ? `?${qs.toString()}` : ""
+    const res = await apiClient.get(`/api/v1/admins/management/admins${suffix}`)
+    return res?.data?.admins || []
+  },
+
+  async createAdmin(payload: { email: string; fullName: string; password: string; roleNames: string[] }) {
+    const res = await apiClient.post("/api/v1/admins/management/admins", payload)
+    return res?.data
+  },
+
+  // Multi-role assign/replace -- reuses the existing hardened RBAC endpoint
+  // (POST /admins/users/:id/roles, requireSuperAdmin-gated, delegates to
+  // RbacService.assignRolesToUser server-side).
+  async assignAdminRoles(userId: string, roleIds: string[]) {
+    const res = await apiClient.post(`/api/v1/admins/users/${userId}/roles`, { roleIds })
+    return res?.data
+  },
+
+  async removeAdminRole(userId: string, roleName: string) {
+    const res = await apiClient.delete(`/api/v1/admins/management/admins/${userId}/roles/${encodeURIComponent(roleName)}`)
     return res?.data
   },
 }

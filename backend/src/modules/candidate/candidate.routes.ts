@@ -8,6 +8,7 @@ import {
   requireProfileCompleted,
   requireOwnership,
 } from "../rbac/rbac.middleware"
+import { candidateRateLimiter, uploadRateLimiter, searchRateLimiter } from "../../shared/middleware/rateLimit.middleware"
 
 const router = Router()
 const controller = new CandidateController()
@@ -15,6 +16,10 @@ const controller = new CandidateController()
 // Apply authentication and active user checks to all candidate APIs
 router.use(authenticateToken)
 router.use(requireActiveUser)
+// User-keyed moderate-tier limiter for everything below; job search/browse
+// and resume uploads get their own tighter/looser tiers layered on top of
+// specific routes further down (see env.ts's RATE_LIMIT_* tiers).
+router.use(candidateRateLimiter)
 
 // Consolidated Dashboard & Analytics
 router.get("/dashboard", controller.getDashboard)
@@ -27,7 +32,7 @@ router.put("/profile", controller.updateProfile)
 router.get("/profile/completion", controller.getProfileCompletion)
 
 // Resume upload & delete
-router.post("/resume", uploadResumeMiddleware, controller.uploadResume)
+router.post("/resume", uploadRateLimiter, uploadResumeMiddleware, controller.uploadResume)
 router.delete("/resume", controller.deleteResume)
 
 // Saved Jobs Bookmarks
@@ -51,13 +56,15 @@ router.get("/conversations/:id/messages", controller.getMessages)
 router.post("/conversations/:id/messages", controller.sendMessage)
 router.put("/conversations/:id/read", controller.markConversationAsRead)
 
-// Jobs Discovery & Reporting
-router.get("/jobs", controller.getJobs)
-router.get("/jobs/recommendations", controller.getRecommendations)
+// Jobs Discovery & Reporting -- search/browse gets the higher "search" tier
+// instead of the standard candidate tier (legitimate paging/filtering fires
+// many requests quickly).
+router.get("/jobs", searchRateLimiter, controller.getJobs)
+router.get("/jobs/recommendations", searchRateLimiter, controller.getRecommendations)
 // Must stay registered after the static "/jobs/recommendations" route above
 // -- otherwise this would swallow it (treating "recommendations" as :jobId)
 // since Express matches routes in registration order.
-router.get("/jobs/:jobId", controller.getJobById)
+router.get("/jobs/:jobId", searchRateLimiter, controller.getJobById)
 router.post("/jobs/:jobId/report", controller.reportJob)
 
 // Job Applications (Apply requires verified email & completed profile)

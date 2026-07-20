@@ -16,9 +16,15 @@ import { MenstrualLeaveChampionBadge } from "@/components/shared/MenstrualLeaveC
 import { StatusBadge } from "@/components/shared/StatusBadge"
 import { DashboardCard } from "@/components/dashboard/DashboardCard"
 import { SectionHeader } from "@/components/dashboard/SectionHeader"
+import type { DisplayApplication } from "@/features/candidate/services/jobsApi"
 
 type MyApplicationsProps = {
-  applications?: any[]
+  // Typed as DisplayApplication[] (rather than the previous `any[]`) so a
+  // future shape change to `recruiter` (now a { name, jobTitle, email }
+  // RecruiterSummary object, not a plain string -- see jobsApi.ts) is a
+  // compile error here instead of a silent runtime React error #31 the way
+  // this exact field was until now.
+  applications?: DisplayApplication[]
 }
 
 export function MyApplications({ applications = [] }: MyApplicationsProps) {
@@ -116,7 +122,13 @@ export function MyApplications({ applications = [] }: MyApplicationsProps) {
                     )}
                     {tableMeta.hasRecruiter && (
                       <TableCell className="text-xs font-semibold text-slate-600 dark:text-slate-300">
-                        {application.recruiter ?? "-"}
+                        {/* CONFIRMED BUG (fixed here, React error #31 in
+                            production): application.recruiter is a
+                            { name, jobTitle, email } RecruiterSummary object
+                            (see jobsApi.ts's mapApiApplication), not a plain
+                            string -- this was rendering the whole object
+                            directly into JSX. */}
+                        {application.recruiter?.name ?? "-"}
                       </TableCell>
                     )}
                     <TableCell>

@@ -17,6 +17,8 @@ import { queueMetrics, getDeadLetterQueueStats } from "../../shared/queue/queue"
 import { socketMetrics } from "../../shared/socket/socket"
 import { cloudinaryMetrics } from "../../shared/utils/cloudinary"
 import { emailMetrics } from "../../shared/utils/email"
+import { AppError } from "../../shared/middleware/errorHandler"
+import { hashPassword } from "../../shared/utils/password"
 
 export interface ServiceContext {
   operatorId?: string
@@ -754,13 +756,47 @@ export class AdminService {
     adminId: string,
     targetUserId: string,
     status: UserStatus,
-    context?: ServiceContext
+    context?: ServiceContext,
+    operatorRoles: string[] = []
   ) {
     const admin = await prisma.user.findUnique({ where: { id: adminId } })
-    const target = await prisma.user.findUnique({ where: { id: targetUserId } })
+    const target = await prisma.user.findUnique({
+      where: { id: targetUserId },
+      include: { roles: { include: { role: true } } },
+    })
 
     if (!target) {
       throw new Error("Target user account not found")
+    }
+
+    const targetRoleNames: string[] = (target.roles || []).map((r: any) => r.role?.name).filter(Boolean)
+    const ADMIN_TIER = ["Admin", "Super Admin", "Moderator", "Support Executive"]
+    const targetIsAdminTier = targetRoleNames.some((r) => ADMIN_TIER.includes(r))
+
+    // Admin Management spec: only a Super Admin may suspend/activate another
+    // administrator account -- a plain Admin/Moderator suspending a peer (or
+    // a Super Admin) is a privilege-escalation-adjacent action this screen
+    // must not allow, even though the underlying endpoint is also used for
+    // ordinary candidate/recruiter moderation by any Admin-tier user.
+    if (targetIsAdminTier && !operatorRoles.includes("Super Admin")) {
+      throw new Error("Only a Super Admin can change another administrator's account status.")
+    }
+
+    // Last-Super-Admin guard: suspending/blocking/rejecting the platform's
+    // only remaining Super Admin would lock everyone out of every
+    // Super-Admin-only action (including undoing this) with no recovery
+    // path short of a direct DB edit.
+    if (targetRoleNames.includes("Super Admin") && status !== UserStatus.Active) {
+      const otherActiveSuperAdmins = await prisma.user.count({
+        where: {
+          id: { not: targetUserId },
+          status: UserStatus.Active,
+          roles: { some: { role: { name: "Super Admin" } } },
+        },
+      })
+      if (otherActiveSuperAdmins === 0) {
+        throw new Error("Cannot suspend the last active Super Admin.")
+      }
     }
 
     const updatedUser = await prisma.user.update({
@@ -770,6 +806,23 @@ export class AdminService {
 
     // Invalidate cached user permissions from Redis cache
     await PermissionCacheManager.invalidateUser(targetUserId)
+
+    // CONFIRMED BUG (fixed here, found while verifying the candidate soft/hard
+    // delete flow): moving a user to any non-Active status ("soft delete" in
+    // the ticket's terminology -- Suspended/Blocked/Rejected) previously only
+    // flipped the `status` column. Their existing refresh token and any
+    // active sessions stayed live, so a currently-logged-in user wasn't
+    // actually logged out -- requireActiveUser would reject their next *API*
+    // call, but they could still silently sit on a valid refresh token. This
+    // mirrors what userAdministrativeAction's "force-logout" action already
+    // does, just triggered automatically whenever the new status isn't Active.
+    if (status !== UserStatus.Active) {
+      await prisma.refreshToken.deleteMany({ where: { userId: targetUserId } })
+      await prisma.session.updateMany({
+        where: { userId: targetUserId, revoked: false },
+        data: { revoked: true },
+      })
+    }
 
     EventBus.publish("AuditCreated", {
       ...context,
@@ -782,6 +835,20 @@ export class AdminService {
       oldValue: { status: target.status },
       newValue: { status },
     })
+
+    // Admin Management spec: "Notifications ... on account suspended /
+    // account activated" -- scoped to admin-tier targets only, so ordinary
+    // candidate/recruiter moderation (which this same method also handles)
+    // doesn't change behavior.
+    if (targetIsAdminTier) {
+      EventBus.publish("AdminAccountStatusChanged", {
+        userId: targetUserId,
+        email: target.email,
+        status,
+        operatorEmail: admin?.email,
+        context,
+      })
+    }
 
     return updatedUser
   }
@@ -797,7 +864,24 @@ export class AdminService {
   // file sitting in Cloudinary (only the DB pointer to it), so that's
   // cleaned up explicitly first, best-effort, the same way
   // deleteCompanyLogo() already does for company logos.
-  async deleteUser(adminId: string, targetUserId: string, context?: ServiceContext) {
+  async deleteUser(
+    adminId: string,
+    targetUserId: string,
+    context?: ServiceContext,
+    // CONFIRMED BUG (fixed here): Job.recruiterId -> RecruiterProfile is a
+    // required relation with no `onDelete: Cascade` (schema.prisma), which
+    // Postgres/Prisma defaults to RESTRICT -- a Job silently losing its
+    // owning recruiter on cascade would be a real data-integrity problem,
+    // not something safe to auto-cascade away. A blanket prisma.user.delete()
+    // on a recruiter who still owns jobs previously hit that RESTRICT
+    // constraint mid-cascade, which Prisma surfaces as an uncaught
+    // PrismaClientUnknownRequestError (500, no `.code`/`.meta`, so it skipped
+    // right past errorHandler.ts's P2002/P2025 branch) instead of a clean,
+    // actionable response. These two options let the caller resolve that
+    // ownership conflict before the delete is attempted at all.
+    options?: { archiveJobs?: boolean; transferToRecruiterId?: string },
+    operatorRoles: string[] = []
+  ) {
     if (adminId === targetUserId) {
       throw new Error("You cannot delete your own account from this screen.")
     }
@@ -808,6 +892,7 @@ export class AdminService {
       include: {
         roles: { include: { role: true } },
         candidateProfile: true,
+        recruiterProfile: true,
       },
     })
 
@@ -820,6 +905,44 @@ export class AdminService {
       throw new Error("Super Admin accounts cannot be deleted from this screen.")
     }
 
+    // Admin Management spec: deleting ANY administrator account (Admin,
+    // Moderator, Support Executive -- not just Super Admin, which is already
+    // unconditionally blocked above) requires the operator to be a Super
+    // Admin specifically. Candidates/recruiters aren't affected -- this
+    // endpoint is shared with the general User Moderation screen, where any
+    // Admin-tier operator may still delete candidate/recruiter accounts.
+    const ADMIN_TIER = ["Admin", "Super Admin", "Moderator", "Support Executive"]
+    if (targetRoleNames.some((r) => ADMIN_TIER.includes(r)) && !operatorRoles.includes("Super Admin")) {
+      throw new Error("Only a Super Admin can delete another administrator's account.")
+    }
+
+    let transferTarget: { id: string; companyId: string } | null = null
+    if (target.recruiterProfile) {
+      const jobCount = await prisma.job.count({ where: { recruiterId: target.recruiterProfile.id } })
+      if (jobCount > 0) {
+        if (options?.transferToRecruiterId) {
+          const candidate = await prisma.recruiterProfile.findUnique({
+            where: { id: options.transferToRecruiterId },
+          })
+          if (!candidate) {
+            throw new AppError("The recruiter you're transferring jobs to could not be found.", 404)
+          }
+          if (candidate.id === target.recruiterProfile.id) {
+            throw new AppError("Cannot transfer jobs to the recruiter being deleted.", 400)
+          }
+          if (candidate.companyId !== target.recruiterProfile.companyId) {
+            throw new AppError("Jobs can only be transferred to another recruiter at the same company.", 400)
+          }
+          transferTarget = candidate
+        } else if (!options?.archiveJobs) {
+          throw new AppError(
+            `This recruiter owns ${jobCount} job posting${jobCount === 1 ? "" : "s"}. Archive them or transfer them to another recruiter before deleting this account.`,
+            409
+          )
+        }
+      }
+    }
+
     const resumePublicId = target.candidateProfile?.resumePublicId
     if (resumePublicId) {
       try {
@@ -829,7 +952,52 @@ export class AdminService {
       }
     }
 
-    await prisma.user.delete({ where: { id: targetUserId } })
+    try {
+      await prisma.$transaction(async (tx) => {
+        if (target.recruiterProfile) {
+          if (transferTarget) {
+            await tx.job.updateMany({
+              where: { recruiterId: target.recruiterProfile.id },
+              data: { recruiterId: transferTarget.id },
+            })
+          } else if (options?.archiveJobs) {
+            const jobsToArchive = await tx.job.findMany({
+              where: { recruiterId: target.recruiterProfile.id, status: { not: JobStatus.archived } },
+              select: { id: true },
+            })
+            if (jobsToArchive.length > 0) {
+              await tx.job.updateMany({
+                where: { id: { in: jobsToArchive.map((j) => j.id) } },
+                data: { status: JobStatus.archived },
+              })
+              await tx.jobStatusHistory.createMany({
+                data: jobsToArchive.map((j) => ({
+                  jobId: j.id,
+                  status: JobStatus.archived,
+                  changedBy: admin?.email || "System",
+                  notes: "Auto-archived: the owning recruiter's account was deleted.",
+                })),
+              })
+            }
+          }
+        }
+
+        await tx.user.delete({ where: { id: targetUserId } })
+      })
+    } catch (err: any) {
+      // Defense in depth: any remaining FK-constraint failure on this path
+      // (or any other RESTRICT relation on User we haven't enumerated) gets
+      // translated into a clean 409 instead of reaching the client as a raw,
+      // unhandled 500. PrismaClientUnknownRequestError has no `.code`, so we
+      // fall back to matching the underlying Postgres error text.
+      if (err?.code === "P2003" || /foreign key|violates.*constraint/i.test(err?.message || "")) {
+        throw new AppError(
+          "This account can't be deleted because other records still reference it. Try archiving or transferring its data first.",
+          409
+        )
+      }
+      throw err
+    }
 
     await PermissionCacheManager.invalidateUser(targetUserId)
 
@@ -845,7 +1013,13 @@ export class AdminService {
       action: "DELETE_USER",
       entity: "User",
       entityId: targetUserId,
-      oldValue: { email: target.email, roles: targetRoleNames, status: target.status },
+      oldValue: {
+        email: target.email,
+        roles: targetRoleNames,
+        status: target.status,
+        jobsArchived: options?.archiveJobs || undefined,
+        jobsTransferredTo: transferTarget?.id || undefined,
+      },
     })
 
     return { success: true }
@@ -1609,34 +1783,12 @@ export class AdminService {
     return { success: true }
   }
 
-  async assignUserRoles(adminId: string, targetUserId: string, roleIds: string[], context?: ServiceContext) {
-    const admin = await prisma.user.findUnique({ where: { id: adminId } })
-
-    await prisma.$transaction(async (tx) => {
-      await tx.userRole.deleteMany({ where: { userId: targetUserId } })
-      await tx.userRole.createMany({
-        data: roleIds.map((rId) => ({
-          userId: targetUserId,
-          roleId: rId,
-        })),
-      })
-    })
-
-    await PermissionCacheManager.invalidateUser(targetUserId)
-
-    EventBus.publish("AuditCreated", {
-      ...context,
-      operatorId: adminId,
-      operatorEmail: admin?.email,
-      category: "ADMIN",
-      action: "ASSIGN_USER_ROLES",
-      entity: "User",
-      entityId: targetUserId,
-      newValue: { roleIds },
-    })
-
-    return { success: true }
-  }
+  // NOTE: role assignment for this route (POST /admins/users/:id/roles) is
+  // now handled by RbacService.assignRolesToUser (see admin.controller.ts's
+  // assignUserRoles handler) -- that version adds the privilege-escalation
+  // and last-Super-Admin guards this one never had. Kept removed rather than
+  // left as unused dead code so nothing can accidentally get re-wired to
+  // this unguarded path in the future.
 
   // ==========================================
   // GLOBAL ADMIN SEARCH
@@ -1729,6 +1881,19 @@ export class AdminService {
   }
 
   async verifyRecruiter(adminId: string, recruiterProfileId: string, verified: boolean, context?: ServiceContext) {
+    // CONFIRMED (investigated per the recruiter-delete-flow report): a bare
+    // .update() on a recruiterProfileId that no longer exists -- e.g. the
+    // admin's recruiter list was stale and that recruiter's account was
+    // deleted in another tab/session in the meantime -- throws Prisma's
+    // P2025, which errorHandler.ts already maps to a clean 404. This
+    // existence check isn't fixing a broken response code; it's just
+    // producing a clearer, domain-specific message than the generic
+    // "requested record was not found" for this specific action.
+    const existing = await prisma.recruiterProfile.findUnique({ where: { id: recruiterProfileId } })
+    if (!existing) {
+      throw new AppError("This recruiter account no longer exists (it may have already been deleted).", 404)
+    }
+
     const updated = await prisma.recruiterProfile.update({
       where: { id: recruiterProfileId },
       data: { verified },
@@ -1750,6 +1915,269 @@ export class AdminService {
     })
 
     return updated
+  }
+
+  // ==========================================
+  // SUPER ADMIN: ADMIN MANAGEMENT MODULE
+  // ==========================================
+  // Every method below is reached only through routes gated by
+  // requireSuperAdmin (admin.routes.ts) -- operatorRoles is still threaded
+  // through and re-checked here anyway as defense in depth, mirroring the
+  // same pattern already used in updateUserStatus/deleteUser above, so a
+  // future route-wiring mistake can't silently turn into a privilege
+  // escalation path.
+  private static readonly ADMIN_TIER_ROLES = ["Admin", "Super Admin", "Moderator", "Support Executive"]
+
+  async createAdmin(
+    operatorId: string,
+    data: { email: string; fullName: string; password: string; roleNames: string[] },
+    context?: ServiceContext,
+    operatorRoles: string[] = []
+  ) {
+    if (!operatorRoles.includes("Super Admin")) {
+      throw new Error("Only a Super Admin can create administrator accounts.")
+    }
+
+    const existing = await prisma.user.findUnique({ where: { email: data.email } })
+    if (existing) {
+      throw new AppError("An account with this email address already exists.", 409)
+    }
+
+    const uniqueRoleNames = Array.from(new Set(data.roleNames))
+    const roles = await prisma.role.findMany({ where: { name: { in: uniqueRoleNames } } })
+    if (roles.length !== uniqueRoleNames.length) {
+      const found = new Set(roles.map((r) => r.name))
+      const missing = uniqueRoleNames.filter((r) => !found.has(r))
+      throw new AppError(`Unknown role(s): ${missing.join(", ")}`, 400)
+    }
+
+    // A new admin is always granted at least one admin-tier role by
+    // definition of this endpoint -- reject attempts to create an "admin"
+    // whose roles are actually just Candidate/Recruiter (that's what
+    // registration is for).
+    if (!roles.some((r) => AdminService.ADMIN_TIER_ROLES.includes(r.name))) {
+      throw new AppError("An administrator account must be granted at least one admin-tier role.", 400)
+    }
+
+    const passwordHash = await hashPassword(data.password)
+    const operator = await prisma.user.findUnique({ where: { id: operatorId } })
+
+    const created = await prisma.$transaction(async (tx) => {
+      const user = await tx.user.create({
+        data: {
+          email: data.email,
+          passwordHash,
+          // Admin-created accounts skip the email-verification / company
+          // -approval gates that candidate/recruiter self-registration goes
+          // through -- a Super Admin vouching for the account IS the
+          // approval step.
+          status: UserStatus.Active,
+          adminProfile: { create: { fullName: data.fullName } },
+          roles: { createMany: { data: roles.map((r) => ({ roleId: r.id })) } },
+        },
+        include: { roles: { include: { role: true } }, adminProfile: true },
+      })
+      return user
+    })
+
+    const roleNames = created.roles.map((r) => r.role.name)
+
+    EventBus.publish("AuditCreated", {
+      ...context,
+      operatorId,
+      operatorEmail: operator?.email,
+      category: "ADMIN",
+      action: "CREATE_ADMIN",
+      entity: "User",
+      entityId: created.id,
+      newValue: { email: created.email, fullName: data.fullName, roleNames },
+    })
+
+    // Notification.listener.ts subscribes to this to welcome the new admin
+    // in-app (Admin Management spec's "Notifications: on account created").
+    EventBus.publish("AdminAccountCreated", {
+      userId: created.id,
+      email: created.email,
+      fullName: data.fullName,
+      roleNames,
+      context,
+    })
+
+    return {
+      id: created.id,
+      email: created.email,
+      fullName: data.fullName,
+      status: created.status,
+      roles: roleNames,
+      createdAt: created.createdAt,
+    }
+  }
+
+  async listAdmins(filters: { search?: string; status?: UserStatus; role?: string }) {
+    const roleFilter =
+      filters.role && filters.role !== "all"
+        ? { in: [filters.role] }
+        : { in: AdminService.ADMIN_TIER_ROLES }
+
+    const where: any = {
+      roles: { some: { role: { name: roleFilter } } },
+    }
+    if (filters.status) {
+      where.status = filters.status
+    }
+    if (filters.search) {
+      where.OR = [
+        { email: { contains: filters.search, mode: "insensitive" } },
+        { adminProfile: { fullName: { contains: filters.search, mode: "insensitive" } } },
+      ]
+    }
+
+    const admins = await prisma.user.findMany({
+      where,
+      include: {
+        adminProfile: true,
+        roles: { include: { role: true } },
+      },
+      orderBy: { createdAt: "desc" },
+    })
+
+    if (admins.length === 0) {
+      return []
+    }
+
+    const adminIds = admins.map((a) => a.id)
+
+    // Derive "Last Login" from the existing AUTH/USER_LOGIN audit trail
+    // (see notification.listener.ts's UserLoggedIn subscription) instead of
+    // adding a new lastLoginAt column -- avoids a schema migration for a
+    // value the audit log already durably tracks.
+    const lastLogins = await prisma.auditLog.groupBy({
+      by: ["operatorId"],
+      where: { operatorId: { in: adminIds }, action: "USER_LOGIN" },
+      _max: { timestamp: true },
+    })
+    const lastLoginById: Record<string, Date | null> = {}
+    lastLogins.forEach((l) => {
+      if (l.operatorId) lastLoginById[l.operatorId] = l._max.timestamp
+    })
+
+    // Derive "Created By" the same way -- the CREATE_ADMIN audit entry this
+    // service's createAdmin() writes above carries the operator's email
+    // directly. Accounts that predate this module (seeded, or onboarded via
+    // the older Employee Invitation flow) won't have one; fall back to the
+    // Invitation record's inviter, then finally "System".
+    const createLogs = await prisma.auditLog.findMany({
+      where: { action: "CREATE_ADMIN", entityId: { in: adminIds } },
+      select: { entityId: true, operatorEmail: true },
+    })
+    const createdByById: Record<string, string> = {}
+    createLogs.forEach((l) => {
+      if (l.entityId) createdByById[l.entityId] = l.operatorEmail || "System"
+    })
+
+    const missingCreatedByEmails = admins.filter((a) => !createdByById[a.id]).map((a) => a.email)
+    if (missingCreatedByEmails.length > 0) {
+      const invitations = await prisma.invitation.findMany({
+        where: { email: { in: missingCreatedByEmails }, acceptedAt: { not: null } },
+        include: { invitedBy: { select: { email: true } } },
+      })
+      invitations.forEach((inv) => {
+        const admin = admins.find((a) => a.email === inv.email)
+        if (admin && !createdByById[admin.id]) {
+          createdByById[admin.id] = inv.invitedBy?.email || "System"
+        }
+      })
+    }
+
+    return admins.map((a) => ({
+      id: a.id,
+      email: a.email,
+      fullName: a.adminProfile?.fullName || "",
+      roles: a.roles.map((r) => r.role.name),
+      status: a.status,
+      lastLoginAt: lastLoginById[a.id] || null,
+      createdBy: createdByById[a.id] || "System",
+      createdAt: a.createdAt,
+    }))
+  }
+
+  async removeAdminRole(
+    operatorId: string,
+    targetUserId: string,
+    roleName: string,
+    operatorRoles: string[] = [],
+    context?: ServiceContext
+  ) {
+    if (!operatorRoles.includes("Super Admin")) {
+      throw new Error("Only a Super Admin can remove a role from an administrator account.")
+    }
+
+    const operator = await prisma.user.findUnique({ where: { id: operatorId } })
+    const target = await prisma.user.findUnique({
+      where: { id: targetUserId },
+      include: { roles: { include: { role: true } } },
+    })
+    if (!target) {
+      throw new AppError("Target admin account not found.", 404)
+    }
+
+    const currentRoleNames = target.roles.map((r) => r.role.name)
+    if (!currentRoleNames.includes(roleName)) {
+      throw new AppError(`This account does not have the "${roleName}" role.`, 400)
+    }
+
+    if (currentRoleNames.length === 1) {
+      throw new AppError(
+        "Cannot remove the only role this account has. Assign a replacement role first.",
+        400
+      )
+    }
+
+    if (roleName === "Super Admin") {
+      const otherSuperAdmins = await prisma.userRole.count({
+        where: { userId: { not: targetUserId }, role: { name: "Super Admin" } },
+      })
+      if (otherSuperAdmins === 0) {
+        // 409, not 400 -- this is a genuine conflict with current platform
+        // state (would leave zero Super Admins), not a malformed request,
+        // matching the same guard's status code in rbac.service.ts's
+        // assignRolesToUser and the errorHandler.ts text-based mapping for
+        // the equivalent plain-Error guards elsewhere in this file.
+        throw new AppError("Cannot remove the Super Admin role from the last remaining Super Admin.", 409)
+      }
+    }
+
+    const role = await prisma.role.findUnique({ where: { name: roleName } })
+    if (!role) {
+      throw new AppError(`Role "${roleName}" does not exist.`, 404)
+    }
+
+    await prisma.userRole.deleteMany({ where: { userId: targetUserId, roleId: role.id } })
+    await PermissionCacheManager.invalidateUser(targetUserId)
+
+    const nextRoleNames = currentRoleNames.filter((r) => r !== roleName)
+
+    EventBus.publish("AuditCreated", {
+      ...context,
+      operatorId,
+      operatorEmail: operator?.email,
+      category: "ADMIN",
+      action: "REMOVE_USER_ROLE",
+      entity: "User",
+      entityId: targetUserId,
+      oldValue: { roleNames: currentRoleNames },
+      newValue: { roleNames: nextRoleNames },
+    })
+
+    EventBus.publish("RoleAssigned", {
+      userId: targetUserId,
+      userEmail: target.email,
+      roleNames: nextRoleNames,
+      previousRoleNames: currentRoleNames,
+      context,
+    })
+
+    return { success: true, roles: nextRoleNames }
   }
 
   async getAdminSettings(adminId: string) {

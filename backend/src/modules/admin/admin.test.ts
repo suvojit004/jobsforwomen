@@ -3,12 +3,12 @@ import request from "supertest"
 // Mock Prisma DB Operations inline in factory
 jest.mock("../../shared/database/db", () => {
   const localPrismaMock = {
-    user: { findUnique: jest.fn(), update: jest.fn(), findMany: jest.fn(), updateMany: jest.fn() },
+    user: { findUnique: jest.fn(), update: jest.fn(), findMany: jest.fn(), updateMany: jest.fn(), delete: jest.fn(), create: jest.fn(), count: jest.fn() },
     role: { findUnique: jest.fn(), findFirst: jest.fn(), findMany: jest.fn(), create: jest.fn(), update: jest.fn(), delete: jest.fn() },
     permission: { findMany: jest.fn() },
     rolePermission: { createMany: jest.fn(), deleteMany: jest.fn() },
     userRole: { deleteMany: jest.fn(), createMany: jest.fn() },
-    recruiterProfile: { findUnique: jest.fn(), updateMany: jest.fn(), findMany: jest.fn() },
+    recruiterProfile: { findUnique: jest.fn(), update: jest.fn(), updateMany: jest.fn(), findMany: jest.fn() },
     company: { findUnique: jest.fn(), update: jest.fn(), count: jest.fn() },
     companyVerificationHistory: { create: jest.fn() },
     industry: { upsert: jest.fn() },
@@ -17,12 +17,13 @@ jest.mock("../../shared/database/db", () => {
       create: jest.fn(),
       findUnique: jest.fn(),
       update: jest.fn(),
+      updateMany: jest.fn(),
       delete: jest.fn(),
       groupBy: jest.fn(),
       findMany: jest.fn(),
       count: jest.fn(),
     },
-    jobStatusHistory: { create: jest.fn() },
+    jobStatusHistory: { create: jest.fn(), createMany: jest.fn() },
     jobReport: { count: jest.fn() },
     jobSkill: { findMany: jest.fn() },
     candidateSkill: { findMany: jest.fn() },
@@ -36,10 +37,11 @@ jest.mock("../../shared/database/db", () => {
     },
     invitation: { create: jest.fn(), findUnique: jest.fn(), update: jest.fn(), findMany: jest.fn() },
     refreshToken: { deleteMany: jest.fn() },
+    session: { updateMany: jest.fn() },
     companyBenefit: { updateMany: jest.fn() },
     featureFlag: { create: jest.fn(), update: jest.fn(), findUnique: jest.fn(), findMany: jest.fn(), delete: jest.fn() },
     notification: { create: jest.fn(), findMany: jest.fn(), count: jest.fn() },
-    auditLog: { create: jest.fn(), findMany: jest.fn(), count: jest.fn() },
+    auditLog: { create: jest.fn(), findMany: jest.fn(), count: jest.fn(), groupBy: jest.fn() },
     $transaction: jest.fn().mockImplementation(async (callback) => await callback(localPrismaMock)),
     $queryRaw: jest.fn().mockResolvedValue([{ 1: 1 }]),
   }
@@ -355,6 +357,341 @@ describe("Admin Module Integration Tests (Phase 7)", () => {
       expect(res.body.success).toBe(true)
       // Assert Redis deletion key check
       expect(mockRedis.del).toHaveBeenCalledWith("user:permissions:cand-777")
+    })
+  })
+
+  // Recruiter hard-delete used to attempt prisma.user.delete() unconditionally,
+  // which hits Job.recruiterId's RESTRICT constraint the moment the target
+  // recruiter owns any job -- surfacing as an uncaught 500. AdminService.deleteUser
+  // now checks job ownership first and requires an explicit resolution.
+  describe("Recruiter Delete Flow (job-ownership conflict)", () => {
+    const adminUser = { id: "super-admin-id", status: UserStatus.Active, email: "super@jfw.info" }
+    const recruiterTarget = {
+      id: "rec-user-1",
+      status: UserStatus.Active,
+      email: "recruiter@jfw.info",
+      roles: [{ role: { name: "Recruiter" } }],
+      candidateProfile: null,
+      recruiterProfile: { id: "rec-profile-1", companyId: "company-1" },
+    }
+
+    it("hard-deletes a recruiter with no jobs without any resolution option", async () => {
+      mockPrisma.user.findUnique.mockImplementation(async (args: any) =>
+        args.where.id === "super-admin-id" ? adminUser : recruiterTarget
+      )
+      mockPrisma.job.count.mockResolvedValue(0)
+      mockPrisma.user.delete.mockResolvedValue({ id: "rec-user-1" })
+
+      const res = await request(app)
+        .delete("/api/v1/admins/users/rec-user-1")
+        .set("Authorization", `Bearer ${superAdminToken}`)
+
+      expect(res.status).toBe(200)
+      expect(mockPrisma.user.delete).toHaveBeenCalledWith({ where: { id: "rec-user-1" } })
+    })
+
+    it("returns 409 instead of an uncaught FK error when the recruiter still owns jobs", async () => {
+      mockPrisma.user.findUnique.mockImplementation(async (args: any) =>
+        args.where.id === "super-admin-id" ? adminUser : recruiterTarget
+      )
+      mockPrisma.job.count.mockResolvedValue(3)
+
+      const res = await request(app)
+        .delete("/api/v1/admins/users/rec-user-1")
+        .set("Authorization", `Bearer ${superAdminToken}`)
+
+      expect(res.status).toBe(409)
+      expect(res.body.message).toMatch(/owns 3 job/i)
+      expect(mockPrisma.user.delete).not.toHaveBeenCalled()
+    })
+
+    it("archives the recruiter's jobs and deletes the account when archiveJobs is requested", async () => {
+      mockPrisma.user.findUnique.mockImplementation(async (args: any) =>
+        args.where.id === "super-admin-id" ? adminUser : recruiterTarget
+      )
+      mockPrisma.job.count.mockResolvedValue(2)
+      mockPrisma.job.findMany.mockResolvedValue([{ id: "job-1" }, { id: "job-2" }])
+      mockPrisma.job.updateMany.mockResolvedValue({ count: 2 })
+      mockPrisma.jobStatusHistory.createMany.mockResolvedValue({ count: 2 })
+      mockPrisma.user.delete.mockResolvedValue({ id: "rec-user-1" })
+
+      const res = await request(app)
+        .delete("/api/v1/admins/users/rec-user-1")
+        .set("Authorization", `Bearer ${superAdminToken}`)
+        .send({ archiveJobs: true })
+
+      expect(res.status).toBe(200)
+      expect(mockPrisma.job.updateMany).toHaveBeenCalledWith({
+        where: { id: { in: ["job-1", "job-2"] } },
+        data: { status: JobStatus.archived },
+      })
+      expect(mockPrisma.user.delete).toHaveBeenCalledWith({ where: { id: "rec-user-1" } })
+    })
+
+    it("transfers jobs to another recruiter at the same company when requested", async () => {
+      mockPrisma.user.findUnique.mockImplementation(async (args: any) =>
+        args.where.id === "super-admin-id" ? adminUser : recruiterTarget
+      )
+      mockPrisma.job.count.mockResolvedValue(2)
+      mockPrisma.recruiterProfile.findUnique.mockResolvedValue({ id: "rec-profile-2", companyId: "company-1" })
+      mockPrisma.job.updateMany.mockResolvedValue({ count: 2 })
+      mockPrisma.user.delete.mockResolvedValue({ id: "rec-user-1" })
+
+      const res = await request(app)
+        .delete("/api/v1/admins/users/rec-user-1")
+        .set("Authorization", `Bearer ${superAdminToken}`)
+        .send({ transferToRecruiterId: "rec-profile-2" })
+
+      expect(res.status).toBe(200)
+      expect(mockPrisma.job.updateMany).toHaveBeenCalledWith({
+        where: { recruiterId: "rec-profile-1" },
+        data: { recruiterId: "rec-profile-2" },
+      })
+      expect(mockPrisma.user.delete).toHaveBeenCalledWith({ where: { id: "rec-user-1" } })
+    })
+
+    it("rejects a transfer target from a different company", async () => {
+      mockPrisma.user.findUnique.mockImplementation(async (args: any) =>
+        args.where.id === "super-admin-id" ? adminUser : recruiterTarget
+      )
+      mockPrisma.job.count.mockResolvedValue(1)
+      mockPrisma.recruiterProfile.findUnique.mockResolvedValue({ id: "rec-profile-9", companyId: "company-9" })
+
+      const res = await request(app)
+        .delete("/api/v1/admins/users/rec-user-1")
+        .set("Authorization", `Bearer ${superAdminToken}`)
+        .send({ transferToRecruiterId: "rec-profile-9" })
+
+      expect(res.status).toBe(400)
+      expect(res.body.message).toMatch(/same company/i)
+      expect(mockPrisma.user.delete).not.toHaveBeenCalled()
+    })
+  })
+
+  // Part 4 of the Admin Management spec: Create Admin, list Admins with
+  // derived Last Login / Created By, and revoke a single role without
+  // recreating the user. All three routes are gated by requireSuperAdmin at
+  // the router level (admin.routes.ts).
+  describe("Super Admin: Admin Management module", () => {
+    const superAdminUser = { id: "super-admin-id", status: UserStatus.Active, email: "super@jfw.info" }
+
+    it("creates an admin account with the requested roles", async () => {
+      mockPrisma.user.findUnique.mockImplementation(async (args: any) =>
+        args.where.id === "super-admin-id" ? superAdminUser : null // email-uniqueness lookup finds nothing
+      )
+      mockPrisma.role.findMany.mockResolvedValue([{ id: "role-mod", name: "Moderator" }])
+      mockPrisma.user.create.mockResolvedValue({
+        id: "new-admin-id",
+        email: "newmod@jfw.info",
+        status: UserStatus.Active,
+        createdAt: new Date(),
+        roles: [{ role: { name: "Moderator" } }],
+        adminProfile: { fullName: "New Mod" },
+      })
+
+      const res = await request(app)
+        .post("/api/v1/admins/management/admins")
+        .set("Authorization", `Bearer ${superAdminToken}`)
+        .send({
+          email: "newmod@jfw.info",
+          fullName: "New Mod",
+          password: "SuperSecret123",
+          roleNames: ["Moderator"],
+        })
+
+      expect(res.status).toBe(201)
+      expect(res.body.success).toBe(true)
+      expect(mockPrisma.user.create).toHaveBeenCalled()
+    })
+
+    it("rejects admin creation from a non-Super-Admin (Moderator) token", async () => {
+      const res = await request(app)
+        .post("/api/v1/admins/management/admins")
+        .set("Authorization", `Bearer ${moderatorToken}`)
+        .send({
+          email: "newmod@jfw.info",
+          fullName: "New Mod",
+          password: "SuperSecret123",
+          roleNames: ["Moderator"],
+        })
+
+      expect(res.status).toBe(403)
+      expect(mockPrisma.user.create).not.toHaveBeenCalled()
+    })
+
+    it("rejects admin creation when the email is already registered", async () => {
+      mockPrisma.user.findUnique.mockImplementation(async (args: any) =>
+        args.where.id === "super-admin-id" ? superAdminUser : { id: "existing-id", email: "taken@jfw.info" }
+      )
+
+      const res = await request(app)
+        .post("/api/v1/admins/management/admins")
+        .set("Authorization", `Bearer ${superAdminToken}`)
+        .send({
+          email: "taken@jfw.info",
+          fullName: "Dup",
+          password: "SuperSecret123",
+          roleNames: ["Moderator"],
+        })
+
+      expect(res.status).toBe(409)
+      expect(mockPrisma.user.create).not.toHaveBeenCalled()
+    })
+
+    it("lists admin accounts with derived lastLoginAt and createdBy", async () => {
+      mockPrisma.user.findMany.mockResolvedValue([
+        {
+          id: "admin-1",
+          email: "admin1@jfw.info",
+          status: UserStatus.Active,
+          createdAt: new Date("2026-01-01"),
+          adminProfile: { fullName: "Admin One" },
+          roles: [{ role: { name: "Admin" } }],
+        },
+      ])
+      mockPrisma.auditLog.groupBy.mockResolvedValue([
+        { operatorId: "admin-1", _max: { timestamp: new Date("2026-07-01") } },
+      ])
+      mockPrisma.auditLog.findMany.mockResolvedValue([
+        { entityId: "admin-1", operatorEmail: "super@jfw.info" },
+      ])
+      mockPrisma.invitation.findMany.mockResolvedValue([])
+
+      const res = await request(app)
+        .get("/api/v1/admins/management/admins")
+        .set("Authorization", `Bearer ${superAdminToken}`)
+
+      expect(res.status).toBe(200)
+      expect(res.body.data.admins).toHaveLength(1)
+      expect(res.body.data.admins[0].lastLoginAt).toBeTruthy()
+      expect(res.body.data.admins[0].createdBy).toBe("super@jfw.info")
+    })
+
+    it("removes a single role from an admin account", async () => {
+      mockPrisma.user.findUnique.mockImplementation(async (args: any) =>
+        args.where.id === "super-admin-id"
+          ? superAdminUser
+          : {
+              id: "admin-2",
+              email: "admin2@jfw.info",
+              roles: [{ role: { name: "Admin" } }, { role: { name: "Moderator" } }],
+            }
+      )
+      mockPrisma.role.findUnique.mockResolvedValue({ id: "role-mod", name: "Moderator" })
+      mockPrisma.userRole.deleteMany.mockResolvedValue({ count: 1 })
+
+      const res = await request(app)
+        .delete("/api/v1/admins/management/admins/admin-2/roles/Moderator")
+        .set("Authorization", `Bearer ${superAdminToken}`)
+
+      expect(res.status).toBe(200)
+      expect(mockPrisma.userRole.deleteMany).toHaveBeenCalledWith({
+        where: { userId: "admin-2", roleId: "role-mod" },
+      })
+    })
+
+    it("refuses to remove the last remaining role from an admin account", async () => {
+      mockPrisma.user.findUnique.mockImplementation(async (args: any) =>
+        args.where.id === "super-admin-id"
+          ? superAdminUser
+          : { id: "admin-3", email: "admin3@jfw.info", roles: [{ role: { name: "Moderator" } }] }
+      )
+
+      const res = await request(app)
+        .delete("/api/v1/admins/management/admins/admin-3/roles/Moderator")
+        .set("Authorization", `Bearer ${superAdminToken}`)
+
+      expect(res.status).toBe(400)
+      expect(mockPrisma.userRole.deleteMany).not.toHaveBeenCalled()
+    })
+
+    it("refuses to remove the Super Admin role from the last remaining Super Admin", async () => {
+      mockPrisma.user.findUnique.mockImplementation(async (args: any) =>
+        args.where.id === "super-admin-id"
+          ? superAdminUser
+          : {
+              id: "super-admin-id-2",
+              email: "super2@jfw.info",
+              roles: [{ role: { name: "Super Admin" } }, { role: { name: "Admin" } }],
+            }
+      )
+      mockPrisma.userRole.count.mockResolvedValue(0)
+
+      const res = await request(app)
+        .delete("/api/v1/admins/management/admins/super-admin-id-2/roles/Super%20Admin")
+        .set("Authorization", `Bearer ${superAdminToken}`)
+
+      expect(res.status).toBe(409)
+      expect(mockPrisma.userRole.deleteMany).not.toHaveBeenCalled()
+    })
+  })
+
+  // The admin-tier operator guard added to updateUserStatus/deleteUser: a
+  // plain Admin (not Super Admin) passes the route-level requireRole(["Admin",
+  // "Super Admin"]) gate just fine -- that gate alone used to be the only
+  // protection -- but must still be stopped by the service-layer check
+  // before touching a peer administrator account. Ordinary candidate/
+  // recruiter moderation through these same endpoints is unaffected (see the
+  // existing "User Management & Cached Permissions Invalidation" and
+  // "Recruiter Delete Flow" blocks above, both of which target non-admin
+  // roles and still succeed).
+  describe("Admin-tier target protection on suspend/delete", () => {
+    const adminOperatorToken = jwt.sign(
+      { userId: "plain-admin-id", email: "plain-admin@jfw.info", roles: ["Admin"], permissions: ["manage:admin"] },
+      env.JWT_ACCESS_SECRET
+    )
+    const superAdminOperator = { id: "super-admin-id", status: UserStatus.Active, email: "super@jfw.info" }
+    const adminTargetUser = {
+      id: "admin-target-id",
+      email: "peer-admin@jfw.info",
+      status: UserStatus.Active,
+      roles: [{ role: { name: "Admin" } }],
+    }
+
+    it("blocks a plain Admin from suspending another Admin-tier account", async () => {
+      mockPrisma.user.findUnique.mockImplementation(async (args: any) =>
+        args.where.id === "plain-admin-id" ? { id: "plain-admin-id", status: UserStatus.Active } : adminTargetUser
+      )
+
+      const res = await request(app)
+        .put("/api/v1/admins/users/admin-target-id/status")
+        .set("Authorization", `Bearer ${adminOperatorToken}`)
+        .send({ status: UserStatus.Suspended })
+
+      expect(res.status).toBe(403)
+      expect(mockPrisma.user.update).not.toHaveBeenCalled()
+    })
+
+    it("blocks a plain Admin from deleting another Admin-tier account", async () => {
+      mockPrisma.user.findUnique.mockImplementation(async (args: any) =>
+        args.where.id === "plain-admin-id"
+          ? { id: "plain-admin-id", status: UserStatus.Active }
+          : { ...adminTargetUser, candidateProfile: null, recruiterProfile: null }
+      )
+
+      const res = await request(app)
+        .delete("/api/v1/admins/users/admin-target-id")
+        .set("Authorization", `Bearer ${adminOperatorToken}`)
+
+      expect(res.status).toBe(403)
+      expect(mockPrisma.user.delete).not.toHaveBeenCalled()
+    })
+
+    it("allows a Super Admin to suspend another Admin-tier account", async () => {
+      mockPrisma.user.findUnique.mockImplementation(async (args: any) =>
+        args.where.id === "super-admin-id" ? superAdminOperator : adminTargetUser
+      )
+      mockPrisma.user.update.mockResolvedValue({ id: "admin-target-id", status: UserStatus.Suspended })
+
+      const res = await request(app)
+        .put("/api/v1/admins/users/admin-target-id/status")
+        .set("Authorization", `Bearer ${superAdminToken}`)
+        .send({ status: UserStatus.Suspended })
+
+      expect(res.status).toBe(200)
+      expect(mockPrisma.user.update).toHaveBeenCalled()
+      // Non-Active status must also revoke live sessions/tokens.
+      expect(mockPrisma.refreshToken.deleteMany).toHaveBeenCalledWith({ where: { userId: "admin-target-id" } })
     })
   })
 

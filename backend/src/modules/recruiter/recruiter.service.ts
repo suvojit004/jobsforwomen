@@ -14,19 +14,64 @@ export interface ServiceContext {
   device?: string
 }
 
-// Allowed applicant workflow state transitions map.
-// InterviewScheduled and OfferReleased are reached only through the dedicated
-// scheduleInterview()/releaseOffer() methods below (they need real structured
-// data -- an actual interview date, actual offer details -- not just a label),
-// but they're still listed here so those methods can reuse this same gate.
-const WorkflowTransitions: Record<ApplicationStatus, ApplicationStatus[]> = {
-  Applied: [ApplicationStatus.Reviewed, ApplicationStatus.Rejected],
-  Reviewed: [ApplicationStatus.Shortlisted, ApplicationStatus.Rejected],
-  Shortlisted: [ApplicationStatus.InterviewScheduled, ApplicationStatus.Rejected],
-  InterviewScheduled: [ApplicationStatus.InterviewScheduled, ApplicationStatus.OfferReleased, ApplicationStatus.Rejected], // allow rescheduling, moving to an offer, or rejecting post-interview
-  OfferReleased: [ApplicationStatus.Hired, ApplicationStatus.Rejected], // candidate accepted (Hired) or declined/rejected
-  Rejected: [], // terminal state
-  Hired: [], // terminal state
+// CONFIRMED PRODUCTION BUG (fixed here): the old WorkflowTransitions map only
+// allowed moving to the single *next* stage of a strictly linear pipeline
+// (Applied -> Reviewed -> Shortlisted -> InterviewScheduled -> OfferReleased
+// -> Hired) -- in particular, scheduling an interview required the
+// application to already be in "Shortlisted". But neither recruiter UI
+// surface exposes "Shortlisted" as a settable status anywhere: Applicants.tsx's
+// status <select> only offers Applied/Under Review/Interview Scheduled/Offer
+// Released/Selected/Rejected, and CandidatePreview.tsx's quick actions are
+// Under Review/Schedule Interview/Release Offer/Mark as Hired/Reject -- no
+// "Shortlist" action exists on either screen. That made it *impossible* to
+// ever legitimately reach InterviewScheduled through the real UI: clicking
+// "Schedule Interview" from "Applied" or "Under Review" (the two states any
+// new application actually starts in) always 400'd with "Cannot schedule an
+// interview from state: Reviewed" -- exactly the bug reported in production.
+// The same gap silently affected Release Offer (required InterviewScheduled)
+// and Mark as Hired (required OfferReleased) for the identical reason: both
+// UI surfaces present every status as directly selectable/clickable
+// regardless of the application's current stage, with no forced
+// single-step-at-a-time flow.
+//
+// Fixed by treating the pipeline as an ordered sequence and allowing a
+// recruiter to jump forward to *any* later stage (skipping intermediate ones
+// that the UI doesn't ask them to visit one at a time), not just the
+// immediate next one. Moving backward, or moving at all once terminal
+// (Hired/Rejected), remains blocked.
+const PIPELINE_ORDER: ApplicationStatus[] = [
+  ApplicationStatus.Applied,
+  ApplicationStatus.Reviewed,
+  ApplicationStatus.Shortlisted,
+  ApplicationStatus.InterviewScheduled,
+  ApplicationStatus.OfferReleased,
+  ApplicationStatus.Hired,
+]
+
+function getAllowedTransitions(current: ApplicationStatus): ApplicationStatus[] {
+  if (current === ApplicationStatus.Hired || current === ApplicationStatus.Rejected) {
+    return [] // terminal states
+  }
+  const idx = PIPELINE_ORDER.indexOf(current)
+  const forward = idx >= 0 ? PIPELINE_ORDER.slice(idx + 1) : []
+  // Every later stage is reachable directly EXCEPT Hired: marking an
+  // application Hired is a meaningful commitment that should still require
+  // at least an interview having been scheduled (matches
+  // recruiter.test.ts's existing "prevent invalid status jumps (e.g. from
+  // Applied directly to Hired)" regression test) -- unlike the other
+  // stages, it's never a bare skip-ahead straight from Applied/Reviewed/
+  // Shortlisted.
+  const allowed = forward.filter(
+    (stage) =>
+      stage !== ApplicationStatus.Hired ||
+      current === ApplicationStatus.InterviewScheduled ||
+      current === ApplicationStatus.OfferReleased
+  )
+  if (current === ApplicationStatus.InterviewScheduled) {
+    allowed.push(ApplicationStatus.InterviewScheduled) // allow rescheduling an existing interview
+  }
+  allowed.push(ApplicationStatus.Rejected)
+  return allowed
 }
 
 // Statuses that require structured data captured through a dedicated endpoint
@@ -1085,8 +1130,8 @@ export class RecruiterService {
     }
 
     // Specific state transitions checks
-    const allowed = WorkflowTransitions[currentStatus] || []
-    if (targetStatus !== currentStatus && !allowed.includes(targetStatus) && targetStatus !== ApplicationStatus.Rejected) {
+    const allowed = getAllowedTransitions(currentStatus)
+    if (targetStatus !== currentStatus && !allowed.includes(targetStatus)) {
       throw new Error(`Invalid status transition from ${currentStatus} to ${extendedStatus}`)
     }
 
@@ -1179,7 +1224,7 @@ export class RecruiterService {
     if (currentStatus === ApplicationStatus.Hired || currentStatus === ApplicationStatus.Rejected) {
       throw new Error(`Cannot schedule an interview on a terminal application state: ${currentStatus}`)
     }
-    const allowed = WorkflowTransitions[currentStatus] || []
+    const allowed = getAllowedTransitions(currentStatus)
     if (currentStatus !== ApplicationStatus.InterviewScheduled && !allowed.includes(ApplicationStatus.InterviewScheduled)) {
       throw new Error(`Cannot schedule an interview from state: ${currentStatus}`)
     }
@@ -1280,9 +1325,9 @@ export class RecruiterService {
     if (currentStatus === ApplicationStatus.Hired || currentStatus === ApplicationStatus.Rejected) {
       throw new Error(`Cannot release an offer on a terminal application state: ${currentStatus}`)
     }
-    const allowed = WorkflowTransitions[currentStatus] || []
+    const allowed = getAllowedTransitions(currentStatus)
     if (!allowed.includes(ApplicationStatus.OfferReleased)) {
-      throw new Error(`Cannot release an offer from state: ${currentStatus}. Schedule and complete an interview first.`)
+      throw new Error(`Cannot release an offer from state: ${currentStatus}.`)
     }
 
     const updated = await prisma.application.update({

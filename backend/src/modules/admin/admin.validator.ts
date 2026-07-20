@@ -37,10 +37,36 @@ export const updateUserStatusSchema = z.object({
   status: z.nativeEnum(UserStatus),
 })
 
+// Hard-delete a user account. Both fields are optional and only relevant
+// when the target is a recruiter who still owns job postings -- see
+// AdminService.deleteUser for why this is required in that case.
+export const deleteUserSchema = z.object({
+  archiveJobs: z.boolean().optional(),
+  transferToRecruiterId: z.string().optional(),
+})
+
 // Employee Invitations Schema
 export const inviteEmployeeSchema = z.object({
   email: z.string().email("Invalid email format"),
   roleName: z.enum(["Support Executive", "Moderator", "Admin", "Super Admin"]),
+})
+
+// Super Admin Admin Management module -- direct account provisioning
+// (distinct from the self-serve Employee Invitation flow above: this
+// creates the account and sets an initial password immediately, gated
+// entirely behind requireSuperAdmin at the route level).
+export const createAdminSchema = z.object({
+  email: z.string().email("Invalid email format"),
+  fullName: z.string().min(2, "Full name must be at least 2 characters"),
+  password: z.string().min(8, "Password must be at least 8 characters"),
+  roleNames: z.array(z.string().min(1)).min(1, "At least one role is required"),
+})
+
+// Admin Management listing filters
+export const listAdminsQuerySchema = z.object({
+  search: z.string().trim().max(200).optional(),
+  status: z.nativeEnum(UserStatus).optional(),
+  role: z.string().trim().max(100).optional(),
 })
 
 // Feature Flags Schema (Categorized into Communication, Platform, Experimental, Maintenance)

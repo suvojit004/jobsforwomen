@@ -761,6 +761,72 @@ export function initNotificationListener() {
       newValue: { reason: payload.reason },
     })
   })
+
+  // 17. Admin Management module notifications (Part 4 of the Admin
+  // Management spec: "Notifications on account created / roles changed /
+  // permissions updated / account suspended / account activated"). Audit
+  // logging for these is already written directly by admin.service.ts /
+  // rbac.service.ts at the point of action -- these subscriptions exist
+  // purely to surface an in-app notification to the affected admin.
+  EventBus.subscribe("AdminAccountCreated", async (payload: any) => {
+    try {
+      await createAndEmitNotification({
+        recipientId: payload.userId,
+        title: "Your Admin Account Was Created",
+        message: `An administrator account was created for you with the role${payload.roleNames.length > 1 ? "s" : ""}: ${payload.roleNames.join(", ")}.`,
+        category: "Admin",
+        actionUrl: "/admin/dashboard",
+        dedupeKey: `admin-account-created:${payload.userId}`,
+      })
+    } catch (err: any) {
+      logger.error(`[NotificationListener] AdminAccountCreated trigger failed: ${err.message}`)
+    }
+  })
+
+  // Fired both by rbac.service.ts's assignRolesToUser (multi-role
+  // assign/update) and admin.service.ts's removeAdminRole (single-role
+  // revoke) -- both publish the same {userId, roleNames, previousRoleNames}
+  // shape, so one subscription covers "Roles changed" and "Permissions
+  // updated" (a role change always implies the user's effective permission
+  // set changed too, via PermissionCacheManager.invalidateUser).
+  EventBus.subscribe("RoleAssigned", async (payload: any) => {
+    try {
+      if (!payload.userId || !payload.roleNames) {
+        // The older assignPermissionsToRole publisher (rbac.service.ts) also
+        // reuses this event name with a completely different {roleId,
+        // permissionIds} shape -- nothing user-facing to notify there.
+        return
+      }
+      await createAndEmitNotification({
+        recipientId: payload.userId,
+        title: "Your Roles Were Updated",
+        message: payload.roleNames.length > 0
+          ? `Your account roles are now: ${payload.roleNames.join(", ")}.`
+          : "Your account roles have been updated.",
+        category: "Admin",
+        actionUrl: "/admin/dashboard",
+      })
+    } catch (err: any) {
+      logger.error(`[NotificationListener] RoleAssigned trigger failed: ${err.message}`)
+    }
+  })
+
+  EventBus.subscribe("AdminAccountStatusChanged", async (payload: any) => {
+    try {
+      const isActive = payload.status === "Active"
+      await createAndEmitNotification({
+        recipientId: payload.userId,
+        title: isActive ? "Account Activated" : "Account Suspended",
+        message: isActive
+          ? "Your administrator account has been reactivated. You can now log in."
+          : `Your administrator account has been set to "${payload.status}" and you have been logged out of all active sessions.`,
+        category: "Admin",
+        actionUrl: "/admin/dashboard",
+      })
+    } catch (err: any) {
+      logger.error(`[NotificationListener] AdminAccountStatusChanged trigger failed: ${err.message}`)
+    }
+  })
 }
 
 // Case-insensitive, whitespace-trimmed substring containment. This is a

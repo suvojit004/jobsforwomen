@@ -37,8 +37,28 @@ export function errorHandler(
       logger.warn(`[Req: ${reqId}] Record not found: ${err.message}`)
       return sendError(res, "The requested record was not found", null, 404)
     }
+    // P2003 = foreign key constraint violation (e.g. deleting a row other
+    // rows still reference via a RESTRICT relation) -- a client-side
+    // conflict, not a server fault.
+    if (err.code === "P2003") {
+      logger.warn(`[Req: ${reqId}] Foreign key constraint violation: ${err.message}`)
+      return sendError(res, "This action can't be completed because other records still depend on it", null, 409)
+    }
     logger.error(`[Req: ${reqId}] Database Error: ${err.message}`)
     return sendError(res, "Database operation failed", null, 400)
+  }
+
+  // Defense in depth: cascading deletes that hit a RESTRICT constraint
+  // mid-operation sometimes surface as PrismaClientUnknownRequestError
+  // instead of the usual PrismaClientKnownRequestError -- that error has no
+  // `.code`/`.meta`, so it skips the branch above entirely and would
+  // otherwise fall all the way through to the generic 500 below. Individual
+  // services should catch and translate this themselves where they can (see
+  // AdminService.deleteUser), but this is a safety net for any path that
+  // doesn't yet.
+  if (typeof err.message === "string" && /foreign key constraint|violates.*constraint/i.test(err.message)) {
+    logger.warn(`[Req: ${reqId}] Unclassified FK constraint failure: ${err.message}`)
+    return sendError(res, "This action can't be completed because other records still depend on it", null, 409)
   }
 
   // Handle AppError
@@ -87,7 +107,23 @@ export function errorHandler(
     return sendError(res, message, null, 403)
   }
 
-  if (message.includes("Forbidden") || message.includes("Access denied") || message.includes("not authorized") || message.includes("Not authorized")) {
+  if (
+    message.includes("Forbidden") ||
+    message.includes("Access denied") ||
+    message.includes("not authorized") ||
+    message.includes("Not authorized") ||
+    // CONFIRMED GAP (fixed here): the Admin Management / RBAC privilege
+    // guards (admin.service.ts's deleteUser/updateUserStatus/createAdmin/
+    // removeAdminRole, rbac.service.ts's assignRolesToUser) all throw plain
+    // `new Error("Only a Super Admin can ...")` for privilege-escalation
+    // rejections, but none of the phrases above ever matched that message,
+    // so every one of those rejections was previously falling through to
+    // the generic 500 branch below and being logged as an "Unhandled
+    // Exception" -- a legitimate 403 masquerading as a server fault.
+    message.includes("Only a Super Admin can") ||
+    message.includes("cannot delete your own account") ||
+    message.includes("cannot be deleted from this screen")
+  ) {
     logger.warn(`[Req: ${reqId}] Forbidden: ${message}`)
     return sendError(res, message, null, 403)
   }
@@ -117,6 +153,15 @@ export function errorHandler(
   ) {
     logger.warn(`[Req: ${reqId}] Company verification request rejected: ${message}`)
     return sendError(res, message, null, 400)
+  }
+
+  // Last-Super-Admin safety guards (rbac.service.ts's assignRolesToUser,
+  // admin.service.ts's updateUserStatus/removeAdminRole) -- a genuine
+  // conflict with current platform state (would leave zero Super Admins),
+  // not a malformed request or a server fault.
+  if (message.includes("last remaining Super Admin") || message.includes("last active Super Admin")) {
+    logger.warn(`[Req: ${reqId}] Conflict (last Super Admin guard): ${message}`)
+    return sendError(res, message, null, 409)
   }
 
   if (

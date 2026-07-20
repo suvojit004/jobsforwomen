@@ -110,7 +110,12 @@ export class RbacController {
   assignRolesToUser = async (req: Request, res: Response) => {
     const validated = assignUserRolesSchema.parse(req.body)
     const context = this.getContext(req)
-    await this.rbacService.assignRolesToUser(req.params.id as string, validated.roleIds, context)
+    await this.rbacService.assignRolesToUser(
+      req.params.id as string,
+      validated.roleIds,
+      context,
+      req.user?.roles || []
+    )
     return sendSuccess(res, null, "User roles updated successfully.")
   }
 

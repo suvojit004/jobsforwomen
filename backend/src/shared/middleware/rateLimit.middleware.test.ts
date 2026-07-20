@@ -96,6 +96,9 @@ describe("rateLimitMiddleware IP keying (no raw X-Forwarded-For fallback)", () =
       status: jest.fn().mockReturnThis(),
       json: jest.fn().mockReturnThis(),
       getHeader: jest.fn().mockReturnValue(undefined),
+      // Rate-limit headers (X-RateLimit-*, Retry-After) are set via
+      // res.setHeader -- this mock needs it or the middleware throws.
+      setHeader: jest.fn(),
     } as unknown as express.Response
     const next = jest.fn()
     return { req, res, next }

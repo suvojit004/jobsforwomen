@@ -6,6 +6,8 @@ import { calculateProfileCompletion } from "../../shared/utils/profileCompletion
 import { logger } from "../../shared/utils/logger"
 import EventBus from "../../shared/eventBus/eventBus"
 import { UserStatus } from "@prisma/client"
+import { deleteFromCloudinary } from "../../shared/utils/cloudinary"
+import prisma from "../../shared/database/db"
 
 export class AuthService {
   private authRepository = new AuthRepository()
@@ -266,7 +268,34 @@ export class AuthService {
     throw new Error("Your company verification is still pending. Please check your registered email for updates.")
   }
 
+  // CONFIRMED BUG (fixed here, found while verifying the candidate soft/hard
+  // delete flow): login() checks Blocked/Suspended/Rejected before issuing a
+  // session, but oauth() and refresh() never did -- oauth() called
+  // createAuthSession() directly with no status check at all, and refresh()
+  // only checked for Blocked (not Suspended/Rejected), inconsistently. A
+  // suspended/blocked account could therefore still complete a Google OAuth
+  // login, or keep refreshing an already-issued token, and receive a
+  // technically-valid session -- even though requireActiveUser would reject
+  // every subsequent API call with a live DB status re-check. That's not a
+  // data-access hole (nothing sensitive is actually reachable), but it's an
+  // inconsistent, confusing half-login instead of the same clear "Your
+  // account has been blocked/suspended" rejection login() already gives.
+  // Centralizing the check here (the one place all three paths funnel
+  // through) closes that gap once instead of three times.
+  private assertAccountActive(user: any) {
+    if (user.status === UserStatus.Blocked) {
+      throw new Error("Your account has been blocked")
+    }
+    if (user.status === UserStatus.Suspended) {
+      throw new Error("Your account has been suspended")
+    }
+    if (user.status === UserStatus.Rejected) {
+      throw new Error("Your account application was rejected")
+    }
+  }
+
   private async createAuthSession(user: any, ipAddress: string, userAgent: string) {
+    this.assertAccountActive(user)
     this.assertRecruiterCompanyApproved(user)
 
     const roles = user.roles.map((r: any) => r.role.name)
@@ -329,11 +358,15 @@ export class AuthService {
     }
 
     const user = await this.authRepository.findUserById(payload.userId)
-    if (!user || user.status === UserStatus.Blocked) {
-      throw new Error("User accounts blocked or missing")
+    if (!user) {
+      throw new Error("User not found")
     }
 
     await this.authRepository.revokeRefreshToken(token)
+    // createAuthSession() now runs the full Blocked/Suspended/Rejected check
+    // (assertAccountActive) -- previously this only checked Blocked, so a
+    // Suspended or Rejected user's still-valid refresh token could mint
+    // fresh access tokens indefinitely.
     return this.createAuthSession(user, ipAddress, userAgent)
   }
 
@@ -542,6 +575,40 @@ export class AuthService {
       const isMatch = await comparePassword(password, user.passwordHash)
       if (!isMatch) {
         throw new Error("Password is incorrect")
+      }
+    }
+
+    // CONFIRMED BUG (fixed here): this self-service path is role-agnostic --
+    // any authenticated user can call it, not just candidates -- but it
+    // never had the same job-ownership guard AdminService.deleteUser needed
+    // (see that fix for the full explanation). A recruiter who still owns
+    // job postings deleting their own account would hit the exact same
+    // Job.recruiterId RESTRICT violation. The frontend only exposes this
+    // flow to candidates today, but the API itself has no such restriction,
+    // so this is a real gap, not just a theoretical one.
+    const recruiterProfile = (user as any).recruiterProfile
+    if (recruiterProfile) {
+      const jobCount = await prisma.job.count({ where: { recruiterId: recruiterProfile.id } })
+      if (jobCount > 0) {
+        throw new Error(
+          `You still own ${jobCount} job posting${jobCount === 1 ? "" : "s"}. Please contact an administrator to transfer or archive them before deleting your account.`
+        )
+      }
+    }
+
+    // CONFIRMED BUG (fixed here, found while verifying the candidate delete
+    // flow): AdminService.deleteUser already cleans up the candidate's
+    // Cloudinary resume asset before deleting the row -- this self-service
+    // path (Settings -> Delete Account) never did, so a candidate deleting
+    // their own account left an orphaned file in Cloudinary storage forever
+    // (the DB pointer is gone via cascade, but nothing ever asked Cloudinary
+    // to delete the actual asset).
+    const resumePublicId = (user as any).candidateProfile?.resumePublicId
+    if (resumePublicId) {
+      try {
+        await deleteFromCloudinary(resumePublicId, true)
+      } catch (err: any) {
+        logger.warn(`[Cloudinary] Failed to delete resume asset for self-deleted account ${userId}: ${err.message}`)
       }
     }
 
