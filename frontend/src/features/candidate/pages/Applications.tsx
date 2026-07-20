@@ -166,6 +166,14 @@ export function Applications() {
                                   type="button"
                                   variant="ghost"
                                   size="sm"
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    // Desktop table already shows the details panel in the
+                                    // right-hand column -- just make sure this row is the one
+                                    // selected. handleSelectApplication (which also opens the
+                                    // mobile drawer) is reserved for the tablet/mobile card list.
+                                    setSelectedApp(app)
+                                  }}
                                   className="h-7 gap-1 text-xs text-[#6B2C91] dark:text-pink-200"
                                 >
                                   View Details

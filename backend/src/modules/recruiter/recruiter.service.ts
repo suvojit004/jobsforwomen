@@ -1316,7 +1316,8 @@ export class RecruiterService {
         offerLetterFile.buffer,
         "jfw/offer-letters",
         `${applicationId}_offer_${Date.now()}`,
-        true
+        true,
+        offerLetterFile.originalname
       )
       offerLetterUrl = uploadResult.secureUrl
       offerLetterPublicId = uploadResult.publicId

@@ -1,13 +1,14 @@
 import { useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { toast } from "sonner"
-import { Check, Clock, User, Calendar, FileText, X, MessageCircle } from "lucide-react"
+import { Check, Clock, User, Calendar, FileText, X, MessageCircle, Gift } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { DashboardCard } from "@/components/dashboard/DashboardCard"
 import { CompanyLogo } from "@/components/shared/CompanyLogo"
 import type { Application } from "@/types/dashboard"
 import { cn } from "@/lib/utils"
 import { candidateApi } from "../../services/candidateApi"
+import { openDocument, getFileExtension } from "@/utils/fileHelpers"
 
 type ApplicationTimelineProps = {
   application: Application
@@ -55,18 +56,24 @@ export function ApplicationTimeline({ application, onClose }: ApplicationTimelin
       description: application.interviewDate
         ? `Scheduled for ${application.interviewDate}`
         : "Pending schedule invitation",
-      completed: ["Interview Scheduled", "Selected", "Rejected"].includes(status),
+      // "Offer Released" and "Selected" both imply an interview already
+      // happened -- without including them here, the stepper stayed stuck
+      // on "Under Review" for every application that progressed past this
+      // point, even once an offer had actually been sent.
+      completed: ["Interview Scheduled", "Offer Released", "Selected", "Rejected"].includes(status),
       active: status === "Interview Scheduled",
     },
     {
-      label: status === "Rejected" ? "Rejected" : status === "Selected" ? "Selected" : "Final Decision",
+      label: status === "Rejected" ? "Rejected" : status === "Selected" ? "Selected" : status === "Offer Released" ? "Offer Released" : "Final Decision",
       description: status === "Selected"
         ? "Congratulations! You received an offer."
-        : status === "Rejected"
-          ? "Role closed. Thank you for applying."
-          : "Awaiting final feedback",
-      completed: ["Selected", "Rejected"].includes(status),
-      active: ["Selected", "Rejected"].includes(status),
+        : status === "Offer Released"
+          ? "An offer has been extended -- check the details below."
+          : status === "Rejected"
+            ? "Role closed. Thank you for applying."
+            : "Awaiting final feedback",
+      completed: ["Offer Released", "Selected", "Rejected"].includes(status),
+      active: ["Offer Released", "Selected", "Rejected"].includes(status),
     },
   ]
 
@@ -275,6 +282,43 @@ export function ApplicationTimeline({ application, onClose }: ApplicationTimelin
                 {application.interview?.notes && (
                   <p className="text-slate-500 dark:text-slate-400 font-semibold">{application.interview.notes}</p>
                 )}
+              </div>
+            </div>
+          )}
+
+          {/* Offer Letter -- surfaces the recruiter-uploaded offer letter
+              (and free-text offer summary) once one exists, regardless of
+              whether the application has since moved past "Offer Released"
+              (e.g. to Selected), so a candidate can still reopen a past
+              offer. No mimetype is stored for offer letters, so the
+              extension is sniffed from the URL to decide inline PDF
+              viewing vs. a named download. */}
+          {application.offerLetterUrl && (
+            <div className="flex items-start gap-3 text-xs">
+              <div className="size-8 rounded-lg bg-violet-50 text-[#6B2C91] dark:bg-violet-500/20 dark:text-pink-100 flex items-center justify-center shrink-0">
+                <Gift className="size-4" />
+              </div>
+              <div className="space-y-1 min-w-0">
+                <p className="font-bold text-slate-500 dark:text-slate-400">Offer Letter</p>
+                {application.offerDetails && (
+                  <p className="text-slate-600 dark:text-slate-300 font-semibold leading-relaxed">
+                    {application.offerDetails}
+                  </p>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const ext = getFileExtension({ url: application.offerLetterUrl })
+                    openDocument({
+                      url: application.offerLetterUrl!,
+                      mimetype: ext === "pdf" ? "application/pdf" : undefined,
+                      originalFilename: `Offer_Letter${ext ? `.${ext}` : ""}`,
+                    })
+                  }}
+                  className="font-extrabold text-[#6B2C91] dark:text-pink-200 hover:underline"
+                >
+                  View offer letter
+                </button>
               </div>
             </div>
           )}

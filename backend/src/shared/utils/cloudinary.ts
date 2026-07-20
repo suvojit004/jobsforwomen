@@ -226,7 +226,8 @@ export async function replaceInCloudinary(
   newBuffer: Buffer,
   folder: string,
   fileName: string,
-  isPrivate: boolean = false
+  isPrivate: boolean = false,
+  originalFileName?: string
 ): Promise<CloudinaryUploadResult> {
   if (oldPublicId) {
     try {
@@ -235,7 +236,11 @@ export async function replaceInCloudinary(
       logger.warn(`[Cloudinary] Failed to delete old asset ${oldPublicId} on replace: ${err.message}`)
     }
   }
-  return uploadToCloudinary(newBuffer, folder, fileName, isPrivate)
+  // originalFileName must be forwarded through so uploadToCloudinary can set
+  // a `format` hint on raw (isPrivate) uploads -- without it, a raw asset
+  // has no extension and Cloudinary delivers it as generic
+  // application/octet-stream, which downloads/opens as an unreadable file.
+  return uploadToCloudinary(newBuffer, folder, fileName, isPrivate, originalFileName)
 }
 
 export interface OrphanAssetReport {

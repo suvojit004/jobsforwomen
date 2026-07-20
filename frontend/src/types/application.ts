@@ -40,4 +40,9 @@ export interface Application {
   interviewDate?: string
   interview?: ApplicationInterview | null
   recruiter?: ApplicationRecruiter | null
+  // Free-text offer summary and an optional attached offer letter file --
+  // both set by the recruiter when releasing an offer (recruiter.service.ts's
+  // releaseOffer()). See jobsApi.ts's DisplayApplication, which this mirrors.
+  offerDetails?: string
+  offerLetterUrl?: string | null
 }
