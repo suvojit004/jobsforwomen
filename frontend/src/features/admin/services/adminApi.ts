@@ -26,16 +26,9 @@ export const AdminApi = {
     startDate?: string
     endDate?: string
   } = {}) {
-    // CONFIRMED BUG (fixed here, Final Implementation Pass Part 2): this
-    // used to unconditionally fetch a single fixed page of up to 500 rows
-    // and let the Activity Logs page filter/paginate that one page entirely
-    // in React -- an admin searching for or filtering to something older
-    // than the last 500 audit events would see zero results even though
-    // matching rows existed further back. Every filter argument here now
-    // becomes a real query parameter that GET /admins/audits (and the real
-    // Prisma `where`/`skip`/`take` behind it) uses to run a fresh,
-    // server-side paginated query -- the frontend never filters a partial
-    // dataset locally anymore.
+    // Every filter argument is a real query parameter, so GET /admins/audits
+    // runs a fresh, server-side paginated query rather than the frontend
+    // filtering one fixed fetched page locally.
     const qs = new URLSearchParams()
     qs.set("page", String(params.page ?? 1))
     qs.set("limit", String(params.limit ?? 20))
@@ -63,7 +56,7 @@ export const AdminApi = {
     return res?.data
   },
 
-  // Company Perk Requests (Parts 6/7) -- deliberately a separate endpoint
+  // Company Perk Requests -- deliberately a separate endpoint
   // family from getCompanies/verifyCompany above.
   async getPerkRequests() {
     const res = await apiClient.get("/api/v1/admins/perks")
@@ -81,7 +74,7 @@ export const AdminApi = {
   },
 
   async moderateJob(jobId: string, action: string, reason?: string) {
-    // CONFIRMED BUG (fixed here): moderateJobSchema (backend
+    // moderateJobSchema (backend
     // admin.validator.ts) only recognizes a `notes` field -- it was sending
     // `reason`, which Zod's .parse() silently strips as an unrecognized key.
     // Every rejection reason and the "Administrative deletion" delete note
@@ -113,7 +106,7 @@ export const AdminApi = {
   },
 
   async getFeatureFlags() {
-    // CONFIRMED BUG (fixed here): the backend wraps this response as
+    // the backend wraps this response as
     // { flags: [...] } (see admin.controller.ts's getFeatureFlags), not
     // { featureFlags: [...] }. That key never matched, so this always fell
     // through to `res?.data`, which is the wrapper object itself -- not an
@@ -143,16 +136,8 @@ export const AdminApi = {
   },
 
   async updateSettings(payload: any) {
-    // CONFIRMED BUG (fixed here, Final Implementation Pass Part 4): the
-    // backend's updateAdminSettings controller reads `req.body.preferences`
-    // (see admin.controller.ts), but this was sending the payload flat as
-    // the request body itself -- so `req.body.preferences` was always
-    // `undefined`, and Prisma treats an `undefined` field value as "leave
-    // unchanged." The endpoint returned 200 and the frontend showed "Profile
-    // and security preferences successfully updated!" on every save, but no
-    // admin name/email/preference change was ever actually written to the
-    // database. Wrapping the payload under `preferences` is what the
-    // backend has always expected.
+    // admin.controller.ts's updateAdminSettings reads req.body.preferences,
+    // so the payload must be wrapped under that key.
     const res = await apiClient.put("/api/v1/admins/settings", { preferences: payload })
     return res?.data?.settings || res?.data || {}
   },

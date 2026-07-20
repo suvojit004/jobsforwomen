@@ -100,14 +100,21 @@ export interface RecruiterJobRow {
 const APPLICANT_STATUS_TO_BACKEND: Record<string, string> = {
   Applied: "Applied",
   "Under Review": "Reviewed",
+  Shortlisted: "Shortlisted",
   Selected: "Hired",
   Rejected: "Rejected",
 }
 
+// "Shortlisted" is a real, distinct pipeline
+// stage in the backend (recruiter.service.ts's ApplicationStatus enum /
+// PIPELINE_ORDER), but it was being collapsed into the same "Under Review"
+// display label as "Reviewed" -- so recruiters had no way to see, or
+// deliberately set, this stage at all through the UI. It's now surfaced as
+// its own label.
 const APPLICANT_STATUS_FROM_BACKEND: Record<string, string> = {
   Applied: "Applied",
   Reviewed: "Under Review",
-  Shortlisted: "Under Review",
+  Shortlisted: "Shortlisted",
   InterviewScheduled: "Interview Scheduled",
   OfferReleased: "Offer Released",
   Hired: "Selected",
@@ -122,6 +129,7 @@ export interface ApplicantRow {
   appliedDate: string
   status: string
   offerDetails?: string
+  offerLetterUrl?: string | null
   nextInterview?: { title: string; scheduledAt: string; location?: string } | null
   // Full candidate profile fields -- real data from CandidateProfile, used by
   // the applicant detail page (previously that page used entirely hardcoded
@@ -233,6 +241,7 @@ export const RecruiterApi = {
         appliedDate: formatDate(app.appliedOn),
         status: APPLICANT_STATUS_FROM_BACKEND[app.status] || app.status,
         offerDetails: app.offerDetails || undefined,
+        offerLetterUrl: app.offerLetterUrl || null,
         nextInterview: latestInterview
           ? { title: latestInterview.title, scheduledAt: latestInterview.scheduledAt, location: latestInterview.location }
           : null,
@@ -273,8 +282,18 @@ export const RecruiterApi = {
     return apiClient.post(`/api/v1/recruiters/applications/${applicationId}/interview`, data)
   },
 
-  async releaseOffer(applicationId: string, offerDetails: string) {
-    return apiClient.post(`/api/v1/recruiters/applications/${applicationId}/offer`, { offerDetails })
+  // offerLetterFile is optional -- releasing a text-only offer with no
+  // attachment still works exactly as before. Always sent as multipart/
+  // form-data (rather than only switching to it when a file is present) so
+  // there's a single, consistent request shape the backend's
+  // uploadOfferLetterMiddleware always parses the same way.
+  async releaseOffer(applicationId: string, offerDetails: string, offerLetterFile?: File) {
+    const formData = new FormData()
+    formData.append("offerDetails", offerDetails)
+    if (offerLetterFile) {
+      formData.append("offerLetter", offerLetterFile)
+    }
+    return apiClient.post(`/api/v1/recruiters/applications/${applicationId}/offer`, formData)
   },
 
   async getDashboard() {
@@ -292,7 +311,7 @@ export const RecruiterApi = {
     return res?.data
   },
 
-  // Company Perk Requests (Parts 6/7) -- deliberately separate from
+  // Company Perk Requests -- deliberately separate from
   // onboardCompany above. The backend now always returns `documents` as a
   // real array (recruiter.service.ts normalizes it at the source), but this
   // is still the one place every perk-request read passes through on the
@@ -337,7 +356,7 @@ export const RecruiterApi = {
     return res?.data
   },
 
-  // Company Profile expansion (Part 5) -- office photo gallery + policies
+  // Company Profile expansion -- office photo gallery + policies
   async uploadGalleryPhoto(file: File, caption?: string) {
     const formData = new FormData()
     formData.append("photo", file)
@@ -406,7 +425,7 @@ export const RecruiterApi = {
     return res?.data
   },
 
-  // CONFIRMED BUG (fixed here): mirrors candidateApi.startConversation --
+  // mirrors candidateApi.startConversation --
   // there was previously no way to create a conversation from the
   // Recruiter side either. Finds-or-creates the conversation tied to a
   // specific application so a recruiter can message the applicant.

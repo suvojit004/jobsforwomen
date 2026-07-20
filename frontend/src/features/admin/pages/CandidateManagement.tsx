@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react"
+import { toast } from "sonner"
 import {
   Search,
   UserX,
@@ -55,8 +56,9 @@ export function CandidateManagement() {
         // one an admin had actually blocked.
         status: u.status,
       })))
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to load candidates database:", err)
+      toast.error(err?.message || "Failed to load candidates.")
     } finally {
       setLoading(false)
     }
@@ -72,8 +74,9 @@ export function CandidateManagement() {
       const nextStatus = candObj?.status === "Active" ? "Suspended" : "Active"
       await AdminApi.updateUserStatus(userId, nextStatus)
       loadCandidates()
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to toggle status", err)
+      toast.error(err?.message || "Failed to update candidate status.")
     }
   }
 
@@ -130,7 +133,7 @@ export function CandidateManagement() {
             Resume Uploaded
           </span>
         ) : (
-          <span className="inline-flex items-center gap-1 text-[10px] font-black text-amber-700 bg-amber-100/75 dark:bg-amber-955/25 dark:text-amber-300 px-2 py-0.5 rounded-full">
+          <span className="inline-flex items-center gap-1 text-[10px] font-black text-teal-700 bg-teal-100/75 dark:bg-teal-950/25 dark:text-teal-300 px-2 py-0.5 rounded-full">
             <ShieldAlert className="size-3" />
             No Resume
           </span>

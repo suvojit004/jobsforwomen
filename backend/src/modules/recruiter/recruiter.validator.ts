@@ -4,10 +4,8 @@ import { WorkMode, ApplicationStatus } from "@prisma/client"
 // Explicit states for Company Verification Onboarding Document Types
 export const AllowedDocumentFormats = ["application/pdf", "image/png", "image/jpeg", "image/jpg"]
 export const MaxDocumentSize = 10 * 1024 * 1024 // 10 MB
-// Extended to match the document types named explicitly in Part 3 of the
-// recruiter-onboarding spec (GST/PAN/CIN/registration certificate/website
-// ownership proof/other); the original 4 are kept for backward compatibility
-// since nothing else in the codebase restricts to only these.
+// The original 4 categories are kept alongside the newer ones for backward
+// compatibility since nothing else in the codebase restricts to only these.
 export const AllowedDocumentCategories = [
   "GovernmentIssuedID",
   "TaxRegistration",
@@ -19,7 +17,7 @@ export const AllowedDocumentCategories = [
   "CompanyRegistrationCertificate",
   "WebsiteOwnershipProof",
   "Other",
-  // Perk claim evidence (Parts 6/7) -- policy PDFs, HR/leave/insurance
+  // Perk claim evidence -- policy PDFs, HR/leave/insurance
   // documents, benefit brochures, screenshots, etc. attached to a
   // CompanyPerkRequest. Distinct from the company-identity categories above
   // (this list is shared between both upload surfaces), so perk proof isn't
@@ -67,7 +65,7 @@ export const logoMetadataSchema = z.object({
   mimetype: z.string().optional(),
 })
 
-// Perk submission/resubmission (Parts 6/7). One endpoint covers both first
+// Perk submission/resubmission . One endpoint covers both first
 // submission (no comment) and resubmission after rejected/info_requested
 // (comment describing what changed) -- see recruiter.service.ts's
 // submitOrResubmitPerk().
@@ -76,18 +74,10 @@ export const submitPerkSchema = z.object({
   comment: z.string().max(2000).optional(),
 })
 
-// Company Onboarding Schema
-//
-// This endpoint (POST /company/onboard) is used both for the initial
-// verification wizard AND as the general "Company Profile" edit form
-// (frontend CompanyProfile.tsx) that recruiters revisit any time after
-// approval to update their name/description/perks. verificationDocuments
-// used to be required with min(1) on every call -- so every single profile
-// edit made after the initial onboarding (which never re-collects documents)
-// failed Zod validation with a 400, and the frontend's catch block only
-// console.error'd it, so the recruiter saw no error and no success message.
-// It's now optional; the service only touches stored documents when new
-// ones are actually submitted.
+// Company Onboarding Schema. Used both for the initial verification wizard
+// and the general Company Profile edit form (recruiters revisit this any
+// time after approval). verificationDocuments is optional since profile
+// edits after onboarding don't re-collect documents.
 export const onboardCompanySchema = z.object({
   name: z.string().min(2, "Company name must be at least 2 characters.").optional(),
   description: z.string().optional(),
@@ -207,7 +197,7 @@ export const recruiterSettingsSchema = z.object({
   // jobTitle has no dedicated column, so it's stored in the same
   // preferences JSON blob as the notification settings.
   fullName: z.string().min(2, "Name must be at least 2 characters.").optional(),
-  // Part 16: was length-only (`.min(8)`), so "aaaaaaaa" passed. Real format
+  // was length-only (`.min(8)`), so "aaaaaaaa" passed. Real format
   // check, consistent with candidate.validator.ts and
   // frontend/src/utils/validators.ts's PHONE_REGEX.
   phone: z.string().regex(/^\+?[0-9]{10,14}$/, "Please enter a valid phone number (10-14 digits).").optional(),

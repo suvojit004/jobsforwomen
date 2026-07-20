@@ -80,8 +80,9 @@ export function Settings() {
           setTwoFactor(!!setts.twoFactorEnabled)
           setProfileVisibility(setts.profileVisibility || "Public")
         }
-      } catch (err) {
+      } catch (err: any) {
         console.error("Failed to load settings data", err)
+        toast.error(err?.message || "Failed to load settings.")
       } finally {
         setIsLoading(false)
       }
@@ -91,7 +92,7 @@ export function Settings() {
 
   const handleAccountSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    // Part 16: phone previously had no format validation at all.
+    // phone previously had no format validation at all.
     if (phone && !isValidPhone(phone)) {
       toast.error("Please enter a valid phone number (10-14 digits).")
       return
@@ -121,7 +122,7 @@ export function Settings() {
       setPasswordError("New password and confirmation do not match.")
       return
     }
-    // Part 16: previously no complexity/length check at all client-side --
+    // previously no complexity/length check at all client-side --
     // a one-character new password would pass this gate entirely.
     if (!isValidPassword(newPassword)) {
       setPasswordError(PASSWORD_HELP_TEXT)
@@ -149,8 +150,9 @@ export function Settings() {
     setTwoFactor(checked)
     try {
       await candidateApi.updateSettings({ twoFactorEnabled: checked })
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to update two-factor authentication setting", err)
+      toast.error(err?.message || "Failed to update two-factor authentication setting.")
       setTwoFactor(previous)
     }
   }
@@ -161,8 +163,9 @@ export function Settings() {
       await candidateApi.updateSettings({ profileVisibility })
       setPrivacySuccess(true)
       setTimeout(() => setPrivacySuccess(false), 3000)
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to update privacy settings", err)
+      toast.error(err?.message || "Failed to update privacy settings.")
     }
   }
 
@@ -178,8 +181,9 @@ export function Settings() {
       })
       setNotifSuccess(true)
       setTimeout(() => setNotifSuccess(false), 3000)
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to update settings", err)
+      toast.error(err?.message || "Failed to update settings.")
     }
   }
 
@@ -283,7 +287,7 @@ export function Settings() {
 
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div className="space-y-1.5">
-                    <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400">Full Name</label>
+                    <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400">Full Name <span className="text-red-500">*</span></label>
                     <input
                       type="text"
                       value={fullName}
@@ -405,7 +409,7 @@ export function Settings() {
               <form onSubmit={handlePasswordSubmit} className="space-y-4">
                 <div className="grid gap-4 sm:grid-cols-3">
                   <div className="space-y-1.5">
-                    <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400">Current Password</label>
+                    <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400">Current Password <span className="text-red-500">*</span></label>
                     <input
                       type="password"
                       value={currentPassword}
@@ -415,7 +419,7 @@ export function Settings() {
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400">New Password</label>
+                    <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400">New Password <span className="text-red-500">*</span></label>
                     <input
                       type="password"
                       value={newPassword}
@@ -426,7 +430,7 @@ export function Settings() {
                     <p className="text-[10px] text-slate-400 dark:text-slate-500">{PASSWORD_HELP_TEXT}</p>
                   </div>
                   <div className="space-y-1.5">
-                    <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400">Confirm Password</label>
+                    <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400">Confirm Password <span className="text-red-500">*</span></label>
                     <input
                       type="password"
                       value={confirmPassword}

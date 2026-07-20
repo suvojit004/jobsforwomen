@@ -21,7 +21,7 @@ type JobDetailContentProps = {
   // experience: Save/Apply actions, mobile sticky action bar, related jobs.
   // "admin" reuses the exact same description/responsibilities/requirements/
   // benefits/skills/company/recruiter layout for the Job Approval review
-  // modal (Issue 5) instead of duplicating it -- no Save/Apply/related-jobs
+  // modal instead of duplicating it -- no Save/Apply/related-jobs
   // (those are candidate-only concepts), optionally showing applicant count
   // and the moderation history trail instead.
   variant?: "candidate" | "admin"
@@ -348,7 +348,7 @@ export function JobDetailContent({
             </DashboardCard>
           )}
 
-          {/* Moderation History -- admin variant only (Issue 5). */}
+          {/* Moderation History -- admin variant only . */}
           {isAdmin && moderationHistory && moderationHistory.length > 0 && (
             <DashboardCard className="p-5">
               <h2 className="mb-3 text-sm font-extrabold text-slate-950 dark:text-white flex items-center gap-1.5">

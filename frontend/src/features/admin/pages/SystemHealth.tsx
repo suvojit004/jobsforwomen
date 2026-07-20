@@ -32,22 +32,13 @@ function formatBytes(bytes: number) {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`
 }
 
-// Final Implementation Pass, Part 8: metric semantics.
-//
-// CONFIRMED GAP (fixed here): every number on this page used to be
-// presented identically, with no indication that most of them
-// (activeJobs/completedJobs/failedJobs, email/storage delivery counts) are
-// plain in-memory counters that silently reset to 0 on every server
-// restart or redeploy -- an admin could easily read "Failed Jobs: 0" right
-// after a deploy as "nothing has ever failed" rather than "nothing has
-// failed since this process last booted." The backend now classifies every
-// field via `metricSemantics` (see admin.service.ts's getSystemHealth());
-// this renders that classification as a small inline tag next to each
-// number instead of presenting all of them as equally durable.
+// Renders the backend's `metricSemantics` classification (see
+// admin.service.ts's getSystemHealth()) as an inline tag, so an in-memory
+// counter that resets on every restart doesn't read as an all-time total.
 function MetricTag({ isCounter }: { isCounter: boolean }) {
   return isCounter ? (
     <span
-      className="ml-1.5 align-middle inline-block text-[8px] font-black uppercase tracking-wide text-amber-700 bg-amber-100/70 dark:bg-amber-950/30 dark:text-amber-350 px-1.5 py-0.5 rounded"
+      className="ml-1.5 align-middle inline-block text-[8px] font-black uppercase tracking-wide text-teal-700 bg-teal-100/70 dark:bg-teal-950/30 dark:text-teal-300 px-1.5 py-0.5 rounded"
       title="Resets to 0 on every server restart/redeploy -- counts events since the process last started, not an all-time total."
     >
       Since Restart
@@ -222,7 +213,7 @@ export function SystemHealth() {
         ))}
       </div>
 
-      {/* Final Implementation Pass, Part 7: real dead-letter queue depth.
+      {/* real dead-letter queue depth.
           Previously the backend's real BullMQ queue counters (activeJobs/
           completedJobs/failedJobs) existed but were never surfaced here at
           all, and there was no real DLQ to report on in the first place --

@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react"
+import { toast } from "sonner"
 import {
   Search,
   Check,
@@ -81,8 +82,9 @@ export function CompanyPerkRequests() {
           }
         })
       )
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to load perk requests:", err)
+      toast.error(err?.message || "Failed to load perk requests.")
     } finally {
       if (!silent) setLoading(false)
     }
@@ -92,7 +94,7 @@ export function CompanyPerkRequests() {
     loadRequests()
   }, [])
 
-  // Part 18: live refresh -- perk submissions/resubmissions/document uploads
+  // live refresh -- perk submissions/resubmissions/document uploads
   // all fan out a "Moderation" notification to every active admin pointed at
   // this page (notification.listener.ts).
   useEffect(() => {
@@ -113,8 +115,9 @@ export function CompanyPerkRequests() {
       try {
         await AdminApi.reviewPerkRequest(requestId, "approved")
         loadRequests()
-      } catch (err) {
+      } catch (err: any) {
         console.error("Failed to approve perk request", err)
+        toast.error(err?.message || "Failed to approve perk request.")
       }
     }
   }
@@ -132,8 +135,9 @@ export function CompanyPerkRequests() {
       setActiveModal(null)
       setModalComment("")
       loadRequests()
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to reject or request info on perk request", err)
+      toast.error(err?.message || "Failed to submit decision.")
     }
   }
 
@@ -231,7 +235,7 @@ export function CompanyPerkRequests() {
       header: "Actions",
       className: "text-right",
       cell: (row) => (
-        // Part 15: flex-wrap keeps 3 action buttons from forcing this table
+        // flex-wrap keeps 3 action buttons from forcing this table
         // into horizontal-scroll mode on mobile.
         <div className="flex flex-wrap justify-end gap-1.5">
           {row.status !== "approved" && (

@@ -294,7 +294,7 @@ export class CandidateController {
     return sendSuccess(res, result, "Conversation marked as read.")
   }
 
-  // CONFIRMED CRITICAL BUG (fixed here): no route anywhere ever created a
+  // no route anywhere ever created a
   // Conversation row, so a candidate could never start a chat with a
   // recruiter -- see ConversationService.getOrCreateForApplication for the
   // full explanation. requireOwnership("Application") at the route layer

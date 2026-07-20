@@ -73,7 +73,7 @@ export const candidateApi = {
     return res?.data
   },
 
-  // CONFIRMED BUG (fixed here): there was previously no way to create a
+  // there was previously no way to create a
   // conversation from the Candidate side at all -- Messages.tsx could only
   // ever list conversations that already existed. This finds-or-creates the
   // conversation tied to a specific job application.

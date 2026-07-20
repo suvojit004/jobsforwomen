@@ -118,7 +118,7 @@ export function CandidateRegister() {
         <form className="space-y-5" onSubmit={handleRegister}>
           <div className="space-y-4 rounded-md shadow-sm">
             <div className="space-y-1.5">
-              <label htmlFor="name" className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Full Name</label>
+              <label htmlFor="name" className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Full Name <span className="text-red-500">*</span></label>
               <div className="relative">
                 <User className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
                 <Input
@@ -135,7 +135,7 @@ export function CandidateRegister() {
             </div>
 
             <div className="space-y-1.5">
-              <label htmlFor="email" className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Email Address</label>
+              <label htmlFor="email" className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Email Address <span className="text-red-500">*</span></label>
               <div className="relative">
                 <Mail className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
                 <Input
@@ -156,7 +156,7 @@ export function CandidateRegister() {
             </div>
 
             <div className="space-y-1.5">
-              <label htmlFor="password" className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Password</label>
+              <label htmlFor="password" className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Password <span className="text-red-500">*</span></label>
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
                 <Input

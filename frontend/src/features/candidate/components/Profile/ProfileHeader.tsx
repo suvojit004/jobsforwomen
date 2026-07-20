@@ -48,7 +48,7 @@ export function ProfileHeader({
               {candidate.location}
             </p>
             <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1.5 text-xs font-semibold text-slate-500 dark:text-slate-400">
-              {/* Part 15: a long, unbroken email has no natural wrap point,
+              {/* a long, unbroken email has no natural wrap point,
                   so it could stretch this row wider than the card on narrow
                   screens -- break-all lets it wrap mid-string instead. */}
               <span className="flex items-center gap-1.5 min-w-0 break-all">

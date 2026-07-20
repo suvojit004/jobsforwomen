@@ -11,25 +11,11 @@ import { DashboardCard } from "@/components/shared/DashboardCard"
 import { Button } from "@/components/ui/button"
 import { AdminApi } from "../services/adminApi"
 
-// CONFIRMED CRITICAL BUG (fixed here): this page used to render 12 toggles
-// (CHAT_SYSTEM, WEB_SOCKETS, EMAIL_DIGESTS, etc.) that did not correspond to
-// any flag actually seeded in the database (chat_enabled, email_automation,
-// push_notifications, advanced_analytics, experimental_sockets,
-// mfa_enforced). Toggling them called AdminApi.updateFeatureFlag with a
-// payload shaped `{ enabled }`, but the backend's Zod schema only accepts
-// `{ value }` -- so `enabled` was silently stripped and the DB row's real
-// `value` field was never actually changed by an update. The very first
-// toggle of a given key also always failed validation as a create (the
-// schema requires `category`, which was never sent). On top of that, every
-// toggle ALSO wrote to a second, fully separate client-only localStorage
-// store (@/config/features) that nothing else in the app ever read -- so
-// the switch visually flipped and "stuck" after refresh via localStorage
-// alone, creating the illusion of a working save while the real backend
-// flag never moved and no real feature was ever gated.
-//
-// This rewrite displays and edits the actual 6 seeded FeatureFlag rows,
-// with the correct payload shape, and no longer touches the parallel
-// localStorage config at all.
+// Displays and edits the actual 6 seeded FeatureFlag rows (chat_enabled,
+// email_automation, push_notifications, advanced_analytics,
+// experimental_sockets, mfa_enforced) with the payload shape the backend's
+// Zod schema expects (`{ value }`), and doesn't touch the separate
+// client-only @/config/features localStorage store.
 
 interface ApiFlag {
   id: string

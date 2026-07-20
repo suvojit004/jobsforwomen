@@ -2,7 +2,7 @@ import prisma from "../../shared/database/db"
 import { logger } from "../../shared/utils/logger"
 import EventBus from "../../shared/eventBus/eventBus"
 import { CompanyStatus, JobStatus, ApplicationStatus, WorkMode, PerkStatus } from "@prisma/client"
-import { deleteFromCloudinary } from "../../shared/utils/cloudinary"
+import { deleteFromCloudinary, replaceInCloudinary } from "../../shared/utils/cloudinary"
 import { normalizeDocuments } from "../../shared/utils/documents"
 import crypto from "crypto"
 
@@ -14,31 +14,11 @@ export interface ServiceContext {
   device?: string
 }
 
-// CONFIRMED PRODUCTION BUG (fixed here): the old WorkflowTransitions map only
-// allowed moving to the single *next* stage of a strictly linear pipeline
-// (Applied -> Reviewed -> Shortlisted -> InterviewScheduled -> OfferReleased
-// -> Hired) -- in particular, scheduling an interview required the
-// application to already be in "Shortlisted". But neither recruiter UI
-// surface exposes "Shortlisted" as a settable status anywhere: Applicants.tsx's
-// status <select> only offers Applied/Under Review/Interview Scheduled/Offer
-// Released/Selected/Rejected, and CandidatePreview.tsx's quick actions are
-// Under Review/Schedule Interview/Release Offer/Mark as Hired/Reject -- no
-// "Shortlist" action exists on either screen. That made it *impossible* to
-// ever legitimately reach InterviewScheduled through the real UI: clicking
-// "Schedule Interview" from "Applied" or "Under Review" (the two states any
-// new application actually starts in) always 400'd with "Cannot schedule an
-// interview from state: Reviewed" -- exactly the bug reported in production.
-// The same gap silently affected Release Offer (required InterviewScheduled)
-// and Mark as Hired (required OfferReleased) for the identical reason: both
-// UI surfaces present every status as directly selectable/clickable
-// regardless of the application's current stage, with no forced
-// single-step-at-a-time flow.
-//
-// Fixed by treating the pipeline as an ordered sequence and allowing a
-// recruiter to jump forward to *any* later stage (skipping intermediate ones
-// that the UI doesn't ask them to visit one at a time), not just the
-// immediate next one. Moving backward, or moving at all once terminal
-// (Hired/Rejected), remains blocked.
+// Pipeline is an ordered sequence, not a strict single-step chain: a
+// recruiter can jump forward to any later stage (the UI doesn't force
+// visiting every intermediate status one at a time, e.g. "Shortlisted"
+// before scheduling an interview). Moving backward, or moving at all once
+// terminal (Hired/Rejected), is blocked.
 const PIPELINE_ORDER: ApplicationStatus[] = [
   ApplicationStatus.Applied,
   ApplicationStatus.Reviewed,
@@ -253,7 +233,7 @@ export class RecruiterService {
     })
     const applicationTrend = trendDays.map(({ key }) => ({ name: key, ...trendMap[key] }))
 
-    // Perk claim summary for the recruiter Dashboard status card (Part 9) --
+    // Perk claim summary for the recruiter Dashboard status card --
     // counts derived from the real, independently-reviewed CompanyPerkRequest
     // rows rather than the old CompanyBenefit boolean list.
     const perkRequestsList = (company as any).perkRequests || []
@@ -481,7 +461,7 @@ export class RecruiterService {
   // Single entry point for both first submission (no comment) and
   // resubmission after rejected/info_requested (comment describing what
   // changed) -- keeps "select perk, attach proof, click Submit for
-  // Verification" and "Resubmit" (Part 7) as the same underlying action
+  // Verification" and "Resubmit" as the same underlying action
   // instead of two parallel code paths that could drift apart.
   async submitOrResubmitPerk(userId: string, perkName: string, comment: string | undefined, context?: ServiceContext) {
     const companyId = await this.getOwnCompanyId(userId)
@@ -577,7 +557,7 @@ export class RecruiterService {
       data: { documents: [...existingDocs, newDoc] },
     })
 
-    // Confirmed gap: this previously fired no event at all -- Part 11
+    // this previously fired no event at all -- Part 11
     // explicitly lists "Recruiter Uploaded Additional Documents" as its own
     // realtime admin-notification trigger, distinct from submitting/
     // resubmitting the perk claim itself (PerkSubmitted).
@@ -595,7 +575,7 @@ export class RecruiterService {
   }
 
   // ==========================================
-  // APPROVAL TRACKER (Part 8) -- consolidated read view of the recruiter's
+  // APPROVAL TRACKER -- consolidated read view of the recruiter's
   // Company Registration status/history plus their Perk Requests, so they
   // don't have to piece it together from Company Profile and Perks
   // separately. Interactive actions (resubmitting a perk, uploading
@@ -947,17 +927,10 @@ export class RecruiterService {
     let nextStatus = job.status
     let domainEventName = ""
 
-    // CONFIRMED PRODUCTION BUG (fixed here): "resume" previously set
-    // status straight to `approved` unconditionally, with no check on the
-    // job's current status. That meant a recruiter could call
-    // resume/Activate on a job that was still `pending_approval` (never
-    // reviewed) or `flagged` (rejected) and the backend would happily mark
-    // it `approved` -- silently bypassing admin moderation and making an
-    // unreviewed/rejected job candidate-visible. Moderation approval
-    // (`status -> approved`, plus approvedAt/approvedBy) is an admin-only
-    // transition owned by admin.service.ts's moderateJob(); this recruiter
-    // action must only be able to re-activate a job admin already approved
-    // and the recruiter themselves previously paused.
+    // "resume" must only re-activate a job admin already approved and the
+    // recruiter themselves paused -- it can't be used to bypass moderation
+    // on a job still `pending_approval` or `flagged`. Approval itself is an
+    // admin-only transition owned by admin.service.ts's moderateJob().
     if (action === "submit") {
       if (job.status !== JobStatus.draft && job.status !== JobStatus.flagged) {
         throw new Error(`Invalid status transition: cannot submit a job for approval from state: ${job.status}`)
@@ -1150,7 +1123,7 @@ export class RecruiterService {
       },
     })
 
-    // CONFIRMED BUG (fixed here): this method previously only ever published
+    // this method previously only ever published
     // "AuditCreated" -- there was no EventBus event a notification/email
     // listener could subscribe to, so every Reviewed/Shortlisted/Hired/
     // Rejected transition (every status this generic endpoint handles) was
@@ -1303,7 +1276,8 @@ export class RecruiterService {
     applicationId: string,
     userId: string,
     data: { offerDetails: string },
-    context?: ServiceContext
+    context?: ServiceContext,
+    offerLetterFile?: { buffer: Buffer; mimetype: string; originalname?: string }
   ) {
     const profile = await prisma.recruiterProfile.findUnique({ where: { userId } })
     if (!profile) {
@@ -1330,12 +1304,32 @@ export class RecruiterService {
       throw new Error(`Cannot release an offer from state: ${currentStatus}.`)
     }
 
+    // Attaching an offer letter is optional -- a recruiter can still
+    // release an offer with just the free-text details, same as before this
+    // was added. Old letter (if replacing one on a re-release) is deleted
+    // first via replaceInCloudinary, same pattern as resume replacement.
+    let offerLetterUrl = app.offerLetterUrl
+    let offerLetterPublicId = app.offerLetterPublicId
+    if (offerLetterFile) {
+      const uploadResult = await replaceInCloudinary(
+        app.offerLetterPublicId,
+        offerLetterFile.buffer,
+        "jfw/offer-letters",
+        `${applicationId}_offer_${Date.now()}`,
+        true
+      )
+      offerLetterUrl = uploadResult.secureUrl
+      offerLetterPublicId = uploadResult.publicId
+    }
+
     const updated = await prisma.application.update({
       where: { id: applicationId },
       data: {
         status: ApplicationStatus.OfferReleased,
         offerDetails: data.offerDetails,
         offerReleasedAt: new Date(),
+        offerLetterUrl,
+        offerLetterPublicId,
         history: {
           create: {
             status: ApplicationStatus.OfferReleased,
@@ -1350,8 +1344,12 @@ export class RecruiterService {
       applicationId,
       candidateId: app.candidateId,
       candidateUserId: app.candidate.userId,
+      // Needed so the admin-facing notification (notification.listener.ts)
+      // can name the candidate, same as the InterviewScheduled event already
+      // does -- without this it falls back to a generic "A candidate" string.
+      candidateName: app.candidate.fullName || app.candidate.user.email,
       jobId: app.jobId,
-      // CONFIRMED BUG (fixed here): jobTitle was never included in this
+      // jobTitle was never included in this
       // payload, so the candidate notification below fell back to literally
       // printing the job's raw UUID ("...offer for job ID 3f9a1c2e-...").
       jobTitle: app.job.title,
@@ -1517,9 +1515,9 @@ export class RecruiterService {
   }
 
   // ==========================================
-  // COMPANY PROFILE: OFFICE PHOTO GALLERY (Part 5) -- appended-only Json
+  // COMPANY PROFILE: OFFICE PHOTO GALLERY -- appended-only Json
   // array, same versioned/never-overwritten shape used for verification and
-  // perk documents (Part 13), so re-uploads never silently destroy history.
+  // perk documents , so re-uploads never silently destroy history.
   // Deletion is still supported (a recruiter may want to remove an outdated
   // photo), but it's an explicit action distinct from the upload-always-appends
   // behavior.
@@ -1604,7 +1602,7 @@ export class RecruiterService {
   }
 
   // ==========================================
-  // COMPANY PROFILE: WORKPLACE POLICIES (Part 5) -- full-array replace
+  // COMPANY PROFILE: WORKPLACE POLICIES -- full-array replace
   // (unlike the gallery, which appends). Policies are short text statements
   // the recruiter authors and edits freely, so there's no "history" to lose
   // by overwriting -- an edit here is a genuine edit, not a resubmission.

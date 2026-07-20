@@ -379,7 +379,7 @@ export class CandidateService {
       throw new Error("Candidate profile not found")
     }
 
-    // CONFIRMED BUG (fixed here): this never queried job.recruiter at all,
+    // this never queried job.recruiter at all,
     // so the candidate Applications page's "Assigned Recruiter" card always
     // fell back to "Not Assigned" regardless of whether the job actually had
     // one -- see jobsApi.ts's mapApiApplication on the frontend, which had
@@ -568,16 +568,9 @@ export class CandidateService {
     industry: { select: { name: true } },
   } as const
 
-  // CONFIRMED BUG (fixed here): there was no single-job detail endpoint at
-  // all -- the frontend's getJobById() faked one by fetching the paginated
-  // list (GET /jobs?limit=200) and finding a client-side match, which is
-  // exactly the "summary DTO reused where full detail is required" pattern.
-  // That list query never included job.recruiter or job.skills, so the Job
-  // Details page could never show them no matter what the frontend did with
-  // the response. This is a real, separate query with the full include set
-  // Job Details actually needs: recruiter, skills, and (when a candidate is
-  // viewing their own session) this candidate's application/bookmark state
-  // for that specific job.
+  // Real single-job query (recruiter, skills, and this candidate's
+  // application/bookmark state) -- the list endpoint's summary DTO doesn't
+  // include recruiter/skills, so Job Details can't reuse it.
   async getJobById(jobId: string, userId?: string) {
     const job = await prisma.job.findFirst({
       where: { id: jobId, status: JobStatus.approved, visibility: "visible" },

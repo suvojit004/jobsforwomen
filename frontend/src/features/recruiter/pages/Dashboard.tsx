@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react"
+import { toast } from "sonner"
 import { Link, useNavigate } from "react-router-dom"
 import { RecruiterApi } from "../services/recruiterApi"
 import {
@@ -52,7 +53,7 @@ interface RecentApplicant {
   avatarLetters: string
 }
 
-// Accessible status colors (Part 17) -- consistent with the palette used on
+// Accessible status colors -- consistent with the palette used on
 // the Perks and Approval Requests pages: Pending Blue, Approved Green,
 // Rejected Red/Pink, More Info Purple/Indigo.
 function verificationStatusStyle(status?: string) {
@@ -138,8 +139,9 @@ export function Dashboard() {
           // `company` field before this fix, so this branch always ran).
           setCompany(null)
         }
-      } catch (err) {
+      } catch (err: any) {
         console.error("Failed to load recruiter dashboard", err)
+        toast.error(err?.message || "Failed to load dashboard data.")
       } finally {
         setIsLoading(false)
       }
@@ -264,7 +266,7 @@ export function Dashboard() {
         </p>
       </div>
 
-      {/* Approval & Profile Status Card (Part 9) -- surfaces data the
+      {/* Approval & Profile Status Card -- surfaces data the
           backend has always computed (profileCompletion, verificationStatus,
           perkSummary, unread notifications count) but which the dashboard
           never actually rendered anywhere. */}

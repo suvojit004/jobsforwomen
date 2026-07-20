@@ -71,11 +71,11 @@ export function MyApplications({ applications = [] }: MyApplicationsProps) {
       <DashboardCard className="overflow-hidden">
         {applications.length > 0 ? (
           <>
-            <div className="flex gap-5 border-b border-slate-200 px-4 py-3 text-xs font-extrabold text-slate-500 dark:border-slate-800 dark:text-slate-400">
-              <span className="text-[#6B2C91] dark:text-pink-200">All ({counts.all})</span>
-              <span>Applied ({counts.applied})</span>
-              <span>Interviewing ({counts.interviewing})</span>
-              <span>Closed ({counts.closed})</span>
+            <div className="flex gap-5 overflow-x-auto border-b border-slate-200 px-4 py-3 text-xs font-extrabold text-slate-500 dark:border-slate-800 dark:text-slate-400">
+              <span className="shrink-0 text-[#6B2C91] dark:text-pink-200">All ({counts.all})</span>
+              <span className="shrink-0">Applied ({counts.applied})</span>
+              <span className="shrink-0">Interviewing ({counts.interviewing})</span>
+              <span className="shrink-0">Closed ({counts.closed})</span>
             </div>
             <Table>
               <TableHeader>
@@ -122,8 +122,7 @@ export function MyApplications({ applications = [] }: MyApplicationsProps) {
                     )}
                     {tableMeta.hasRecruiter && (
                       <TableCell className="text-xs font-semibold text-slate-600 dark:text-slate-300">
-                        {/* CONFIRMED BUG (fixed here, React error #31 in
-                            production): application.recruiter is a
+                        {/* application.recruiter is a
                             { name, jobTitle, email } RecruiterSummary object
                             (see jobsApi.ts's mapApiApplication), not a plain
                             string -- this was rendering the whole object

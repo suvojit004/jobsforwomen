@@ -16,20 +16,11 @@ if (import.meta.env.PROD && !import.meta.env.VITE_API_URL) {
   console.error("❌ CRITICAL: The VITE_API_URL environment variable is missing from the production build configuration. Please specify the Render API endpoint.");
 }
 
-// Access tokens are short-lived (15m, see backend JWT_ACCESS_EXPIRY). Without
-// this, every request made after the token expires fails with a bare 401 and
-// the user has to manually reload the page to get a new one (which works only
-// because AuthContext re-runs refreshSession() on mount).
-//
-// Single-flight refresh: `refreshInFlight` is the one in-progress refresh
-// promise, shared by every concurrent caller. Only the *first* 401 actually
-// fires a `POST /auth/refresh`; every other request that 401s while that's
-// pending awaits the same promise (see `if (refreshInFlight) return
-// refreshInFlight` below) instead of firing its own redundant refresh, and
-// each caller then retries its own original request exactly once
-// (`_isRetry` guards against a second retry, and `/api/v1/auth/refresh`
-// itself is in AUTH_ENDPOINTS_NO_RETRY so it can never recursively trigger
-// another refresh attempt on its own failure).
+// Single-flight token refresh: `refreshInFlight` is the one in-progress
+// refresh promise, shared by every concurrent caller so only the first 401
+// fires a real `POST /auth/refresh`; everyone else awaits the same promise
+// and then retries their own request exactly once (`_isRetry` guards
+// against a second retry).
 let refreshInFlight: Promise<boolean> | null = null
 
 // Guards against dispatching the "session expired" event more than once per
@@ -54,11 +45,7 @@ async function tryRefreshToken(baseURL: string): Promise<boolean> {
       const token = data?.data?.accessToken
       if (!token) return false
       localStorage.setItem("jwt_token", token)
-      // it connected with and gets disconnected by the server ("jwt
-      // expired") independently of the REST session having just recovered.
-      // Dynamic import avoids a hard import cycle between this generic API
-      // client and the socket client (which itself doesn't depend on this
-      // module, but keeps the two decoupled).
+      // Dynamic import avoids a hard import cycle with the socket client.
       try {
         const { updateSocketToken } = await import("./socket")
         updateSocketToken(token)
@@ -87,21 +74,11 @@ const AUTH_ENDPOINTS_NO_RETRY = [
 ]
 
 // Called exactly once per dead session, right after a refresh attempt has
-// genuinely failed (not on every bare 401 -- that's the distinction the
-// previous version of this file got wrong: its response interceptor
-// pattern-matched on `err.message.includes("401")` for *any* request and
-// hard-redirected via `window.location.href` from inside a generic API
-// client module, with no way for AuthContext to intervene, and no guard
-// against firing repeatedly for concurrent in-flight requests.
-//
-// This module has no router access and shouldn't try to get one -- it just
-// clears local auth state and tells the rest of the app the session is
-// gone. AuthContext listens for this event and clears its `user` state;
-// ProtectedRoute already declaratively redirects to /auth/login whenever
-// `isAuthenticated` is false, so navigation stays owned by React Router /
-// AuthContext instead of a raw `window.location` assignment that would
-// yank the user off *any* page (including public ones) on *any* failing
-// request.
+// genuinely failed. This module has no router access -- it just clears
+// local auth state and dispatches an event; AuthContext listens and clears
+// its `user` state, and ProtectedRoute redirects declaratively, so
+// navigation stays owned by React Router instead of a raw
+// `window.location` assignment.
 function handleSessionExpired() {
   if (sessionExpiredDispatched) return
   sessionExpiredDispatched = true
@@ -180,27 +157,31 @@ export const apiClient = {
       }
 
       if (!response.ok) {
-        // The backend (shared/utils/response.ts's sendError()) always sends
-        // a real JSON body -- {success:false, message: "...", errors: ...} --
-        // with a specific, actionable message per failure reason (wrong
-        // password vs unverified email vs suspended vs company-approval-gate
-        // messages, etc, all correctly mapped to the right status code by
-        // errorHandler.ts). This branch used to throw a generic
-        // `Error("HTTP error! Status: 401")` without ever reading that body,
-        // so every distinct backend error collapsed into the same
-        // meaningless status-code string by the time it reached a page's
-        // `catch (err) { toast.error(err.message) }` -- worse than a merely
-        // generic message, since it wasn't even human-readable. Parse the
-        // body (best-effort, since a non-JSON error page is still possible)
-        // and surface the real message.
+        // Parse the real error body (shared/utils/response.ts's sendError())
+        // best-effort, since a non-JSON error page is still possible.
         let data: any = null
         try {
           data = await response.json()
         } catch {
-          // Response body wasn't valid JSON (e.g. a proxy/gateway error page)
-          // -- fall back to the generic status-code message below.
+          // Not valid JSON -- fall back to the generic status-code message.
         }
-        const httpError: any = new Error(data?.message || `HTTP error! Status: ${response.status}`)
+
+        // errorHandler.ts's ZodError branch always sends a generic
+        // "Validation failed" top-level message, with the actual field
+        // reason only in `errors` (Zod's flattened fieldErrors). Surface the
+        // real field message here so every `toast.error(err.message)` call
+        // site gets it automatically.
+        let message = data?.message || `HTTP error! Status: ${response.status}`
+        if (data?.errors && typeof data.errors === "object" && !Array.isArray(data.errors)) {
+          const fieldMessages = Object.values(data.errors)
+            .flat()
+            .filter((m): m is string => typeof m === "string" && m.length > 0)
+          if (fieldMessages.length > 0) {
+            message = fieldMessages.join(" ")
+          }
+        }
+
+        const httpError: any = new Error(message)
         httpError.status = response.status
         httpError.endpoint = endpoint
         httpError.errors = data?.errors
@@ -256,17 +237,10 @@ apiClient.interceptRequest((config) => {
   return config
 })
 
-// 2. Session-expiry handling now happens precisely where the refresh
-// actually fails (see `handleSessionExpired()` call inside `request()`
-// above), not here. This used to be a generic response interceptor that
-// pattern-matched `err.message.includes("401")` for *any* request and
-// hard-redirected via `window.location.href = "/auth/login"` directly --
-// which fired repeatedly for every concurrent failing request, and bypassed
-// AuthContext/React Router entirely (a raw `window.location` assignment
-// does a full page reload, and has no way to respect the "user was on a
-// public page" exception AuthContext already knows about via
-// `isAuthenticated`). Kept as a no-op passthrough so any interceptors
-// registered elsewhere in the future still get a place to plug in.
+// Session-expiry handling happens precisely where the refresh actually
+// fails (`handleSessionExpired()` inside `request()` above), not here.
+// Kept as a no-op passthrough so future interceptors have a place to plug
+// in without a raw `window.location` redirect bypassing React Router.
 apiClient.interceptResponse((res) => res)
 
 export default apiClient

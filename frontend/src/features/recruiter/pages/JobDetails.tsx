@@ -46,20 +46,10 @@ interface JobDetail {
   postedOn: string
 }
 
-// Backend job statuses map to a simplified display status.
-//
-// CONFIRMED PRODUCTION BUG (fixed here): this used to collapse
-// "pending_approval" and "flagged" into the same generic "Closed" bucket as
-// ManageJobs.tsx does, but -- unlike ManageJobs.tsx -- this page never
-// gated the Pause/Activate toggle button on displayStatus, so it always
-// rendered "Activate Posting" for a job in any non-Active/non-Paused state.
-// Clicking it called the "resume" lifecycle action, which the backend
-// previously applied unconditionally -- silently marking an unreviewed
-// (pending_approval) or admin-rejected (flagged) job as "approved" and
-// bypassing moderation entirely. The backend now rejects that transition
-// (recruiter.service.ts lifecycleJob), but the button here also needs to
-// stop offering an action that can never legitimately succeed for those
-// states, and needs to say what's actually going on instead of "Closed".
+// Backend job statuses map to a simplified display status. Distinguishes
+// "Pending Approval"/"Rejected" from a generic "Closed" so the
+// Pause/Activate button can be hidden for states where "resume" can never
+// legitimately succeed (recruiter.service.ts's lifecycleJob rejects it).
 function toDisplayStatus(status: string): "Active" | "Paused" | "Pending Approval" | "Rejected" | "Closed" {
   if (status === "approved") return "Active"
   if (status === "paused") return "Paused"

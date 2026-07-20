@@ -353,7 +353,7 @@ export function initNotificationListener() {
   })
 
   // Recruiter resubmission via the public /company-verification/:token page
-  // (Part 3). Unlike registration/approval, this is NOT communicated to the
+  // . Unlike registration/approval, this is NOT communicated to the
   // recruiter by email (they're the one who just acted) -- it's an
   // admin-facing signal only: audit trail + realtime dashboard notification,
   // matching Part 11's explicit "Company Resubmission" admin-notification
@@ -386,7 +386,7 @@ export function initNotificationListener() {
 
   // Recruiter uploaded a document to the public company-verification page
   // (Part 3/11/18) -- admin-facing realtime signal, distinct from a full
-  // resubmission (CompanyVerificationResubmitted). Confirmed gap: this event
+  // resubmission (CompanyVerificationResubmitted). this event
   // never fired at all before, so an admin had no way to know a requested
   // document had arrived unless the recruiter also clicked "Resubmit".
   EventBus.subscribe("CompanyDocumentUploaded", async (payload: any) => {
@@ -416,7 +416,7 @@ export function initNotificationListener() {
     }
   })
 
-  // Recruiter uploaded a document against a perk claim (Part 11/18) --
+  // Recruiter uploaded a document against a perk claim --
   // admin-facing realtime signal, distinct from submitting/resubmitting the
   // perk claim itself (PerkSubmitted). Same confirmed-gap rationale as
   // CompanyDocumentUploaded above.
@@ -469,7 +469,7 @@ export function initNotificationListener() {
     }
   })
 
-  // Perk request reviewed (Parts 6/7) -- recruiter-facing side. Unlike
+  // Perk request reviewed -- recruiter-facing side. Unlike
   // company registration (email-only), perk decisions are communicated via
   // BOTH a dashboard notification (here) AND an email
   // (email.listener.ts's PerkReviewed subscriber).
@@ -609,7 +609,7 @@ export function initNotificationListener() {
     await createAndEmitNotification({
       recipientId: payload.candidateUserId,
       title: "Job Offer Released!",
-      // CONFIRMED BUG (fixed here): payload.jobTitle didn't exist until the
+      // payload.jobTitle didn't exist until the
       // recruiter.service.ts fix above, so this always printed the raw job
       // UUID instead of a readable role name.
       message: payload.jobTitle
@@ -622,6 +622,17 @@ export function initNotificationListener() {
       actionUrl: "/candidate/applications",
     })
 
+    // Admins need lifecycle visibility here too, same as InterviewScheduled
+    // above -- previously this event only ever notified the candidate, so an
+    // offer release never showed up anywhere in the admin app.
+    await notifyActiveAdmins({
+      title: "Offer Released",
+      message: `Offer released: ${payload.candidateName || "A candidate"} for ${payload.jobTitle || "a job posting"}.`,
+      category: "Application",
+      actionUrl: "/admin/job-moderation",
+      dedupeKeyPrefix: `offer-released-admin:${payload.applicationId}`,
+    })
+
     EventBus.publish("AuditCreated", {
       ...payload.context,
       category: "RECRUITER",
@@ -631,7 +642,7 @@ export function initNotificationListener() {
     })
   })
 
-  // 13b. Generic Application Status Change Notifications (Issue 3 fix) --
+  // 13b. Generic Application Status Change Notifications --
   // Reviewed/Shortlisted/Hired/Rejected all flow through
   // RecruiterService.progressApplicant(), which previously only published
   // "AuditCreated". This is the missing candidate-facing half: a DB
@@ -856,25 +867,12 @@ function locationsMatch(jobLocation?: string | null, candidateLocation?: string 
 // admin click.
 const MAX_MATCHED_CANDIDATES = 100
 
-// Candidate matching rule (documented per the two very different kinds of
-// stored data this joins against):
-//
-// 1. Skill match -- reliable. Job.skills and CandidateProfile.skills are
-//    both normalized through the same shared `Skill` entity (upserted by
-//    name in recruiter.service.ts's postJob and in the candidate profile
-//    editor), so this is an exact id-based join with no fuzzy logic needed.
-//    A candidate matches if they have ANY skill the job lists.
-//
-// 2. Location match -- best-effort. See `locationsMatch` above for the
-//    exact rule and its limitations. A candidate matches if their profile
-//    `location` OR any entry in `preferredLocations` case-insensitively
-//    contains (or is contained by) the job's location string.
-//
-// Candidates in either group are merged into a single deduplicated set (a
-// candidate who matches on both skill AND location is only notified once).
-// Only users with UserStatus "Active" are considered -- PendingVerification,
-// PendingApproval, Rejected, Suspended, and Blocked accounts are excluded,
-// so a suspended candidate never gets paged about a job they can't apply to.
+// Matches candidates on either: (1) skill -- exact id-based join, since
+// Job.skills and CandidateProfile.skills share the same normalized `Skill`
+// entity; or (2) location -- best-effort substring match, see
+// `locationsMatch`. Results are deduplicated (matching both counts once).
+// Only "Active" users are considered, so a suspended candidate never gets
+// notified about a job they can't apply to.
 async function findMatchedCandidateUserIds(jobId: string, jobLocation?: string | null): Promise<string[]> {
   const matchedUserIds = new Set<string>()
 

@@ -168,7 +168,7 @@ export function PersonalDetailsForm({
                 onChange={(e) => onChange({ phone: e.target.value })}
                 className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6B2C91]/30 dark:border-slate-800 dark:bg-slate-900"
               />
-              {/* Part 16: phone previously had no validation at all -- any
+              {/* phone previously had no validation at all -- any
                   string persisted as-is. This doesn't block typing (the
                   parent owns save/submit), it just flags an invalid-looking
                   value inline before the user hits Save. */}

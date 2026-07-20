@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react"
+import { toast } from "sonner"
 import {
   Search,
   AlertTriangle,
@@ -15,7 +16,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { DashboardCard } from "@/components/shared/DashboardCard"
 import { AdminApi } from "../services/adminApi"
-// Issue 5 fix: reuse the exact same Job Details layout the candidate side
+// reuse the exact same Job Details layout the candidate side
 // uses (JobDetailContent, in "admin" variant) instead of duplicating it --
 // this page previously had no way to open a job at all, just the summary
 // table columns below.
@@ -90,8 +91,9 @@ export function JobModeration() {
           createdAt: h.createdAt,
         })),
       })))
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to load jobs list:", err)
+      toast.error(err?.message || "Failed to load jobs.")
     } finally {
       setLoading(false)
     }
@@ -110,8 +112,9 @@ export function JobModeration() {
       const nextAction = jobObj?.visibility === "visible" ? "hide" : "unhide"
       await AdminApi.moderateJob(jobId, nextAction)
       loadJobs()
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to toggle job visibility", err)
+      toast.error(err?.message || "Failed to update job visibility.")
     }
   }
 
@@ -119,8 +122,9 @@ export function JobModeration() {
     try {
       await AdminApi.moderateJob(jobId, "approve")
       loadJobs()
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to approve job", err)
+      toast.error(err?.message || "Failed to approve job.")
     }
   }
 
@@ -136,8 +140,9 @@ export function JobModeration() {
       await AdminApi.moderateJob(rejectTarget.id, "reject", rejectReason.trim())
       setRejectTarget(null)
       loadJobs()
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to reject job", err)
+      toast.error(err?.message || "Failed to reject job.")
     } finally {
       setRejectSubmitting(false)
     }
@@ -153,8 +158,9 @@ export function JobModeration() {
         // left it fully intact in the database, just flagged and hidden.
         await AdminApi.moderateJob(jobId, "delete", "Administrative deletion")
         loadJobs()
-      } catch (err) {
+      } catch (err: any) {
         console.error("Failed to delete job", err)
+        toast.error(err?.message || "Failed to delete job.")
       }
     }
   }
@@ -241,7 +247,7 @@ export function JobModeration() {
       header: "Actions",
       className: "text-right",
       cell: (row) => (
-        // Part 15: flex-wrap keeps up to 4 action buttons from forcing this
+        // flex-wrap keeps up to 4 action buttons from forcing this
         // table into horizontal-scroll mode on mobile.
         <div className="flex flex-wrap justify-end gap-1.5">
           {/* Issue 5: the only way to review a posting before it existed at

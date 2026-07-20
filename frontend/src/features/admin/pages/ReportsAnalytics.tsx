@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react"
+import { toast } from "sonner"
 import {
   Download,
   LineChart,
@@ -24,7 +25,7 @@ export function ReportsAnalytics() {
   const [downloading, setDownloading] = useState<string | null>(null)
   const [exportError, setExportError] = useState("")
 
-  // CONFIRMED BUG (fixed here): this chart used to render a hardcoded
+  // this chart used to render a hardcoded
   // 6-entry array (Jan-Jun with fixed numbers, never changing regardless of
   // real platform activity). It now loads GET /api/v1/admins/reports,
   // which computes a real last-6-months Applications-vs-Hired trend from
@@ -39,8 +40,9 @@ export function ReportsAnalytics() {
         const data = await AdminApi.getReports()
         setMonthlyTrend(data?.monthlyTrend || [])
         setInterviewRate(typeof data?.applicationToInterviewRate === "number" ? data.applicationToInterviewRate : null)
-      } catch (err) {
+      } catch (err: any) {
         console.error("Failed to load report metrics", err)
+        toast.error(err?.message || "Failed to load report metrics.")
       } finally {
         setMetricsLoading(false)
       }
@@ -81,7 +83,7 @@ export function ReportsAnalytics() {
       a.click()
       a.remove()
       URL.revokeObjectURL(url)
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to generate report", err)
       setExportError(`Failed to generate "${fileName}". Please try again.`)
     } finally {
@@ -187,7 +189,7 @@ export function ReportsAnalytics() {
                 {interviewRate === null ? "—" : `${interviewRate}%`}
               </span>
             </div>
-            {/* CONFIRMED BUG (fixed here): "Average Resume Verification
+            {/* "Average Resume Verification
                 Duration", "Menstrual Leave Perks Checked", and "Returnee
                 Mentorship Ratio" used to be hardcoded literals
                 ("4.2 Hours", "82 Companies", "3.8:1") that never changed --

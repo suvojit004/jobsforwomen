@@ -14,6 +14,7 @@ import {
   X,
   Gift,
   MessageCircle,
+  Star,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { DashboardCard } from "@/components/shared/DashboardCard"
@@ -43,6 +44,7 @@ export function CandidatePreview() {
   // Offer release modal state (mirrors Applicants.tsx)
   const [showOfferModal, setShowOfferModal] = useState(false)
   const [offerDetailsText, setOfferDetailsText] = useState("")
+  const [offerLetterFile, setOfferLetterFile] = useState<File | null>(null)
   const [offerSubmitting, setOfferSubmitting] = useState(false)
 
   const load = useCallback(async () => {
@@ -88,9 +90,10 @@ export function CandidatePreview() {
     }
     try {
       setOfferSubmitting(true)
-      await RecruiterApi.releaseOffer(profile.id, offerDetailsText.trim())
+      await RecruiterApi.releaseOffer(profile.id, offerDetailsText.trim(), offerLetterFile || undefined)
       toast.success("Offer released and candidate notified.")
       setShowOfferModal(false)
+      setOfferLetterFile(null)
       load()
     } catch (err: any) {
       toast.error(err?.message || "Couldn't release the offer.")
@@ -107,7 +110,7 @@ export function CandidatePreview() {
     window.open(profile.resumeUrl, "_blank", "noopener,noreferrer")
   }
 
-  // CONFIRMED BUG (fixed here): the Messages page could only ever list
+  // the Messages page could only ever list
   // conversations that already existed -- there was no button anywhere
   // that could create the first one. This creates (or resumes) the
   // conversation tied to this application and hands off to the real
@@ -180,7 +183,7 @@ export function CandidatePreview() {
             </div>
           </div>
 
-          {/* Part 15: no flex-wrap meant these two buttons (with fairly
+          {/* no flex-wrap meant these two buttons (with fairly
               long labels like "No Resume Uploaded") could force this row,
               and the page, wider than a narrow mobile viewport. */}
           <div className="flex flex-wrap items-center gap-2 shrink-0">
@@ -341,6 +344,18 @@ export function CandidatePreview() {
               </Button>
 
               <Button
+                onClick={() => handleUpdateStatus("Shortlisted")}
+                variant="outline"
+                className={cn(
+                  "w-full h-9 font-bold text-xs justify-start gap-2 cursor-pointer",
+                  profile.status === "Shortlisted" && "bg-violet-50 text-[#6B2C91] border-violet-200 dark:bg-violet-950/20 dark:text-pink-100"
+                )}
+              >
+                <Star className="size-4 text-violet-500" />
+                Shortlist Candidate
+              </Button>
+
+              <Button
                 onClick={openScheduler}
                 variant="outline"
                 className={cn(
@@ -353,7 +368,7 @@ export function CandidatePreview() {
               </Button>
 
               <Button
-                onClick={() => setShowOfferModal(true)}
+                onClick={() => { setOfferDetailsText(""); setOfferLetterFile(null); setShowOfferModal(true) }}
                 variant="outline"
                 className={cn(
                   "w-full h-9 font-bold text-xs justify-start gap-2 cursor-pointer",
@@ -411,6 +426,17 @@ export function CandidatePreview() {
                   Offer Released
                 </p>
                 <p className="text-[10px] text-slate-500">{profile.offerDetails}</p>
+                {profile.offerLetterUrl && (
+                  <a
+                    href={profile.offerLetterUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-[10px] font-black text-[#6B2C91] dark:text-pink-300 hover:underline"
+                  >
+                    <FileText className="size-3" />
+                    View Offer Letter
+                  </a>
+                )}
               </div>
             )}
           </DashboardCard>
@@ -469,15 +495,30 @@ export function CandidatePreview() {
                 <X className="size-4" />
               </button>
             </div>
-            <div className="p-4">
-              <label className="text-[10px] font-black uppercase text-slate-400">Offer Details</label>
-              <textarea
-                value={offerDetailsText}
-                onChange={(e) => setOfferDetailsText(e.target.value)}
-                rows={4}
-                placeholder="e.g. ₹12 LPA, joining date 1st Aug, remote-first role"
-                className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6B2C91]/30 dark:border-slate-800 dark:bg-slate-950 dark:text-white"
-              />
+            <div className="p-4 space-y-3">
+              <div>
+                <label className="text-[10px] font-black uppercase text-slate-400">Offer Details <span className="text-red-500">*</span></label>
+                <textarea
+                  value={offerDetailsText}
+                  onChange={(e) => setOfferDetailsText(e.target.value)}
+                  rows={4}
+                  placeholder="e.g. ₹12 LPA, joining date 1st Aug, remote-first role"
+                  className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6B2C91]/30 dark:border-slate-800 dark:bg-slate-950 dark:text-white"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] font-black uppercase text-slate-400">Offer Letter (Optional)</label>
+                <input
+                  type="file"
+                  accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                  onChange={(e) => setOfferLetterFile(e.target.files?.[0] || null)}
+                  className="mt-1 block w-full text-[11px] font-semibold text-slate-500 file:mr-2 file:rounded-md file:border-0 file:bg-[#6B2C91]/10 file:px-2.5 file:py-1.5 file:text-[10px] file:font-black file:text-[#6B2C91] hover:file:bg-[#6B2C91]/20 dark:text-slate-400 dark:file:bg-pink-950/30 dark:file:text-pink-200"
+                />
+                {offerLetterFile && (
+                  <p className="mt-1 text-[10px] font-bold text-emerald-600 dark:text-emerald-400">{offerLetterFile.name}</p>
+                )}
+                <p className="mt-1 text-[10px] text-slate-400">PDF, DOC, or DOCX, up to 10MB. Attached automatically to the candidate's notification.</p>
+              </div>
             </div>
             <div className="flex justify-end gap-2 p-4 border-t border-slate-100 dark:border-slate-800">
               <Button variant="outline" size="sm" onClick={() => setShowOfferModal(false)} className="text-xs font-bold">

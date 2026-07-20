@@ -52,7 +52,7 @@ export function FileTypeIcon({ kind, className = "size-4" }: { kind: ReturnType<
   }
 }
 
-// Reusable multi-file drag & drop uploader (Issue 2). Deliberately generic
+// Reusable multi-file drag & drop uploader . Deliberately generic
 // (not perk-specific) -- accepts the same expanded document format set
 // (PDF/DOC/DOCX/XLS/XLSX/PPT/PPTX/PNG/JPG/JPEG/WEBP) that
 // upload.middleware.ts's perkDocumentFilter enforces server-side, and does

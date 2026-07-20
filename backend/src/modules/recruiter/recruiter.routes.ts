@@ -6,7 +6,7 @@ import {
   requireApprovedCompany,
   requireOwnership,
 } from "../rbac/rbac.middleware"
-import { uploadLogoMiddleware, uploadPerkDocumentMiddleware, uploadGalleryPhotoMiddleware } from "../../shared/middleware/upload.middleware"
+import { uploadLogoMiddleware, uploadPerkDocumentMiddleware, uploadGalleryPhotoMiddleware, uploadOfferLetterMiddleware } from "../../shared/middleware/upload.middleware"
 import { recruiterRateLimiter, uploadRateLimiter } from "../../shared/middleware/rateLimit.middleware"
 
 const router = Router()
@@ -28,7 +28,7 @@ router.post("/company/onboard", controller.onboardCompany)
 router.post("/company/logo", uploadRateLimiter, uploadLogoMiddleware, controller.uploadCompanyLogo)
 router.delete("/company/logo", controller.deleteCompanyLogo)
 
-// Company Profile expansion (Part 5) -- office photo gallery + workplace
+// Company Profile expansion -- office photo gallery + workplace
 // policies. Gated behind requireApprovedCompany like Perks, since this is
 // part of the post-approval Company Profile area, not the initial
 // onboarding wizard.
@@ -46,7 +46,7 @@ router.post("/perks/submit", requireApprovedCompany, controller.submitPerk)
 router.get("/perks", requireApprovedCompany, controller.getPerkRequests)
 router.post("/perks/:id/documents", requireApprovedCompany, uploadRateLimiter, uploadPerkDocumentMiddleware, controller.addPerkDocument)
 
-// Approval Requests tracker (Part 8) -- consolidated Company Registration
+// Approval Requests tracker -- consolidated Company Registration
 // status/history + Perk Requests overview
 router.get("/approvals", requireApprovedCompany, controller.getApprovalTracker)
 
@@ -68,7 +68,7 @@ router.delete("/jobs/:id", requireApprovedCompany, requireOwnership("Job"), cont
 router.get("/applications", requireApprovedCompany, controller.getCompanyApplications)
 router.put("/applications/:id/status", requireApprovedCompany, requireOwnership("Application"), controller.progressApplicant)
 router.post("/applications/:id/interview", requireApprovedCompany, requireOwnership("Application"), controller.scheduleInterview)
-router.post("/applications/:id/offer", requireApprovedCompany, requireOwnership("Application"), controller.releaseOffer)
+router.post("/applications/:id/offer", requireApprovedCompany, requireOwnership("Application"), uploadRateLimiter, uploadOfferLetterMiddleware, controller.releaseOffer)
 router.post("/applications/:id/conversation", requireApprovedCompany, requireOwnership("Application"), controller.startConversation)
 // Team management (Requires approved company)
 router.get("/team", requireApprovedCompany, controller.getTeam)

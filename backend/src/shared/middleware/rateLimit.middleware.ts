@@ -94,13 +94,10 @@ export function createRateLimiter(opts: RateLimiterOptions) {
         return next()
       } catch (err: any) {
         logger.error(`[RateLimit:${opts.keyPrefix}] Redis command failed: ${err.message}. Falling back to memory.`)
-        // Falls through to the in-memory tracker below -- CONFIRMED BUG
-        // (fixed here): the previous implementation ran this in-memory
-        // block unconditionally, even after a *successful* Redis check, so
-        // a request could pass the Redis-backed limit and still get
-        // rejected by an entirely separate, stricter in-memory shadow
-        // counter nobody intended to enforce. Now it only runs when Redis
-        // is unavailable or just failed.
+        // Falls through to the in-memory tracker below -- this only runs
+        // when Redis is unavailable or just failed, not after a successful
+        // Redis check, so a request can't be limited twice by two separate
+        // counters.
       }
     }
 

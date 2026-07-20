@@ -71,8 +71,7 @@ export class RecruiterController {
   }
 
   // ==========================================
-  // COMPANY PERK REQUESTS (Parts 6/7)
-  // ==========================================
+  // COMPANY PERK REQUESTS // ==========================================
 
   submitPerk = async (req: Request, res: Response) => {
     const validated = submitPerkSchema.parse(req.body)
@@ -228,7 +227,19 @@ export class RecruiterController {
       const validated = releaseOfferSchema.parse(req.body)
       const userId = req.user?.userId || ""
       const context = this.getContext(req)
-      const result = await this.service.releaseOffer(req.params.id as string, userId, validated, context)
+      // uploadOfferLetterMiddleware (recruiter.routes.ts) populates req.file
+      // only when the recruiter actually attached one -- optional, so
+      // releasing a text-only offer still works exactly as before.
+      const offerLetterFile = (req as any).file as
+        | { buffer: Buffer; mimetype: string; originalname?: string }
+        | undefined
+      const result = await this.service.releaseOffer(
+        req.params.id as string,
+        userId,
+        validated,
+        context,
+        offerLetterFile
+      )
       return sendSuccess(res, result, "Offer released successfully.")
     } catch (err: any) {
       if (err.message?.includes("state") || err.message?.includes("Cannot")) {
@@ -311,7 +322,7 @@ export class RecruiterController {
     return sendSuccess(res, result, "Conversation marked as read.")
   }
 
-  // CONFIRMED CRITICAL BUG (fixed here): mirrors candidate.controller.ts's
+  // mirrors candidate.controller.ts's
   // startConversation -- see ConversationService.getOrCreateForApplication.
   // Lets a recruiter open (or resume) a chat with the candidate who applied
   // to one of their jobs directly from the Applicants pipeline.
@@ -384,8 +395,7 @@ export class RecruiterController {
   }
 
   // ==========================================
-  // COMPANY PROFILE: OFFICE PHOTO GALLERY (Part 5)
-  // ==========================================
+  // COMPANY PROFILE: OFFICE PHOTO GALLERY // ==========================================
   uploadGalleryPhoto = async (req: Request, res: Response, next: any) => {
     try {
       const file = (req as any).file
@@ -457,8 +467,7 @@ export class RecruiterController {
   }
 
   // ==========================================
-  // COMPANY PROFILE: WORKPLACE POLICIES (Part 5)
-  // ==========================================
+  // COMPANY PROFILE: WORKPLACE POLICIES // ==========================================
   updatePolicies = async (req: Request, res: Response, next: any) => {
     try {
       const validated = updatePoliciesSchema.parse(req.body)

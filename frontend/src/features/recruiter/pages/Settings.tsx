@@ -22,7 +22,7 @@ const settingsSchema = z.object({
   name: z.string().min(2, "Name must be at least 2 characters."),
   role: z.string().min(2, "Job title/role must be at least 2 characters."),
   email: z.string().email("Please enter a valid email address."),
-  // Part 16: was length-only (`.min(8)`), so "aaaaaaaa" passed.
+  // was length-only (`.min(8)`), so "aaaaaaaa" passed.
   phone: z.string().regex(/^\+?[0-9]{10,14}$/, "Please enter a valid phone number (10-14 digits)."),
   notifyNewApp: z.boolean(),
   notifyInterview: z.boolean(),
@@ -142,7 +142,7 @@ export function Settings() {
           <div className="grid gap-4 sm:grid-cols-2">
             {/* Full Name */}
             <div className="space-y-1">
-              <label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500">Recruiter Name</label>
+              <label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500">Recruiter Name <span className="text-red-500">*</span></label>
               <div className="relative">
                 <User className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
                 <input
@@ -156,7 +156,7 @@ export function Settings() {
 
             {/* Job Title / Role */}
             <div className="space-y-1">
-              <label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500">Job Title / Role</label>
+              <label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500">Job Title / Role <span className="text-red-500">*</span></label>
               <div className="relative">
                 <Briefcase className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
                 <input
@@ -173,7 +173,7 @@ export function Settings() {
                 is intentionally disabled rather than silently accepted and
                 discarded like the other fields used to be. */}
             <div className="space-y-1">
-              <label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500">Corporate Email</label>
+              <label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500">Corporate Email <span className="text-red-500">*</span></label>
               <div className="relative">
                 <Mail className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
                 <input
@@ -188,7 +188,7 @@ export function Settings() {
 
             {/* Phone Number */}
             <div className="space-y-1">
-              <label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500">Phone Number</label>
+              <label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500">Phone Number <span className="text-red-500">*</span></label>
               <div className="relative">
                 <Phone className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
                 <input

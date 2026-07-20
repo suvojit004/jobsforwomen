@@ -1,20 +1,12 @@
 import prisma from "../database/db"
 import { logger } from "./logger"
 
-// CONFIRMED BUG (fixed here): the FeatureFlag table (chat_enabled,
-// email_automation, push_notifications, advanced_analytics,
-// experimental_sockets, mfa_enforced) was fully real and DB-persisted via
-// the Admin Feature Configs CRUD, but nothing in the backend ever *read*
-// a flag's value to actually gate behavior -- toggling "Messaging" or
-// "Email Automation" off in the Admin UI changed nothing about what the
-// API actually allowed. This is the single real enforcement chokepoint:
-// ConversationService (chat_enabled) and the BullMQ "email" queue
-// (email_automation) both call isFeatureEnabled() before doing real work.
+// Single real enforcement chokepoint for FeatureFlag rows: ConversationService
+// (chat_enabled) and the BullMQ "email" queue (email_automation) both call
+// isFeatureEnabled() before doing real work.
 //
-// A tiny in-memory TTL cache is used instead of a new Redis key namespace --
-// there are only 6 flag rows and they change rarely, so a short cache avoids
-// hitting Postgres on every message send without introducing new
-// infrastructure.
+// In-memory TTL cache instead of a new Redis namespace -- only 6 flag rows
+// that change rarely, so this avoids hitting Postgres on every check.
 const CACHE_TTL_MS = 15_000
 const cache = new Map<string, { value: boolean; expiresAt: number }>()
 

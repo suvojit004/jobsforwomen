@@ -23,7 +23,7 @@ export function RecruiterRegister() {
   const [location, setLocation] = useState("")
   const [industry, setIndustry] = useState("")
 
-  // Part 16: this form previously did length-only checks (password >= 8
+  // this form previously did length-only checks (password >= 8
   // chars, phone >= 10 chars -- so "aaaaaaaaaa" passed as a "phone number")
   // via toast-only feedback with no per-field indication of what was wrong.
   // Real format validation now runs inline, field-by-field.
@@ -130,7 +130,7 @@ export function RecruiterRegister() {
           <h3 className="text-xs font-black text-slate-700 dark:text-slate-300 uppercase tracking-widest border-b border-slate-100 dark:border-slate-800 pb-2">Recruiter Information</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <label htmlFor="name" className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Full Name</label>
+              <label htmlFor="name" className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Full Name <span className="text-red-500">*</span></label>
               <div className="relative">
                 <User className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
                 <Input
@@ -147,7 +147,7 @@ export function RecruiterRegister() {
             </div>
 
             <div className="space-y-1.5">
-              <label htmlFor="phone" className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Phone Number</label>
+              <label htmlFor="phone" className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Phone Number <span className="text-red-500">*</span></label>
               <div className="relative">
                 <Phone className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
                 <Input
@@ -170,7 +170,7 @@ export function RecruiterRegister() {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <label htmlFor="email" className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Business Email</label>
+              <label htmlFor="email" className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Business Email <span className="text-red-500">*</span></label>
               <div className="relative">
                 <Mail className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
                 <Input
@@ -191,7 +191,7 @@ export function RecruiterRegister() {
             </div>
 
             <div className="space-y-1.5">
-              <label htmlFor="password" className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Account Password</label>
+              <label htmlFor="password" className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Account Password <span className="text-red-500">*</span></label>
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
                 <Input
@@ -223,7 +223,7 @@ export function RecruiterRegister() {
           <h3 className="text-xs font-black text-slate-700 dark:text-slate-300 uppercase tracking-widest border-b border-slate-100 dark:border-slate-800 pb-2 pt-4">Company Details</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <label htmlFor="companyName" className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Company Name</label>
+              <label htmlFor="companyName" className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Company Name <span className="text-red-500">*</span></label>
               <div className="relative">
                 <Building className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
                 <Input
@@ -240,7 +240,7 @@ export function RecruiterRegister() {
             </div>
 
             <div className="space-y-1.5">
-              <label htmlFor="website" className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Website URL</label>
+              <label htmlFor="website" className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Website URL <span className="text-red-500">*</span></label>
               <div className="relative">
                 <Globe className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
                 <Input
@@ -263,7 +263,7 @@ export function RecruiterRegister() {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <label htmlFor="location" className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Location Headquarters</label>
+              <label htmlFor="location" className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Location Headquarters <span className="text-red-500">*</span></label>
               <div className="relative">
                 <MapPin className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
                 <Input
@@ -280,7 +280,7 @@ export function RecruiterRegister() {
             </div>
 
             <div className="space-y-1.5">
-              <label htmlFor="industry" className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Industry Verticals</label>
+              <label htmlFor="industry" className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Industry Verticals <span className="text-red-500">*</span></label>
               <div className="relative">
                 <Briefcase className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
                 <Input

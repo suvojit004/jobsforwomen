@@ -9,18 +9,12 @@ import prisma from "../database/db"
 
 export let io: Server
 
-// Final Implementation Pass, Part 6: tracks whether Socket.IO is actually
-// running with the Redis adapter attached (real cross-instance fanout) or
-// has fallen back to Socket.IO's default in-memory adapter. Exposed so
-// System Health can report the real state instead of assuming Redis is
-// wired up just because REDIS_URL is set.
-//  - "redis": adapter attached successfully -- events fan out across all
-//    server instances via Upstash Redis pub/sub.
-//  - "memory": intentionally not attached (test mode) -- single-process
-//    in-memory fanout only, which is fine for a Jest run.
-//  - "error": Redis was expected to back the adapter (non-test mode) but
-//    the client was unavailable or attaching failed -- production is
-//    silently running single-instance-only fanout.
+// Whether Socket.IO is running with the Redis adapter (real cross-instance
+// fanout) or has fallen back to the in-memory adapter. Exposed so System
+// Health reports the real state instead of assuming Redis is wired up just
+// because REDIS_URL is set. "redis" = attached; "memory" = test mode,
+// single-process only; "error" = Redis expected but unavailable/failed to
+// attach, so production is silently single-instance-only.
 export let socketAdapterStatus: "redis" | "memory" | "error" = "memory"
 
 // Observable performance metrics in-memory hook
@@ -70,32 +64,14 @@ export function initSocket(server: HttpServer) {
     },
   })
 
-  // Final Implementation Pass, Part 6: Socket.IO Redis adapter.
-  //
-  // CONFIRMED GAP (fixed here): Socket.IO defaults to an in-memory adapter,
-  // which only fans events out (io.of(...).to(room).emit(...), the personal
-  // user:{userId} room used by sendRealTimeNotification, typing/message:read
-  // broadcasts, etc.) to sockets connected to *this specific process*. The
-  // moment this app runs as more than one instance (Render autoscaling, or
-  // any multi-dyno/multi-pod deployment), a message sent by a user connected
-  // to instance A would never reach a recipient connected to instance B --
-  // every broadcast above would silently miss part of production traffic
-  // with no error, no log, just events that never arrive on the other side.
-  //
-  // Investigated compatibility before implementing: the existing `redis`
-  // client (shared/utils/redis.ts, ioredis, already pointed at Upstash via
-  // REDIS_URL for the permission cache and presence tracking) is exactly the
-  // client type @socket.io/redis-adapter expects -- it accepts a pub/sub
-  // pair of either ioredis or node-redis v4 clients. Upstash's Redis
-  // offering as configured here uses the `rediss://` TCP endpoint (distinct
-  // from their separate HTTP-only REST API), which implements the standard
-  // Redis wire protocol including PUBLISH/SUBSCRIBE/PSUBSCRIBE -- so there is
-  // no provider-side incompatibility blocking this. Result: IMPLEMENTED.
-  //
-  // Skipped in test mode: Jest's socket-related tests run against a bare
-  // in-process HTTP server with no real Redis connection available, and
-  // don't exercise cross-instance fanout, so forcing a live Redis
-  // subscription there would only add flakiness for no test value.
+  // Redis adapter for cross-instance fanout: without it, Socket.IO's default
+  // in-memory adapter only reaches sockets connected to this specific
+  // process, so a multi-instance deployment would silently drop broadcasts
+  // between users on different instances. Uses the existing ioredis client
+  // (shared/utils/redis.ts) -- Upstash's `rediss://` endpoint speaks the
+  // standard Redis wire protocol, so PUBLISH/SUBSCRIBE works as expected.
+  // Skipped in test mode since Jest runs a bare in-process server with no
+  // real Redis connection.
   if (env.NODE_ENV !== "test") {
     if (redis) {
       try {

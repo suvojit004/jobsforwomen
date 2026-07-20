@@ -41,7 +41,7 @@ function StatusBadge({ status }: { status: string }) {
     ? "bg-emerald-100/60 text-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-350"
     : status === "Suspended" || status === "Blocked"
     ? "bg-rose-100/70 text-rose-700 dark:bg-rose-950/30 dark:text-rose-350"
-    : "bg-amber-100/70 text-amber-700 dark:bg-amber-950/30 dark:text-amber-350"
+    : "bg-teal-100/70 text-teal-700 dark:bg-teal-950/30 dark:text-teal-300"
   return (
     <span className={`inline-flex items-center text-[10px] font-black px-2 py-0.5 rounded-full ${cls}`}>
       {status}
@@ -409,7 +409,7 @@ export function AdminManagement() {
             )}
             <div className="space-y-3">
               <div>
-                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Full Name</label>
+                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Full Name <span className="text-red-500">*</span></label>
                 <Input
                   value={createForm.fullName}
                   onChange={(e) => setCreateForm((f) => ({ ...f, fullName: e.target.value }))}
@@ -418,7 +418,7 @@ export function AdminManagement() {
                 />
               </div>
               <div>
-                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Email</label>
+                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Email <span className="text-red-500">*</span></label>
                 <Input
                   type="email"
                   value={createForm.email}
@@ -428,7 +428,7 @@ export function AdminManagement() {
                 />
               </div>
               <div>
-                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Initial Password</label>
+                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Initial Password <span className="text-red-500">*</span></label>
                 <Input
                   type="password"
                   value={createForm.password}
@@ -438,7 +438,7 @@ export function AdminManagement() {
                 />
               </div>
               <div>
-                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Roles</label>
+                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Roles <span className="text-red-500">*</span></label>
                 <div className="mt-1.5 flex flex-wrap gap-2">
                   {ADMIN_TIER_ROLES.map((r) => {
                     const checked = createForm.roleNames.includes(r)

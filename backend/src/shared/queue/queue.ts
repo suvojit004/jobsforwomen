@@ -17,7 +17,7 @@ export const workers: Record<string, Worker | any> = {}
 
 const queueNames = ["email", "notifications", "audit", "cleanup", "reports"]
 
-// Final Implementation Pass, Part 7: a real, separate BullMQ queue that
+// a real, separate BullMQ queue that
 // holds jobs which have exhausted all retry attempts. Deliberately never
 // given a Worker (see bottom of this file) -- it exists purely as a
 // durable, inspectable holding area for failed jobs, not something that
@@ -177,19 +177,12 @@ export async function getDeadLetterQueueStats(): Promise<{ pendingCount: number 
   return { pendingCount: mockDeadLetterJobs.length }
 }
 
-// CONFIRMED ENFORCEMENT (fixed here): the "email_automation" feature flag
-// was fully real and DB-persisted but nothing ever read it -- every
-// EmailListener subscriber called addJob("email", ...) unconditionally
-// regardless of the flag's value. This is the single chokepoint every
-// outbound email funnels through, so gating it here covers the whole
-// EventBus -> EmailListener -> BullMQ -> Resend chain without touching
-// each of the 9 individual listener subscriptions.
-//
-// Account-security transactional mail (email verification, password reset)
-// is intentionally exempt: the seeded flag description is "Automates
-// welcome and status updates mailing queues" -- an admin turning off
-// automated status-update email blasts must not also silently lock users
-// out of verifying their account or resetting a forgotten password.
+// Single chokepoint every outbound email funnels through, so gating
+// "email_automation" here covers the whole EventBus -> EmailListener ->
+// BullMQ -> Resend chain without touching each listener individually.
+// Account-security mail (verification, password reset) is exempt -- turning
+// off automated status-update blasts must not lock users out of their
+// accounts.
 const SECURITY_CRITICAL_EMAIL_JOBS = new Set(["sendWelcome", "sendPasswordReset"])
 
 export async function addJob(queueName: string, jobName: string, data: any) {
@@ -366,7 +359,7 @@ if (!isTest && redisConnection) {
       { connection: redisConnection as any }
     )
 
-    // Final Implementation Pass, Part 7: real dead-letter queue. Previously
+    // real dead-letter queue. Previously
     // this only wrote an AuditLog row labeled "QUEUE_JOB_FAILED_DLQ" -- there
     // was no actual DLQ (no queue, no table) anywhere to inspect, replay, or
     // even count; the label was aspirational, not real. This now also pushes

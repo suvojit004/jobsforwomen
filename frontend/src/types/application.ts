@@ -1,6 +1,7 @@
 export type ApplicationStatus =
   | "Applied"
   | "Under Review"
+  | "Shortlisted"
   | "Interview Scheduled"
   | "Offer Released"
   | "Selected"

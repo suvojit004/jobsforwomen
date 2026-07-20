@@ -80,7 +80,7 @@ export function ResetPassword() {
           <form className="space-y-5" onSubmit={handleSubmit}>
             <div className="space-y-4">
               <div className="space-y-1.5">
-                <label htmlFor="pass" className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">New Password</label>
+                <label htmlFor="pass" className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">New Password <span className="text-red-500">*</span></label>
                 <div className="relative">
                   <Lock className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
                   <Input
@@ -98,7 +98,7 @@ export function ResetPassword() {
               </div>
 
               <div className="space-y-1.5">
-                <label htmlFor="confirm" className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Confirm New Password</label>
+                <label htmlFor="confirm" className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Confirm New Password <span className="text-red-500">*</span></label>
                 <div className="relative">
                   <Lock className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
                   <Input

@@ -48,16 +48,11 @@ const FILE_SIGNATURES: Record<string, Buffer[]> = {
   "image/jpeg": [Buffer.from([0xff, 0xd8, 0xff])],
   "image/png": [Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])],
   "image/gif": [Buffer.from("GIF87a", "ascii"), Buffer.from("GIF89a", "ascii")],
-  // WEBP has no fixed leading byte signature of its own -- it's a RIFF
-  // container ("RIFF"[4-byte size]"WEBP"), verified by the dedicated
-  // RIFF/WEBP check below (which inspects bytes 0-3 AND 8-11). The array is
-  // deliberately empty so the generic `.some()` match below always fails and
-  // falls through to that dedicated check. This entry only needs to exist so
-  // the `FILE_SIGNATURES[declaredMimeType]` lookup guard doesn't skip
-  // validation for webp entirely -- previously there was no "image/webp" key
-  // here at all, so the dedicated RIFF/WEBP check further down was
-  // unreachable dead code and every declared-webp upload skipped structural
-  // validation completely.
+  // WEBP has no fixed leading-byte signature -- it's a RIFF container
+  // ("RIFF"[size]"WEBP"), verified by the dedicated check further down
+  // (bytes 0-3 and 8-11). Empty array here just ensures the
+  // FILE_SIGNATURES[declaredMimeType] lookup guard doesn't skip webp
+  // entirely and fall through to that check.
   "image/webp": [],
   // application/msword (legacy .doc) uses the OLE2/CFB container signature
   "application/msword": [OLE2_SIGNATURE],
@@ -72,17 +67,11 @@ const FILE_SIGNATURES: Record<string, Buffer[]> = {
 }
 
 /**
- * File security checkpoint.
- *
- * HONEST SCOPE: this function performs real, local structural validation --
+ * File security checkpoint. Performs local structural validation only:
  * empty-buffer rejection and a magic-byte signature check confirming the
- * uploaded bytes actually match the declared MIME type (catching the common
- * "renamed .exe as .pdf" class of spoofing). It does NOT perform genuine
- * malware/virus scanning (content-level threat detection, e.g. ClamAV or
- * VirusTotal). That is an EXTERNAL DEPENDENCY: no such scanning
- * infrastructure is wired into this environment, no credentials exist for
- * one, and this function must never report a file "clean" in the sense of
- * "scanned for malware" -- only "structurally consistent with its declared type."
+ * uploaded bytes match the declared MIME type (catches "renamed .exe as
+ * .pdf" spoofing). Does NOT perform real malware/virus scanning -- no
+ * ClamAV/VirusTotal-style scanning infrastructure is wired in.
  */
 export async function scanFileForVirus(fileBuffer: Buffer, declaredMimeType?: string): Promise<boolean> {
   if (!fileBuffer || fileBuffer.length === 0) {
@@ -131,18 +120,10 @@ export async function uploadToCloudinary(
   const maxAttempts = 3
   let delay = 1000 // starts with 1s sleep
 
-  // Root cause of the "corrupted"/unopenable downloads reported for
-  // raw-resource documents (perk proof, company verification docs): the
-  // Cloudinary public_id passed in by every caller is a synthetic name
-  // (`${userId}_${category}_${Date.now()}`) with no file extension, and
-  // nothing told Cloudinary what format to store/deliver it as. A raw asset
-  // delivered with no extension comes back as generic
-  // application/octet-stream with no filename hint, so browsers can't
-  // inline-preview it (PDF/image) and, on download, the file is saved
-  // without a usable extension -- indistinguishable from "corrupted" to a
-  // user even though the underlying bytes are untouched. Passing the real
-  // extension through as Cloudinary's `format` option makes the delivery URL
-  // and Content-Type correct.
+  // Without a `format` hint, raw assets (public_id has no extension) come
+  // back as generic application/octet-stream -- browsers can't inline-preview
+  // them and downloads save without a usable extension, looking "corrupted"
+  // even though the bytes are fine.
   const extension = isPrivate ? extractExtension(originalFileName) : null
 
   while (attempts < maxAttempts) {

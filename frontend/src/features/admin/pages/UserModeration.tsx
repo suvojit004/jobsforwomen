@@ -140,8 +140,9 @@ export function UserModeration() {
           status: u.status === "Active" ? "Active" : "Inactive"
         }
       }))
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to load user databases:", err)
+      toast.error(err?.message || "Failed to load users.")
     } finally {
       setLoading(false)
     }
@@ -159,8 +160,9 @@ export function UserModeration() {
       const nextStatus = userObj?.status === "Active" ? "Suspended" : "Active"
       await AdminApi.updateUserStatus(userId, nextStatus)
       loadUsers()
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to toggle status", err)
+      toast.error(err?.message || "Failed to update user status.")
     }
   }
 
@@ -174,8 +176,9 @@ export function UserModeration() {
       const nextVerify = !recObj?.verified
       await AdminApi.verifyRecruiter(userId, nextVerify)
       loadUsers()
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to toggle verification", err)
+      toast.error(err?.message || "Failed to update verification status.")
     }
   }
 
@@ -571,7 +574,7 @@ export function UserModeration() {
 
       {/* Tabs navigation + Search */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex border-b border-slate-200 dark:border-slate-800">
+        <div className="flex overflow-x-auto border-b border-slate-200 dark:border-slate-800">
           {tabsConfig.map((tab) => (
             <button
               key={tab.key}
@@ -579,7 +582,7 @@ export function UserModeration() {
                 setActiveTab(tab.key as TabType)
                 setSearchQuery("")
               }}
-              className={`pb-2.5 px-4 text-xs font-black uppercase tracking-wider border-b-2 transition-all relative ${
+              className={`shrink-0 pb-2.5 px-4 text-xs font-black uppercase tracking-wider border-b-2 transition-all relative ${
                 activeTab === tab.key
                   ? "border-[#6B2C91] text-[#6B2C91] dark:border-pink-500 dark:text-pink-300"
                   : "border-transparent text-slate-400 hover:text-slate-650"
@@ -656,7 +659,7 @@ export function UserModeration() {
             <div className="w-full max-w-md rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl">
               <div className="flex items-center justify-between p-4 border-b border-slate-100 dark:border-slate-800">
                 <h3 className="text-sm font-black text-slate-900 dark:text-white flex items-center gap-1.5">
-                  <ShieldAlert className="size-4 text-amber-500" />
+                  <ShieldAlert className="size-4 text-teal-500" />
                   Can't Delete {jobConflict.name} Yet
                 </h3>
                 <button onClick={() => setJobConflict(null)} className="text-slate-400 hover:text-slate-700 dark:hover:text-white">

@@ -76,12 +76,12 @@ export class AdminService {
     // io instance (initSocket() ran during boot), not just an assumption.
     const socketStatus = socketIo ? "UP" : "DOWN"
 
-    // Final Implementation Pass, Part 7: real dead-letter queue depth.
+    // real dead-letter queue depth.
     // Previously there was no DLQ at all (see queue.ts) -- this reads the
     // actual pending count off the real BullMQ dead-letter queue.
     const deadLetterStats = await getDeadLetterQueueStats()
 
-    // CONFIRMED GAP (fixed here): the raw top-level GET /health endpoint
+    // the raw top-level GET /health endpoint
     // (app.ts) already exposed real BullMQ queue counts, real connected
     // Socket.IO counts, and real Cloudinary/email delivery metrics -- but
     // the Admin-facing System Health page (this endpoint) never surfaced
@@ -121,40 +121,19 @@ export class AdminService {
         averageLatencyMs: Math.round(cloudinaryMetrics.averageLatencyMs),
         retryCount: cloudinaryMetrics.retryCount,
       },
-      // Final Implementation Pass, Part 8: metric semantics.
-      //
-      // CONFIRMED GAP (fixed here): every numeric field above was presented
-      // to the frontend with no indication of what kind of number it is.
-      // That matters because most of them (queueMetrics, emailMetrics,
-      // cloudinaryMetrics -- all plain in-memory objects, see their
-      // respective modules) silently reset to zero on every server
-      // restart/redeploy. An admin glancing at "Failed Jobs: 0" right after
-      // a deploy could easily read that as "nothing has ever failed" when
-      // it actually means "nothing has failed *since this process booted a
-      // minute ago*". Explicitly classifying each field lets the frontend
-      // label them honestly instead of presenting all numbers as equally
-      // durable.
-      //
-      //   CURRENT_STATE            -- reflects live, queryable truth right
-      //                                now (a fresh check/read on every
-      //                                call); either isn't a counter at all,
-      //                                or (deadLetterPendingCount) is a real
-      //                                count against Redis-durable BullMQ
-      //                                state that survives a restart.
-      //   PROCESS_LIFETIME_COUNTER -- an in-memory counter that resets to 0
-      //                                on every server restart/redeploy; a
-      //                                real accumulation, but only since
-      //                                this process last started (see
-      //                                processStartedAt below), not an
-      //                                all-time total.
-      //   PERSISTENT_HISTORICAL_METRIC -- would be a running total backed by
-      //                                a database/persistent store that
-      //                                survives restarts. None of the
-      //                                current System Health numbers are
-      //                                backed this way -- this category
-      //                                exists in the classification so that
-      //                                gap is explicit rather than silently
-      //                                implied to already be covered.
+      // Metric semantics: queueMetrics/emailMetrics/cloudinaryMetrics are
+      // in-memory and reset to 0 on every restart/redeploy, so the frontend
+      // needs to know which category each field falls into rather than
+      // presenting all numbers as equally durable.
+      //   CURRENT_STATE            -- live, queryable truth (fresh read on
+      //                                every call), or a Redis-durable count
+      //                                that survives a restart.
+      //   PROCESS_LIFETIME_COUNTER -- in-memory counter that resets to 0 on
+      //                                restart; accumulates only since this
+      //                                process last started.
+      //   PERSISTENT_HISTORICAL_METRIC -- a running total backed by a
+      //                                database/persistent store. Nothing
+      //                                currently uses this category.
       metricSemantics: {
         currentState: [
           "database",
@@ -303,19 +282,10 @@ export class AdminService {
       return { day: key, Users: runningTotal }
     })
 
-    // NOTE: this used to call `await this.getSystemHealth()` here and embed
-    // the result as `systemHealthSummary` below. That method makes real,
-    // uncached network calls on every invocation (verifyEmailTransport()'s
-    // Resend config check, a live Cloudinary ping) with no timeout. If either of those hosts is
-    // slow or unreachable, the awaited call never settles, so this entire
-    // getDashboard() promise never resolves -- the Express response is never
-    // sent, and the frontend's Promise.all() for the dashboard hangs forever
-    // (its `finally` never runs because the awaited promise never settles).
-    // The frontend Dashboard page has never actually read
-    // `systemHealthSummary` from this response (confirmed: no reference to
-    // it anywhere in Dashboard.tsx), and there is now a dedicated real
-    // GET /api/v1/admins/health endpoint + admin System Health page for this
-    // data, so it's removed from the dashboard's critical path entirely.
+    // Deliberately not calling getSystemHealth() here: it makes uncached,
+    // untimed network calls (Resend, Cloudinary) that can hang this whole
+    // response if either is slow. The dashboard never reads that data
+    // anyway -- System Health has its own dedicated endpoint/page.
 
     const recentAudits = await prisma.auditLog.findMany({
       orderBy: { timestamp: "desc" },
@@ -405,15 +375,10 @@ export class AdminService {
       where.status = status
     }
 
-    // Issue 5 fix: this already returned every scalar Job column (full
-    // description/responsibilities/requirements/benefits etc. -- nothing
-    // was ever trimmed there), but never included `recruiter`, `skills`, or
-    // `history`, so admin's Job Approval view had no way to show who posted
-    // a job, its skill tags, or its moderation trail even though the table
-    // row itself carried the rest. Reuses the same safe recruiter-select
-    // (no passwordHash) as candidate.service.ts even though admin is
-    // trusted, purely so the shape matches what JobDetailContent.tsx
-    // (shared between both) expects.
+    // Includes recruiter/skills/history so Job Approval can show who posted
+    // a job, its tags, and moderation trail. Uses the same safe recruiter
+    // select (no passwordHash) as candidate.service.ts so the shape matches
+    // what the shared JobDetailContent.tsx expects.
     const jobs = await prisma.job.findMany({
       where,
       include: {
@@ -807,8 +772,7 @@ export class AdminService {
     // Invalidate cached user permissions from Redis cache
     await PermissionCacheManager.invalidateUser(targetUserId)
 
-    // CONFIRMED BUG (fixed here, found while verifying the candidate soft/hard
-    // delete flow): moving a user to any non-Active status ("soft delete" in
+    // moving a user to any non-Active status ("soft delete" in
     // the ticket's terminology -- Suspended/Blocked/Rejected) previously only
     // flipped the `status` column. Their existing refresh token and any
     // active sessions stayed live, so a currently-logged-in user wasn't
@@ -853,32 +817,17 @@ export class AdminService {
     return updatedUser
   }
 
-  // Permanent user deletion (User Moderation page). Relies on the same
-  // cascade-delete design already used by auth.service.ts's self-service
-  // deleteOwnAccount(): every relation a User owns in schema.prisma
-  // (CandidateProfile/RecruiterProfile and everything hanging off them --
-  // applications, saved jobs, notifications, sessions, refresh tokens,
-  // conversations) is declared `onDelete: Cascade`, so a single
-  // `prisma.user.delete()` genuinely removes all of it, not just the User
-  // row. The one thing Prisma's cascade can't reach is the actual resume
-  // file sitting in Cloudinary (only the DB pointer to it), so that's
-  // cleaned up explicitly first, best-effort, the same way
-  // deleteCompanyLogo() already does for company logos.
+  // Permanent user deletion. Every relation a User owns is `onDelete:
+  // Cascade` in schema.prisma, so `prisma.user.delete()` removes all of it.
+  // The one thing cascade can't reach is the resume file in Cloudinary
+  // (only the DB pointer), so that's cleaned up explicitly first.
   async deleteUser(
     adminId: string,
     targetUserId: string,
     context?: ServiceContext,
-    // CONFIRMED BUG (fixed here): Job.recruiterId -> RecruiterProfile is a
-    // required relation with no `onDelete: Cascade` (schema.prisma), which
-    // Postgres/Prisma defaults to RESTRICT -- a Job silently losing its
-    // owning recruiter on cascade would be a real data-integrity problem,
-    // not something safe to auto-cascade away. A blanket prisma.user.delete()
-    // on a recruiter who still owns jobs previously hit that RESTRICT
-    // constraint mid-cascade, which Prisma surfaces as an uncaught
-    // PrismaClientUnknownRequestError (500, no `.code`/`.meta`, so it skipped
-    // right past errorHandler.ts's P2002/P2025 branch) instead of a clean,
-    // actionable response. These two options let the caller resolve that
-    // ownership conflict before the delete is attempted at all.
+    // Job.recruiterId has no onDelete: Cascade (Postgres RESTRICT by
+    // default), so deleting a recruiter who still owns jobs must resolve
+    // that ownership conflict first via one of these options.
     options?: { archiveJobs?: boolean; transferToRecruiterId?: string },
     operatorRoles: string[] = []
   ) {
@@ -905,12 +854,9 @@ export class AdminService {
       throw new Error("Super Admin accounts cannot be deleted from this screen.")
     }
 
-    // Admin Management spec: deleting ANY administrator account (Admin,
-    // Moderator, Support Executive -- not just Super Admin, which is already
-    // unconditionally blocked above) requires the operator to be a Super
-    // Admin specifically. Candidates/recruiters aren't affected -- this
-    // endpoint is shared with the general User Moderation screen, where any
-    // Admin-tier operator may still delete candidate/recruiter accounts.
+    // Deleting any administrator account (not just Super Admin, blocked
+    // above) requires the operator to be a Super Admin. Candidate/recruiter
+    // deletes via this same shared endpoint are unaffected.
     const ADMIN_TIER = ["Admin", "Super Admin", "Moderator", "Support Executive"]
     if (targetRoleNames.some((r) => ADMIN_TIER.includes(r)) && !operatorRoles.includes("Super Admin")) {
       throw new Error("Only a Super Admin can delete another administrator's account.")
@@ -1312,15 +1258,9 @@ export class AdminService {
     await PermissionCacheManager.invalidateAll()
     invalidateFeatureFlagCache(flag.key)
 
-    // Previously this reused the same "FeatureFlagUpdated" event name that
-    // candidate.service.ts publishes for candidate settings changes. Both
-    // publishers used the same {userId, settings} shape, so the shared
-    // listener (which is hardcoded to log candidate settings updates) never
-    // errored -- it just silently mislabeled every admin feature-flag
-    // create/update as category "CANDIDATE" / action "UPDATE_SETTINGS" /
-    // entity "User" in the audit log. That's also why the admin Activity
-    // Logs page's "Feature Flags" filter tab always came back empty: no
-    // audit row was ever actually tagged as a feature-flag change.
+    // Distinct event name from candidate.service.ts's "FeatureFlagUpdated"
+    // -- reusing that one silently mislabeled admin flag changes as
+    // candidate settings updates in the audit log.
     EventBus.publish("AdminFeatureFlagUpdated", {
       adminId,
       flagId: flag.id,
@@ -1389,14 +1329,8 @@ export class AdminService {
   // ==========================================
   // REPORTS GENERATION
   // ==========================================
-  // CONFIRMED BUG (fixed here): the CSV export always produced the exact
-  // same 4-column summary row (candidate/recruiter/job totals) no matter
-  // which of the 4 report cards was clicked on the Reports & Analytics
-  // page -- "Candidates Directory", "Employers & Recruiters", and "Job
-  // Listings Audit" all promise a real per-record directory in their UI
-  // description, but `type` was only ever used to label the filename. This
-  // now generates a real row-per-record CSV for candidates/recruiters/jobs,
-  // and keeps the aggregate summary only for the "analytics" card.
+  // Generates a real row-per-record CSV for candidates/recruiters/jobs based
+  // on `type`; the aggregate summary is only used for the "analytics" card.
   private csvEscape(value: any): string {
     const str = value === null || value === undefined ? "" : String(value)
     if (str.includes(",") || str.includes("\"") || str.includes("\n")) {
@@ -1536,19 +1470,11 @@ export class AdminService {
   // ==========================================
   // AUDIT LOG INSPECTOR
   // ==========================================
-  // CONFIRMED BUG (fixed here, Final Implementation Pass Part 2): this
-  // already had real Prisma pagination (skip/take/count), which the prior
-  // audit pass didn't need to touch -- but it only supported exact-match
-  // `category`/`action`/`operatorEmail`/`entity` filters. The Activity Logs
-  // UI's five category tabs (User Management / Job Moderation / Corporate
-  // Perks / Feature Flags / Security Settings) were being re-derived from
-  // `entity`/`category` in the browser AFTER fetching a fixed page of up to
-  // 500 rows, and there was no free-text search or date-range filter at all
-  // server-side -- so every filter the UI offered only ever operated on
-  // whatever happened to be in that one fetched page, not the real table.
-  // `uiCategory` now performs that same tab-to-filter mapping once, here, so
-  // the frontend can ask for a tab directly and get a real, fully paginated
-  // Prisma query back for it.
+  // Real Prisma pagination plus free-text search and a date-range filter.
+  // `uiCategory` maps the Activity Logs page's five tabs (User Management /
+  // Job Moderation / Corporate Perks / Feature Flags / Security Settings)
+  // to real filters here, so the frontend gets a fully paginated query per
+  // tab instead of filtering a fixed fetched page client-side.
   async getAuditLogs(filters: {
     page: number
     limit: number
@@ -1881,8 +1807,7 @@ export class AdminService {
   }
 
   async verifyRecruiter(adminId: string, recruiterProfileId: string, verified: boolean, context?: ServiceContext) {
-    // CONFIRMED (investigated per the recruiter-delete-flow report): a bare
-    // .update() on a recruiterProfileId that no longer exists -- e.g. the
+    // A bare .update() on a recruiterProfileId that no longer exists -- e.g. the
     // admin's recruiter list was stale and that recruiter's account was
     // deleted in another tab/session in the meantime -- throws Prisma's
     // P2025, which errorHandler.ts already maps to a clean 404. This

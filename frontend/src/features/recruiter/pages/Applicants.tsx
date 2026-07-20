@@ -40,6 +40,7 @@ export function Applicants() {
   // Offer release modal state
   const [releasingRow, setReleasingRow] = useState<ApplicantRow | null>(null)
   const [offerDetailsText, setOfferDetailsText] = useState("")
+  const [offerLetterFile, setOfferLetterFile] = useState<File | null>(null)
   const [offerSubmitting, setOfferSubmitting] = useState(false)
 
   const load = useCallback(async () => {
@@ -69,6 +70,7 @@ export function Applicants() {
     }
     if (newStatus === "Offer Released") {
       setOfferDetailsText("")
+      setOfferLetterFile(null)
       setReleasingRow(row)
       return
     }
@@ -93,9 +95,10 @@ export function Applicants() {
     }
     try {
       setOfferSubmitting(true)
-      await RecruiterApi.releaseOffer(releasingRow.id, offerDetailsText.trim())
+      await RecruiterApi.releaseOffer(releasingRow.id, offerDetailsText.trim(), offerLetterFile || undefined)
       toast.success("Offer released and candidate notified.")
       setReleasingRow(null)
+      setOfferLetterFile(null)
       load()
     } catch (err: any) {
       toast.error(err?.message || "Couldn't release the offer.")
@@ -182,6 +185,7 @@ export function Applicants() {
             >
               <option value="Applied">Applied</option>
               <option value="Under Review">Under Review</option>
+              <option value="Shortlisted">Shortlisted</option>
               <option value="Interview Scheduled">Interview Scheduled</option>
               <option value="Offer Released">Offer Released</option>
               <option value="Selected">Selected</option>
@@ -199,6 +203,17 @@ export function Applicants() {
               <Gift className="size-2.5 shrink-0" />
               {row.offerDetails}
             </p>
+          )}
+          {row.offerLetterUrl && (
+            <a
+              href={row.offerLetterUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[9px] font-bold text-[#6B2C91] dark:text-pink-300 flex items-center gap-1 hover:underline"
+            >
+              <FileDown className="size-2.5 shrink-0" />
+              View Offer Letter
+            </a>
           )}
         </div>
       ),
@@ -291,7 +306,9 @@ export function Applicants() {
               <option value="All">All Statuses</option>
               <option value="Applied">Applied</option>
               <option value="Under Review">Under Review</option>
+              <option value="Shortlisted">Shortlisted</option>
               <option value="Interview Scheduled">Interview Scheduled</option>
+              <option value="Offer Released">Offer Released</option>
               <option value="Selected">Selected</option>
               <option value="Rejected">Rejected</option>
             </select>
@@ -347,15 +364,30 @@ export function Applicants() {
                 <X className="size-4" />
               </button>
             </div>
-            <div className="p-4">
-              <label className="text-[10px] font-black uppercase text-slate-400">Offer Details</label>
-              <textarea
-                value={offerDetailsText}
-                onChange={(e) => setOfferDetailsText(e.target.value)}
-                rows={4}
-                placeholder="e.g. ₹12 LPA, joining date 1st Aug, remote-first role"
-                className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6B2C91]/30 dark:border-slate-800 dark:bg-slate-950 dark:text-white"
-              />
+            <div className="p-4 space-y-3">
+              <div>
+                <label className="text-[10px] font-black uppercase text-slate-400">Offer Details <span className="text-red-500">*</span></label>
+                <textarea
+                  value={offerDetailsText}
+                  onChange={(e) => setOfferDetailsText(e.target.value)}
+                  rows={4}
+                  placeholder="e.g. ₹12 LPA, joining date 1st Aug, remote-first role"
+                  className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6B2C91]/30 dark:border-slate-800 dark:bg-slate-950 dark:text-white"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] font-black uppercase text-slate-400">Offer Letter (Optional)</label>
+                <input
+                  type="file"
+                  accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                  onChange={(e) => setOfferLetterFile(e.target.files?.[0] || null)}
+                  className="mt-1 block w-full text-[11px] font-semibold text-slate-500 file:mr-2 file:rounded-md file:border-0 file:bg-[#6B2C91]/10 file:px-2.5 file:py-1.5 file:text-[10px] file:font-black file:text-[#6B2C91] hover:file:bg-[#6B2C91]/20 dark:text-slate-400 dark:file:bg-pink-950/30 dark:file:text-pink-200"
+                />
+                {offerLetterFile && (
+                  <p className="mt-1 text-[10px] font-bold text-emerald-600 dark:text-emerald-400">{offerLetterFile.name}</p>
+                )}
+                <p className="mt-1 text-[10px] text-slate-400">PDF, DOC, or DOCX, up to 10MB. Attached automatically to the candidate's notification.</p>
+              </div>
             </div>
             <div className="flex justify-end gap-2 p-4 border-t border-slate-100 dark:border-slate-800">
               <Button variant="outline" size="sm" onClick={() => setReleasingRow(null)} className="text-xs font-bold">

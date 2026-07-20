@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react"
+import { toast } from "sonner"
 import { Link } from "react-router-dom"
 import {
   Building2,
@@ -83,8 +84,9 @@ export function ApprovalRequests() {
       if (!silent) setLoading(true)
       const data = await RecruiterApi.getApprovalTracker()
       setTracker(data || null)
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to load approval tracker", err)
+      toast.error(err?.message || "Failed to load approval requests.")
     } finally {
       if (!silent) setLoading(false)
     }
@@ -94,7 +96,7 @@ export function ApprovalRequests() {
     load()
   }, [])
 
-  // Part 18: live refresh when an admin reviews a perk claim (the only
+  // live refresh when an admin reviews a perk claim (the only
   // recruiter-facing realtime signal this tracker page can react to --
   // company registration outcomes are communicated by email only, per Part 3,
   // so there's no analogous dashboard notification to listen for there).

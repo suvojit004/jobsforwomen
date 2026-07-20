@@ -21,7 +21,7 @@ export interface VerificationParams {
   actionLabel?: string
 }
 
-// Perk approval workflow (Parts 6/7) -- deliberately separate from
+// Perk approval workflow -- deliberately separate from
 // VerificationParams (company registration). Per spec, perk communication
 // happens BOTH via dashboard notification AND email, unlike company
 // registration which is email-only.
@@ -84,7 +84,7 @@ export interface OfferReleasedParams {
 }
 
 // ==========================================================================
-// Part 19: shared branded shell + accessible status badge, so every
+// shared branded shell + accessible status badge, so every
 // transactional email looks like it comes from the same product instead of
 // each being a one-off bare <div> with no header, footer, or mobile
 // consideration. Previously every template here was a plain
@@ -251,7 +251,11 @@ export const EmailTemplates = {
         </div>` : ""}
         ${params.actionLink ? `
         ${ctaButton(params.actionLink, params.actionLabel || "Take Action")}
-        <p style="font-size:12px; color:#94A3B8;">This link expires in 7 days and can only be used once.</p>
+        <p style="font-size:12px; color:#94A3B8;">${
+          normalized === "approved"
+            ? "This takes you straight to the sign-in page -- no separate token or expiry."
+            : "This link expires in 7 days and can only be used once."
+        }</p>
         ` : ""}
       `,
     })

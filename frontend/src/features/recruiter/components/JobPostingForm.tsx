@@ -108,6 +108,27 @@ const jobSchema = z
         path: ["otherBenefitsText"],
       })
     }
+    // this schema only checked that a deadline
+    // string was present (min(5) chars), never that it was an actual future
+    // date -- so a backdated deadline passed client validation silently,
+    // then round-tripped to the server just to get rejected there (backend's
+    // recruiter.validator.ts already enforces this via futureDateSchema).
+    // Checking it here too means the recruiter sees the exact same "must be
+    // a future date" message instantly, right under the field, instead of
+    // only after a failed submit.
+    if (data.deadline && /^\d{2}\/\d{2}\/\d{4}$/.test(data.deadline)) {
+      const [day, month, year] = data.deadline.split("/").map(Number)
+      const targetDate = new Date(year, month - 1, day)
+      const today = new Date()
+      today.setHours(0, 0, 0, 0)
+      if (targetDate < today) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Application deadline must be a future date.",
+          path: ["deadline"],
+        })
+      }
+    }
   })
 
 type JobFormValues = z.infer<typeof jobSchema>
@@ -322,7 +343,7 @@ export function JobPostingForm({
             <div className="grid gap-4 sm:grid-cols-2">
               {/* Title */}
               <div className="space-y-1.5">
-                <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400">Job Title</label>
+                <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400">Job Title <span className="text-red-500">*</span></label>
                 <div className="relative">
                   <Briefcase className="absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-slate-400" />
                   <input
@@ -342,7 +363,7 @@ export function JobPostingForm({
 
               {/* Department */}
               <div className="space-y-1.5">
-                <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400">Department</label>
+                <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400">Department <span className="text-red-500">*</span></label>
                 <select
                   {...register("department")}
                   className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6B2C91]/30 dark:border-slate-800 dark:bg-slate-900 dark:text-white font-bold"
@@ -381,7 +402,7 @@ export function JobPostingForm({
 
               {/* Location */}
               <div className="space-y-1.5">
-                <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400">Location</label>
+                <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400">Location <span className="text-red-500">*</span></label>
                 <div className="relative">
                   <MapPin className="absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-slate-400" />
                   <input
@@ -401,7 +422,7 @@ export function JobPostingForm({
 
               {/* Offered Salary Range */}
               <div className="space-y-1.5">
-                <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400">Offered Salary Range</label>
+                <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400">Offered Salary Range <span className="text-red-500">*</span></label>
                 <div className="relative">
                   <IndianRupee className="absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-slate-400" />
                   <select
@@ -444,7 +465,7 @@ export function JobPostingForm({
 
               {/* Experience needed */}
               <div className="space-y-1.5">
-                <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400">Experience Needed</label>
+                <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400">Experience Needed <span className="text-red-500">*</span></label>
                 <select
                   {...register("experience")}
                   className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6B2C91]/30 dark:border-slate-800 dark:bg-slate-900 dark:text-white font-bold"
@@ -483,7 +504,7 @@ export function JobPostingForm({
 
               {/* Employment Type */}
               <div className="space-y-1.5">
-                <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400">Employment Type</label>
+                <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400">Employment Type <span className="text-red-500">*</span></label>
                 <select
                   {...register("type")}
                   className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6B2C91]/30 dark:border-slate-800 dark:bg-slate-900 dark:text-white font-bold"
@@ -501,7 +522,7 @@ export function JobPostingForm({
 
               {/* Work Mode */}
               <div className="space-y-1.5">
-                <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400">Work Mode</label>
+                <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400">Work Mode <span className="text-red-500">*</span></label>
                 <select
                   {...register("workMode")}
                   className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6B2C91]/30 dark:border-slate-800 dark:bg-slate-900 dark:text-white font-bold"
@@ -520,12 +541,13 @@ export function JobPostingForm({
 
               {/* Application Deadline */}
               <div className="space-y-1.5">
-                <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400">Application Deadline</label>
+                <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400">Application Deadline <span className="text-red-500">*</span></label>
                 <div className="relative">
                   <Calendar className="absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-slate-400 pointer-events-none" />
                   <input
                     type="date"
                     onChange={handleDateChange}
+                    min={new Date().toISOString().slice(0, 10)}
                     className="absolute left-3 top-1/2 size-3.5 -translate-y-1/2 opacity-0 cursor-pointer z-10"
                     tabIndex={-1}
                   />
@@ -547,7 +569,7 @@ export function JobPostingForm({
 
             {/* Skills */}
             <div className="space-y-1.5">
-              <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400">Skills Required (Comma separated)</label>
+              <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400">Skills Required (Comma separated) <span className="text-red-500">*</span></label>
               <input
                 type="text"
                 placeholder="e.g. React, TypeScript, Tailwind CSS, REST APIs"
@@ -571,7 +593,7 @@ export function JobPostingForm({
             
             {/* Description */}
             <div className="space-y-1.5">
-              <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400">Job Description</label>
+              <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400">Job Description <span className="text-red-500">*</span></label>
               <textarea
                 rows={3}
                 placeholder="Describe the opportunity, team tone, and company focus..."
@@ -588,7 +610,7 @@ export function JobPostingForm({
 
             {/* Responsibilities */}
             <div className="space-y-1.5">
-              <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400">Key Responsibilities</label>
+              <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400">Key Responsibilities <span className="text-red-500">*</span></label>
               <textarea
                 rows={3}
                 placeholder="Bullet points describing core job duties..."
@@ -605,7 +627,7 @@ export function JobPostingForm({
 
             {/* Requirements */}
             <div className="space-y-1.5">
-              <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400">Requirements & Qualifications</label>
+              <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400">Requirements & Qualifications <span className="text-red-500">*</span></label>
               <textarea
                 rows={3}
                 placeholder="Candidate qualifications and required skill experiences..."
@@ -622,7 +644,7 @@ export function JobPostingForm({
 
             {/* Benefits */}
             <div className="space-y-1.5">
-              <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400">Employee Benefits & Perks</label>
+              <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400">Employee Benefits & Perks <span className="text-red-500">*</span></label>
               <textarea
                 rows={3}
                 placeholder="Flexible hours, insurance details, returnship program specifications..."

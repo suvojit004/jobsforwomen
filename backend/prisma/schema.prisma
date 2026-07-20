@@ -429,8 +429,13 @@ model Application {
   candidate       CandidateProfile  @relation(fields: [candidateId], references: [id], onDelete: Cascade)
   status          ApplicationStatus @default(Applied)
   appliedOn       DateTime          @default(now())
-  offerDetails    String?
-  offerReleasedAt DateTime?
+  offerDetails         String?
+  offerReleasedAt      DateTime?
+  // Optional attached offer letter document (PDF/DOC/DOCX), uploaded to
+  // Cloudinary the same way resumes/verification documents are -- see
+  // recruiter.service.ts's releaseOffer().
+  offerLetterUrl       String?
+  offerLetterPublicId  String?
 
   // Relations
   history    ApplicationStatusHistory[]

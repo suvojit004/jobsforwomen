@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react"
+import { toast } from "sonner"
 import {
   ResponsiveContainer,
   BarChart,
@@ -135,8 +136,9 @@ export function Analytics() {
         )
 
         setDepartmentDistribution(analytics?.departmentDistribution || [])
-      } catch (err) {
+      } catch (err: any) {
         console.error("Failed to load recruiter analytics", err)
+        toast.error(err?.message || "Failed to load analytics.")
       } finally {
         setIsLoading(false)
       }

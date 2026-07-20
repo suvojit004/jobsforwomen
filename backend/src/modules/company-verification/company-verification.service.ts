@@ -141,7 +141,7 @@ export class CompanyVerificationService {
       data: { verificationDocuments: updatedDocs },
     })
 
-    // Confirmed gap: this previously fired no event at all, so a recruiter
+    // this previously fired no event at all, so a recruiter
     // uploading a requested document (without also clicking "Resubmit
     // Verification" in the same visit) gave admins zero signal -- Part 11
     // explicitly lists "Recruiter Uploaded Additional Documents" as its own

@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react"
+import { toast } from "sonner"
 import { motion } from "framer-motion"
 import { ChevronRight, Calendar, User, ArrowLeft, Eye } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -43,8 +44,9 @@ export function Applications() {
         if (mapped.length > 0) {
           setSelectedApp(mapped[0])
         }
-      } catch (err) {
+      } catch (err: any) {
         console.error("Failed to load applications", err)
+        toast.error(err?.message || "Failed to load your applications.")
       }
     }
 

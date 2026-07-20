@@ -4,7 +4,7 @@ export const updateCandidateProfileSchema = z.object({
   fullName: z.string().min(2, "Full name must be at least 2 characters").optional(),
   title: z.string().max(100).nullable().optional(),
   bio: z.string().max(500).nullable().optional(),
-  // Part 16: was length-only (`.max(20)`), so "!!!!" or "abc" was persisted
+  // was length-only (`.max(20)`), so "!!!!" or "abc" was persisted
   // as-is. `.refine` only runs when a non-empty value is present, so
   // clearing the field (empty string/null) still passes.
   phone: z

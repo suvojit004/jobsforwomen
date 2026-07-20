@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react"
+import { toast } from "sonner"
 import { useSearchParams } from "react-router-dom"
 import {
   Mail,
@@ -129,8 +130,9 @@ export function CompanyDetails() {
         } else if (formattedComps.length > 0) {
           setSelectedCompanyId(formattedComps[0].id)
         }
-      } catch (err) {
+      } catch (err: any) {
         console.error("Failed to load company details database:", err)
+        toast.error(err?.message || "Failed to load company details.")
       } finally {
         setLoading(false)
       }
@@ -302,7 +304,7 @@ export function CompanyDetails() {
               </div>
             </DashboardCard>
 
-            {/* Verification Documents & Recruiter Response (Part 3) -- surfaces
+            {/* Verification Documents & Recruiter Response -- surfaces
                 what changed after a recruiter resubmits via the secure
                 /company-verification/:token page, so admins see updated
                 info, uploaded documents, and comments immediately without
@@ -331,7 +333,7 @@ export function CompanyDetails() {
 
                 {selectedCompany.verificationDocuments.length > 0 && (
                   <div className="space-y-1.5">
-                    {/* Issue 3 fix: was a plain <a href> straight to the raw
+                    {/* was a plain <a href> straight to the raw
                         Cloudinary URL, which always forced a download --
                         never a preview -- and (since raw uploads had no
                         extension/format hint) often saved with no usable

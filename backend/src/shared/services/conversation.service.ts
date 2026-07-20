@@ -4,42 +4,20 @@ import { logger } from "../utils/logger"
 import { isFeatureEnabled } from "../utils/featureFlags"
 
 export class ConversationService {
-  // Deterministic, order-independent identity key for the two-party
-  // (candidate, recruiter) relationship this schema models -- sorting
-  // guarantees "A:B" and "B:A" always produce the same key regardless of
-  // which side's request reaches getOrCreateForApplication() first. Must
-  // stay in sync with the migration's backfill computation
-  // (20260715000000_conversation_participants_key/migration.sql), which
-  // sorts the same two userId strings the same way via Postgres string
-  // ordering.
+  // Deterministic, order-independent identity key for the (candidate,
+  // recruiter) pair -- sorting guarantees "A:B" and "B:A" produce the same
+  // key regardless of request order. Must stay in sync with the migration's
+  // backfill computation (20260715000000_conversation_participants_key).
   private static pairKey(userIdA: string, userIdB: string): string {
     return [userIdA, userIdB].sort().join(":")
   }
 
-  // CONFIRMED CRITICAL BUG (fixed here): there was no endpoint anywhere in
-  // the app -- frontend or backend -- that could ever create a Conversation
-  // row. Messages.tsx (both Candidate and Recruiter) only ever called
-  // getConversations()/getMessages()/sendMessage() against an existing
-  // conversation id; nothing ever called `prisma.conversation.create`
-  // outside of this method. On a real production database with zero rows
-  // pre-seeded directly in Postgres, the Messages page would show an empty
-  // "Select a conversation" state forever, for every user, permanently --
-  // the feature was reachable in the UI but functionally dead end-to-end.
-  //
-  // This finds-or-creates a 1:1 conversation between a candidate and the
-  // recruiter side of one of the candidate's job applications (the only
-  // relationship in the schema that legitimately links a candidate and a
-  // recruiter), scoped by requireOwnership("Application") at the route
-  // layer so only the actual applicant or the actual hiring recruiter can
-  // open it -- never an arbitrary user pair.
+  // Finds or creates a 1:1 conversation between a candidate and the
+  // recruiter side of one of the candidate's applications -- the only
+  // relationship that legitimately links the two. Scoped by
+  // requireOwnership("Application") at the route layer so only the actual
+  // applicant or hiring recruiter can open it.
   static async getOrCreateForApplication(applicationId: string, requestingUserId: string) {
-    // CONFIRMED ENFORCEMENT (fixed here): the "chat_enabled" feature flag
-    // existed in the database and was toggleable from the Admin Feature
-    // Configs page, but nothing ever checked it -- see
-    // shared/utils/featureFlags.ts. Blocking new conversation creation and
-    // new message sends (below) while still allowing existing history to
-    // be read matches the task's own example: turning Messaging off must
-    // reject new writes, not delete what already happened.
     if (!(await isFeatureEnabled("chat_enabled"))) {
       throw new Error("Forbidden: Messaging is currently disabled by the platform administrator")
     }
@@ -65,27 +43,12 @@ export class ConversationService {
 
     const participantsKey = ConversationService.pairKey(candidateUserId, recruiterUserId)
 
-    // Final Implementation Pass, Part 10: concurrency hardening.
-    // CONFIRMED BUG (fixed here): the previous implementation was a racy
-    // findFirst()-then-create() -- if both the candidate and the recruiter
-    // opened the chat for the first time within the same few milliseconds
-    // (a realistic scenario right after an application is submitted, since
-    // both sides get notified at once), both requests could read "no
-    // existing conversation" before either had committed its create(), and
-    // both would then create() a separate Conversation row for the same
-    // pair -- silently splitting later messages across two conversations
-    // depending on which row each request's sender happened to read next,
-    // with no error and no way for either user to discover the "other"
-    // conversation from the UI.
-    //
-    // upsert() against the real Postgres UNIQUE constraint on
-    // participantsKey (see schema.prisma / the migration listed above)
-    // replaces that read-then-write race with a single atomic
-    // INSERT ... ON CONFLICT (participantsKey) DO UPDATE statement -- two
-    // concurrent calls for the same pair can no longer both "win" the
-    // create path. The `update: {}` branch is a deliberate no-op: if the
-    // row already exists, nothing about it needs to change; it just tells
-    // Prisma to return the existing row instead of throwing a conflict.
+    // upsert() against the UNIQUE constraint on participantsKey avoids a
+    // findFirst()-then-create() race: two concurrent first-opens for the
+    // same pair (realistic right after an application is submitted, since
+    // both sides get notified at once) would otherwise both create a
+    // separate Conversation row, silently splitting later messages. The
+    // `update: {}` branch is a no-op that just returns the existing row.
     try {
       return await prisma.conversation.upsert({
         where: { participantsKey },
@@ -140,7 +103,7 @@ export class ConversationService {
       },
     })
 
-    // Final Implementation Pass, Part 11: real per-conversation unread
+    // real per-conversation unread
     // counts. Previously the Messages nav/sidebar badge had no real backend
     // count to read at all -- this computes, for the requesting user, how
     // many messages in each conversation were sent by the OTHER participant
@@ -224,18 +187,11 @@ export class ConversationService {
     return message
   }
 
-  // Final Implementation Pass, Part 5: persistent message read state.
-  // Previously "message:read" was a pure Socket.IO broadcast (see
-  // shared/socket/socket.ts) -- no DB write, no participant check, and a
-  // client could claim any messageId as read. This is the real,
-  // server-authoritative version: verifies real ConversationParticipant
-  // membership (never trusts a client-supplied sender/user id), updates
-  // only messages that are actually unread and actually sent by the OTHER
-  // participant (a user can never "read" -- or accidentally clear the
-  // unread badge for -- their own outgoing messages), and returns exactly
-  // how many rows were updated so callers/tests can assert idempotency
-  // (a second call with nothing left unread simply updates zero rows,
-  // rather than erroring).
+  // Server-authoritative message read state: verifies real
+  // ConversationParticipant membership, updates only unread messages sent
+  // by the OTHER participant (never a user's own outgoing messages), and
+  // returns the update count so a second call with nothing unread is a safe
+  // no-op rather than an error.
   static async markConversationAsRead(conversationId: string, userId: string) {
     const participant = await prisma.conversationParticipant.findUnique({
       where: {

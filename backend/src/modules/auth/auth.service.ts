@@ -242,7 +242,7 @@ export class AuthService {
   // Recruiters must not receive access/refresh tokens while their company is
   // still pending verification, rejected, or awaiting more information --
   // only an "approved" Company should ever let a recruiter reach the app.
-  // Confirmed gap: login() previously had no PendingApproval/company-status
+  // login() previously had no PendingApproval/company-status
   // check at all, so a recruiter could fully log in immediately after email
   // verification, well before any admin approved their company. Checked once
   // here (rather than duplicated in login/oauth/refresh separately) since all
@@ -268,20 +268,9 @@ export class AuthService {
     throw new Error("Your company verification is still pending. Please check your registered email for updates.")
   }
 
-  // CONFIRMED BUG (fixed here, found while verifying the candidate soft/hard
-  // delete flow): login() checks Blocked/Suspended/Rejected before issuing a
-  // session, but oauth() and refresh() never did -- oauth() called
-  // createAuthSession() directly with no status check at all, and refresh()
-  // only checked for Blocked (not Suspended/Rejected), inconsistently. A
-  // suspended/blocked account could therefore still complete a Google OAuth
-  // login, or keep refreshing an already-issued token, and receive a
-  // technically-valid session -- even though requireActiveUser would reject
-  // every subsequent API call with a live DB status re-check. That's not a
-  // data-access hole (nothing sensitive is actually reachable), but it's an
-  // inconsistent, confusing half-login instead of the same clear "Your
-  // account has been blocked/suspended" rejection login() already gives.
-  // Centralizing the check here (the one place all three paths funnel
-  // through) closes that gap once instead of three times.
+  // Shared Blocked/Suspended/Rejected check used by login(), oauth(), and
+  // refresh() so a suspended/blocked account gets the same clear rejection
+  // on every entry point instead of an inconsistent half-login.
   private assertAccountActive(user: any) {
     if (user.status === UserStatus.Blocked) {
       throw new Error("Your account has been blocked")
@@ -578,7 +567,7 @@ export class AuthService {
       }
     }
 
-    // CONFIRMED BUG (fixed here): this self-service path is role-agnostic --
+    // this self-service path is role-agnostic --
     // any authenticated user can call it, not just candidates -- but it
     // never had the same job-ownership guard AdminService.deleteUser needed
     // (see that fix for the full explanation). A recruiter who still owns
@@ -596,8 +585,7 @@ export class AuthService {
       }
     }
 
-    // CONFIRMED BUG (fixed here, found while verifying the candidate delete
-    // flow): AdminService.deleteUser already cleans up the candidate's
+    // AdminService.deleteUser already cleans up the candidate's
     // Cloudinary resume asset before deleting the row -- this self-service
     // path (Settings -> Delete Account) never did, so a candidate deleting
     // their own account left an orphaned file in Cloudinary storage forever

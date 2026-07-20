@@ -1,4 +1,5 @@
 import { useState } from "react"
+import { toast } from "sonner"
 import { useNavigate } from "react-router-dom"
 import { motion, AnimatePresence } from "framer-motion"
 import {
@@ -67,8 +68,9 @@ export function Notifications() {
   const handleClearAll = async () => {
     try {
       await handleMarkAllRead()
-    } catch (err) {
+    } catch (err: any) {
       console.error(err)
+      toast.error(err?.message || "Failed to load notifications.")
     }
   }
 

@@ -62,7 +62,7 @@ export function ChatWindow({
             )}
           </div>
 
-          {/* Part 15: no min-w-0/truncate meant a long recruiter or company
+          {/* no min-w-0/truncate meant a long recruiter or company
               name could overflow this fixed-height header between the
               shrink-0 avatar and shrink-0 online-status block. */}
           <div className="min-w-0">

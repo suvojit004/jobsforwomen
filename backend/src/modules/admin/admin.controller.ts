@@ -347,7 +347,7 @@ export class AdminController {
 
   getAuditLogs = async (req: Request, res: Response, next: any) => {
     try {
-      // CONFIRMED BUG (fixed here): this used to hand req.query straight to
+      // this used to hand req.query straight to
       // the service untouched -- page/limit arrived as raw strings (fine,
       // since parseInt() was applied downstream), but there was no
       // validation at all on the free-form fields, and no schema documenting
@@ -411,7 +411,7 @@ export class AdminController {
     }
   }
 
-  // CONFIRMED BUG (fixed here): this used to call AdminService.assignUserRoles,
+  // this used to call AdminService.assignUserRoles,
   // a bare deleteMany+createMany with no privilege-escalation or
   // last-Super-Admin safety checks at all -- even though this specific route
   // is already gated behind requireSuperAdmin, a Super Admin could still

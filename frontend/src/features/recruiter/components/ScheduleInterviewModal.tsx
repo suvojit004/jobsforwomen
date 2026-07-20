@@ -117,7 +117,7 @@ export function ScheduleInterviewModal({ subject, onClose, onScheduled }: Schedu
         </div>
         <div className="p-4 space-y-3">
           <div>
-            <label className="text-[10px] font-black uppercase text-slate-400">Title</label>
+            <label className="text-[10px] font-black uppercase text-slate-400">Title <span className="text-red-500">*</span></label>
             <input
               type="text"
               value={title}
@@ -127,7 +127,7 @@ export function ScheduleInterviewModal({ subject, onClose, onScheduled }: Schedu
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-[10px] font-black uppercase text-slate-400">Date & Time</label>
+              <label className="text-[10px] font-black uppercase text-slate-400">Date & Time <span className="text-red-500">*</span></label>
               <input
                 type="datetime-local"
                 value={dateTime}
@@ -136,7 +136,7 @@ export function ScheduleInterviewModal({ subject, onClose, onScheduled }: Schedu
               />
             </div>
             <div>
-              <label className="text-[10px] font-black uppercase text-slate-400">Timezone</label>
+              <label className="text-[10px] font-black uppercase text-slate-400">Timezone <span className="text-red-500">*</span></label>
               <select
                 value={timezone}
                 onChange={(e) => setTimezone(e.target.value)}
@@ -152,7 +152,7 @@ export function ScheduleInterviewModal({ subject, onClose, onScheduled }: Schedu
           </div>
 
           <div>
-            <label className="text-[10px] font-black uppercase text-slate-400">Interview Mode</label>
+            <label className="text-[10px] font-black uppercase text-slate-400">Interview Mode <span className="text-red-500">*</span></label>
             <div className="mt-1 grid grid-cols-2 gap-2">
               {(["Online", "Offline"] as const).map((m) => (
                 <button
@@ -184,7 +184,7 @@ export function ScheduleInterviewModal({ subject, onClose, onScheduled }: Schedu
             </div>
           ) : (
             <div>
-              <label className="text-[10px] font-black uppercase text-slate-400">Venue</label>
+              <label className="text-[10px] font-black uppercase text-slate-400">Venue <span className="text-red-500">*</span></label>
               <input
                 type="text"
                 value={venue}

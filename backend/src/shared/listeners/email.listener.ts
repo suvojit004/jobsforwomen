@@ -46,10 +46,16 @@ export function initEmailListener() {
 
         if (isEnabled && toEmail) {
           logger.info(`[EmailListener] Enqueueing Company Approved email to: ${toEmail}`)
+          const baseUrl = process.env.FRONTEND_URL || "https://jobsforwomen.info"
           await addJob("email", "sendCompanyVerification", {
             to: toEmail,
             companyName: company.name,
             status: "Approved",
+            // Lets the recruiter go straight from the approval email to the
+            // sign-in page instead of having to navigate to the site
+            // themselves and remember/find the login URL.
+            actionLink: `${baseUrl}/auth/login`,
+            actionLabel: "Log In Now",
           })
         }
       }
@@ -86,7 +92,7 @@ export function initEmailListener() {
     }
   })
 
-  // 3b. Company More-Information-Required trigger -- confirmed gap fix.
+  // 3b. Company More-Information-Required trigger -- fix.
   // admin.service.ts's verifyCompany() previously only published an event
   // for the approved/rejected branches; setting a company to info_requested
   // (the "Request Documentation" admin action) fired nothing at all, so the
@@ -123,7 +129,7 @@ export function initEmailListener() {
     }
   })
 
-  // 3c. Perk request reviewed (Parts 6/7) -- email is the SECOND channel
+  // 3c. Perk request reviewed -- email is the SECOND channel
   // here (notification.listener.ts's PerkReviewed subscriber handles the
   // dashboard notification); per spec, perks are communicated via both,
   // unlike company registration which is email-only.
@@ -295,7 +301,7 @@ export function initEmailListener() {
     }
   })
 
-  // 10. Generic Application Status Change trigger (Issue 3 fix) -- the
+  // 10. Generic Application Status Change trigger -- the
   // Reviewed/Shortlisted/Hired/Rejected transitions handled by
   // RecruiterService.progressApplicant() previously sent no email at all.
   const STATUS_EMAIL_COPY: Record<string, { heading: string; message: (jobTitle: string, companyName: string) => string }> = {

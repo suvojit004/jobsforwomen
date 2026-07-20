@@ -17,16 +17,10 @@ import { getSocket } from "@/api/socket"
 import { SupportingDocumentsUploader, FileTypeIcon, type StagedDocument } from "@/components/shared/forms/SupportingDocumentsUploader"
 import { openDocument, formatFileSize, getFileIconKind, SUPPORTING_DOCUMENT_ACCEPT } from "@/utils/fileHelpers"
 
-// Canonical perk registry (Parts 6/7 of the recruiter-onboarding spec).
-// "Menstrual Leave Champion" / "Flexible Hours" / "Flexible Returnship" /
-// "Work From Home" are named explicitly by the spec; "Learning & Development
-// Schemes" and "Childcare Allowance Support" are kept from the previously
-// shipped (but broken/unwired) CompanyProfile.tsx checkbox list -- this page
-// supersedes that list entirely. This is also, deliberately, the fix for a
-// confirmed bug: the old system wrote "Menstrual Leave Support" while
-// Dashboard.tsx's status card checked for "Menstrual Leave Champion" -- a
-// string that was never actually written, so that card was permanently
-// stuck showing "Inactive". This canonical name now matches on both ends.
+// Canonical perk registry. "Menstrual Leave Champion" must match exactly
+// what Dashboard.tsx's status card checks for -- the two previously
+// disagreed ("Menstrual Leave Support" vs "Menstrual Leave Champion"), so
+// that card was permanently stuck showing "Inactive".
 const CANONICAL_PERKS = [
   { name: "Menstrual Leave Champion", icon: Award, description: "Certified paid menstrual leave policy." },
   { name: "Flexible Hours", icon: Clock, description: "Flexible working hours for employees." },
@@ -129,7 +123,7 @@ export function Perks() {
     load()
   }, [])
 
-  // Part 18: live refresh when an admin reviews a perk (PerkReviewed fires a
+  // live refresh when an admin reviews a perk (PerkReviewed fires a
   // recruiter-facing notification pointed at this page) -- silent (no
   // loading-spinner flash) since this can fire while the recruiter is
   // actively looking at the page.

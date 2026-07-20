@@ -148,7 +148,7 @@ export function AcceptInvitation() {
           <form className="space-y-5" onSubmit={handleSubmit}>
             <div className="space-y-4">
               <div className="space-y-1.5">
-                <label htmlFor="fullName" className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Full Name</label>
+                <label htmlFor="fullName" className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Full Name <span className="text-red-500">*</span></label>
                 <div className="relative">
                   <User className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
                   <Input
@@ -165,7 +165,7 @@ export function AcceptInvitation() {
               </div>
 
               <div className="space-y-1.5">
-                <label htmlFor="pass" className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Password</label>
+                <label htmlFor="pass" className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Password <span className="text-red-500">*</span></label>
                 <div className="relative">
                   <Lock className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
                   <Input
@@ -183,7 +183,7 @@ export function AcceptInvitation() {
               </div>
 
               <div className="space-y-1.5">
-                <label htmlFor="confirm" className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Confirm Password</label>
+                <label htmlFor="confirm" className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Confirm Password <span className="text-red-500">*</span></label>
                 <div className="relative">
                   <Lock className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
                   <Input

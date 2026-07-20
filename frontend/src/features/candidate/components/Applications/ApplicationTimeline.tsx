@@ -20,7 +20,7 @@ export function ApplicationTimeline({ application, onClose }: ApplicationTimelin
   const navigate = useNavigate()
   const [messaging, setMessaging] = useState(false)
 
-  // CONFIRMED BUG (fixed here): there was previously no way to start a
+  // there was previously no way to start a
   // conversation with the recruiter from anywhere in the Candidate module --
   // see candidateApi.startConversation for the full explanation.
   const handleMessageRecruiter = async () => {
@@ -184,7 +184,7 @@ export function ApplicationTimeline({ application, onClose }: ApplicationTimelin
             Application Context
           </h4>
 
-          {/* Recruiter -- CONFIRMED BUG (fixed here): application.recruiter
+          {/* Recruiter -- application.recruiter
               was never populated by the backend at all (candidate.service.ts's
               getApplications() didn't query job.recruiter), so this always
               rendered "Not Assigned" regardless of whether the job actually
@@ -279,7 +279,7 @@ export function ApplicationTimeline({ application, onClose }: ApplicationTimelin
             </div>
           )}
 
-          {/* Resume Used -- CONFIRMED BUG (fixed here): this used to show
+          {/* Resume Used -- this used to show
               the literal hardcoded string "Priya_Sharma_Resume.pdf" for
               every candidate's every application regardless of whose
               resume was actually on file. The Application type/API this

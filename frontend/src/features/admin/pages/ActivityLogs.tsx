@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react"
+import { toast } from "sonner"
 import { Search, FileText, ChevronLeft, ChevronRight } from "lucide-react"
 import { DataTable } from "@/components/shared/DataTable"
 import type { ColumnDef } from "@/components/shared/DataTable"
@@ -58,7 +59,7 @@ export function ActivityLogs() {
   }, [debouncedSearch, activeCategory])
 
   useEffect(() => {
-    // CONFIRMED BUG (fixed here, Final Implementation Pass Part 2): every
+    // every
     // filter here -- category tab, search box, and page number -- now
     // becomes a real GET /admins/audits request with real query parameters,
     // answered by a real Prisma `where`/`skip`/`take` query (see
@@ -100,8 +101,9 @@ export function ActivityLogs() {
         setLogs(formattedLogs)
         setTotalPages(pagination?.totalPages || 1)
         setTotalItems(pagination?.totalItems || 0)
-      } catch (err) {
+      } catch (err: any) {
         console.error("Failed to fetch audit trails:", err)
+        toast.error(err?.message || "Failed to load audit trail data.")
       } finally {
         if (thisRequestId === requestIdRef.current) setLoading(false)
       }
@@ -131,7 +133,7 @@ export function ActivityLogs() {
             tagColor = "bg-purple-100/60 text-purple-800 dark:bg-purple-950/20 dark:text-purple-300 border border-purple-200/20"
             break
           case "Job Moderation":
-            tagColor = "bg-amber-100/60 text-amber-800 dark:bg-amber-955/20 dark:text-amber-300 border border-amber-200/20"
+            tagColor = "bg-teal-100/60 text-teal-800 dark:bg-teal-950/20 dark:text-teal-300 border border-teal-200/20"
             break
           case "Corporate Perks":
             tagColor = "bg-pink-100/60 text-pink-800 dark:bg-pink-955/20 dark:text-pink-300 border border-pink-200/20"

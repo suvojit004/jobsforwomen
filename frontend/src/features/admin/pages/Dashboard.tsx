@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react"
+import { toast } from "sonner"
 import { Link, useNavigate } from "react-router-dom"
 import {
   Users,
@@ -161,8 +162,9 @@ export function Dashboard() {
           actor: a.operatorEmail ? `by ${a.operatorEmail}` : "by System"
         })))
 
-      } catch (err) {
+      } catch (err: any) {
         console.error("Failed to render admin dashboard", err)
+        toast.error(err?.message || "Failed to load dashboard data.")
       } finally {
         setIsLoading(false)
       }
@@ -176,8 +178,9 @@ export function Dashboard() {
       setCompanies((prev) =>
         prev.map((c) => (c.id === id ? { ...c, badge: "Approved", status: "approved" } : c))
       )
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to approve company", err)
+      toast.error(err?.message || "Failed to approve company.")
     }
   }
 
@@ -187,8 +190,9 @@ export function Dashboard() {
       setCompanies((prev) =>
         prev.map((c) => (c.id === id ? { ...c, badge: "Rejected", status: "rejected" } : c))
       )
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to reject company", err)
+      toast.error(err?.message || "Failed to reject company.")
     }
   }
 
@@ -220,7 +224,7 @@ export function Dashboard() {
     <div className="space-y-6 select-none animate-fadeIn">
 
       {loadErrors.length > 0 && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-xs font-bold text-amber-800 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-300">
+        <div className="rounded-lg border border-teal-200 bg-teal-50 px-4 py-2.5 text-xs font-bold text-teal-800 dark:border-teal-900/40 dark:bg-teal-950/20 dark:text-teal-300">
           Some dashboard data couldn't be loaded right now ({loadErrors.join(", ")}). The rest of the
           dashboard below is showing normally -- try refreshing the page to retry the missing sections.
         </div>
@@ -313,11 +317,11 @@ export function Dashboard() {
             </Link>
           </div>
 
-          <div className="flex border-b border-slate-100 dark:border-slate-800 text-[10px] font-black">
+          <div className="flex overflow-x-auto border-b border-slate-100 dark:border-slate-800 text-[10px] font-black">
             <button
               onClick={() => setCompanyTab("pending")}
               className={cn(
-                "pb-2 pr-4 border-b-2 transition-all",
+                "shrink-0 pb-2 pr-4 border-b-2 transition-all",
                 companyTab === "pending"
                   ? "border-[#6B2C91] text-[#6B2C91] dark:border-pink-500 dark:text-pink-300"
                   : "border-transparent text-slate-405 dark:text-slate-500"
@@ -328,7 +332,7 @@ export function Dashboard() {
             <button
               onClick={() => setCompanyTab("approved")}
               className={cn(
-                "pb-2 px-4 border-b-2 transition-all",
+                "shrink-0 pb-2 px-4 border-b-2 transition-all",
                 companyTab === "approved"
                   ? "border-[#6B2C91] text-[#6B2C91] dark:border-pink-500 dark:text-pink-300"
                   : "border-transparent text-slate-405 dark:text-slate-500"
@@ -339,7 +343,7 @@ export function Dashboard() {
             <button
               onClick={() => setCompanyTab("rejected")}
               className={cn(
-                "pb-2 pl-4 border-b-2 transition-all",
+                "shrink-0 pb-2 pl-4 border-b-2 transition-all",
                 companyTab === "rejected"
                   ? "border-[#6B2C91] text-[#6B2C91] dark:border-pink-500 dark:text-pink-300"
                   : "border-transparent text-slate-405 dark:text-slate-500"
@@ -425,7 +429,7 @@ export function Dashboard() {
             </Link>
           </div>
 
-          {/* Part 15: no responsive breakpoint meant 4 equal columns got
+          {/* no responsive breakpoint meant 4 equal columns got
               extremely cramped on narrow cards -- 2 columns below sm. */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             <div className="bg-purple-50/50 p-2 rounded-xl dark:bg-slate-950/20 text-center space-y-1">
@@ -514,11 +518,11 @@ export function Dashboard() {
             </Link>
           </div>
 
-          <div className="flex border-b border-slate-100 dark:border-slate-800 text-[10px] font-black">
+          <div className="flex overflow-x-auto border-b border-slate-100 dark:border-slate-800 text-[10px] font-black">
             <button
               onClick={() => setJobTab("all")}
               className={cn(
-                "pb-2 pr-4 border-b-2 transition-all",
+                "shrink-0 pb-2 pr-4 border-b-2 transition-all",
                 jobTab === "all"
                   ? "border-[#6B2C91] text-[#6B2C91] dark:border-pink-500 dark:text-pink-300"
                   : "border-transparent text-slate-405 dark:text-slate-500"
@@ -529,7 +533,7 @@ export function Dashboard() {
             <button
               onClick={() => setJobTab("reported")}
               className={cn(
-                "pb-2 px-4 border-b-2 transition-all",
+                "shrink-0 pb-2 px-4 border-b-2 transition-all",
                 jobTab === "reported"
                   ? "border-[#6B2C91] text-[#6B2C91] dark:border-pink-500 dark:text-pink-300"
                   : "border-transparent text-slate-405 dark:text-slate-500"
@@ -540,7 +544,7 @@ export function Dashboard() {
             <button
               onClick={() => setJobTab("removed")}
               className={cn(
-                "pb-2 pl-4 border-b-2 transition-all",
+                "shrink-0 pb-2 pl-4 border-b-2 transition-all",
                 jobTab === "removed"
                   ? "border-[#6B2C91] text-[#6B2C91] dark:border-pink-500 dark:text-pink-300"
                   : "border-transparent text-slate-405 dark:text-slate-500"
@@ -566,7 +570,7 @@ export function Dashboard() {
                     key={idx}
                     className={cn(
                       "hover:bg-slate-50/40 dark:hover:bg-slate-900/10",
-                      job.status === "Reported" && "bg-amber-500/5 dark:bg-amber-950/10"
+                      job.status === "Reported" && "bg-teal-500/5 dark:bg-teal-950/10"
                     )}
                   >
                     <td className="py-2.5 pr-2 font-bold text-slate-900 dark:text-white">
@@ -580,7 +584,7 @@ export function Dashboard() {
                         "text-[9px] font-black uppercase px-1.5 py-0.5 rounded",
                         job.status === "Active"
                           ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/20 dark:text-emerald-400"
-                          : "bg-amber-100 text-amber-800 dark:bg-amber-950/20 dark:text-amber-400"
+                          : "bg-teal-100 text-teal-800 dark:bg-teal-950/20 dark:text-teal-400"
                       )}>
                         {job.status}
                       </span>

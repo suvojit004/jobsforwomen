@@ -68,7 +68,7 @@ export function CompanyProfile() {
   const [isUploading, setIsUploading] = useState(false)
   const [logoError, setLogoError] = useState<string | null>(null)
 
-  // Part 5: expanded Company Profile -- office photo gallery + policies
+  // expanded Company Profile -- office photo gallery + policies
   const [gallery, setGallery] = useState<GalleryPhoto[]>([])
   const [isGalleryUploading, setIsGalleryUploading] = useState(false)
   const [galleryError, setGalleryError] = useState<string | null>(null)
@@ -161,8 +161,9 @@ export function CompanyProfile() {
             location: comp.location || "",
           })
         }
-      } catch (err) {
+      } catch (err: any) {
         console.error("Failed to load company profile", err)
+        toast.error(err?.message || "Failed to load company profile.")
       } finally {
         setIsLoading(false)
       }
@@ -354,7 +355,7 @@ export function CompanyProfile() {
           <div className="grid gap-4 sm:grid-cols-2">
             {/* Company Name */}
             <div className="space-y-1 sm:col-span-2">
-              <label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500">Company Name</label>
+              <label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500">Company Name <span className="text-red-500">*</span></label>
               <div className="relative">
                 <Building2 className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
                 <input
@@ -368,7 +369,7 @@ export function CompanyProfile() {
 
             {/* Corporate Website */}
             <div className="space-y-1">
-              <label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500">Website URL</label>
+              <label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500">Website URL <span className="text-red-500">*</span></label>
               <div className="relative">
                 <Globe className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
                 <input
@@ -383,7 +384,7 @@ export function CompanyProfile() {
 
             {/* HQ Location */}
             <div className="space-y-1">
-              <label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500">HQ Location</label>
+              <label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500">HQ Location <span className="text-red-500">*</span></label>
               <div className="relative">
                 <MapPin className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
                 <input
@@ -397,7 +398,7 @@ export function CompanyProfile() {
 
             {/* Employee Count */}
             <div className="space-y-1">
-              <label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500">Company Size</label>
+              <label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500">Company Size <span className="text-red-500">*</span></label>
               <div className="relative">
                 <Users className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400 pointer-events-none" />
                 <select
@@ -415,7 +416,7 @@ export function CompanyProfile() {
 
             {/* Industry sector */}
             <div className="space-y-1">
-              <label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500">Industry / Sector</label>
+              <label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500">Industry / Sector <span className="text-red-500">*</span></label>
               <div className="relative">
                 <Briefcase className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
                 <input
@@ -429,7 +430,7 @@ export function CompanyProfile() {
 
             {/* Company Bio */}
             <div className="space-y-1 sm:col-span-2">
-              <label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500">About Company</label>
+              <label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500">About Company <span className="text-red-500">*</span></label>
               <textarea
                 rows={4}
                 {...register("description")}
@@ -476,7 +477,7 @@ export function CompanyProfile() {
         </div>
       </form>
 
-      {/* Office Photo Gallery (Part 5) -- separate save surface from the main
+      {/* Office Photo Gallery -- separate save surface from the main
           form, mirroring the logo upload pattern: each photo action saves
           immediately rather than being bundled into "Save Corporate Profile". */}
       <DashboardCard className="p-6 space-y-4">
@@ -540,7 +541,7 @@ export function CompanyProfile() {
         {galleryError && <p className="text-[10px] font-bold text-red-500">{galleryError}</p>}
       </DashboardCard>
 
-      {/* Workplace Policies (Part 5) -- free-form list, not a fixed set of
+      {/* Workplace Policies -- free-form list, not a fixed set of
           fields, so recruiters can add whichever named policies matter to
           their organization (POSH, maternity, equal pay, grievance
           redressal, etc). */}
@@ -590,7 +591,7 @@ export function CompanyProfile() {
 
         <div className="grid gap-2 sm:grid-cols-2 border-t border-slate-100 dark:border-slate-800 pt-4">
           <div className="space-y-1">
-            <label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500">Policy Title</label>
+            <label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500">Policy Title <span className="text-red-500">*</span></label>
             <input
               type="text"
               value={policyDraft.title}
@@ -600,7 +601,7 @@ export function CompanyProfile() {
             />
           </div>
           <div className="space-y-1">
-            <label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500">Description</label>
+            <label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500">Description <span className="text-red-500">*</span></label>
             <input
               type="text"
               value={policyDraft.description}

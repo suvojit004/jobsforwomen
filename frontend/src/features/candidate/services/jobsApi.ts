@@ -61,7 +61,7 @@ export function mapApiJobToExtendedJob(apiJob: any): ExtendedJob {
     requirements: splitLines(apiJob.requirements),
     responsibilities: splitLines(apiJob.responsibilities),
     benefits: splitLines(apiJob.benefits),
-    // CONFIRMED BUG (fixed here): this read the company's *location* into
+    // this read the company's *location* into
     // "companyDescription" -- Company.description is a real, separate field
     // that was simply never mapped, so "About {company}" always showed the
     // city instead of an actual company blurb (or silently fell back to the
@@ -132,7 +132,7 @@ export const CandidateJobsApi = {
   },
 
   async getJobById(id: string): Promise<ExtendedJob | undefined> {
-    // CONFIRMED BUG (fixed here): this used to fake a single-job lookup by
+    // this used to fake a single-job lookup by
     // fetching the paginated list (limit=200) and finding a client-side
     // match -- the exact "summary DTO reused where full detail is required"
     // pattern. That list response never carried job.recruiter or
@@ -231,6 +231,11 @@ export interface DisplayApplication {
   interviewDate?: string
   interview?: DisplayApplicationInterview | null
   offerDetails?: string
+  // Optional attached offer letter (PDF/DOC/DOCX) -- see
+  // recruiter.service.ts's releaseOffer(). Not yet surfaced in any candidate
+  // UI (neither is offerDetails above), but mapped through here so it's
+  // available once that UI exists.
+  offerLetterUrl?: string | null
   recruiter?: RecruiterSummary | null
 }
 
@@ -265,7 +270,8 @@ export function mapApiApplication(app: any): DisplayApplication {
         }
       : null,
     offerDetails: app.offerDetails || undefined,
-    // CONFIRMED BUG (fixed here): this key was never set at all, so the
+    offerLetterUrl: app.offerLetterUrl || null,
+    // this key was never set at all, so the
     // Assigned Recruiter card on the candidate Applications page always
     // showed "Not Assigned" even when job.recruiter existed -- the backend
     // now actually queries and shapes it (candidate.service.ts), this just

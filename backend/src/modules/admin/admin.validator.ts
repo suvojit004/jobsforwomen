@@ -95,23 +95,15 @@ export const supportTicketSchema = z.object({
   message: z.string().min(1, "Message is required"),
 })
 
-// Activity Logs query params (Final Implementation Pass, Part 2).
+// Activity Logs query params. Validates/coerces the query so each filter
+// change (category tab, search box) is a real, separately-paginated Prisma
+// query rather than filtering a single fixed page client-side.
 //
-// CONFIRMED BUG (fixed here): the frontend previously fetched up to 500 rows
-// unconditionally and did every filter (category tab, search box) purely in
-// React over that single fixed page -- so an admin searching for something
-// older than the last 500 audit events would see zero results even though
-// matching rows existed. This schema validates/coerces the real query
-// parameters the fixed getAuditLogs() now accepts so every filter change
-// becomes a real, separately-paginated Prisma query.
-//
-// `uiCategory` mirrors the five human-friendly tabs the Activity Logs page
-// has always shown (User Management / Job Moderation / Corporate Perks /
-// Feature Flags / Security Settings). Those tabs were previously computed
-// by re-deriving a label from `entity`/`category` in the browser after the
-// fact; the same derivation now happens once, server-side, in
-// admin.service.ts's getAuditLogs(), so backend and frontend can never
-// disagree about what a given tab means.
+// `uiCategory` mirrors the five tabs the Activity Logs page shows (User
+// Management / Job Moderation / Corporate Perks / Feature Flags / Security
+// Settings); the label derivation happens once, server-side, in
+// admin.service.ts's getAuditLogs(), so backend and frontend can't disagree
+// about what a tab means.
 export const auditLogsQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(200).default(50),

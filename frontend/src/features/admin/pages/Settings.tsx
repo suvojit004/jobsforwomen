@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react"
+import { toast } from "sonner"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import * as z from "zod"
@@ -8,30 +9,11 @@ import { Button } from "@/components/ui/button"
 import { AdminApi } from "../services/adminApi"
 import { isValidPassword, PASSWORD_HELP_TEXT } from "@/utils/validators"
 
-// CONFIRMED BUG (fixed here, Final Implementation Pass Part 4):
-// `sessionTimeout` and `twoFactorEnabled` used to be real form fields here,
-// persisted via AdminApi.updateSettings() straight into User.preferences --
-// and the save call really did succeed and really did write those values to
-// the database. The bug is that nothing anywhere ever *read* them back at
-// runtime:
-//   - sessionTimeout: JWT access/refresh token lifetimes are fixed,
-//     process-wide values from JWT_ACCESS_EXPIRY/JWT_REFRESH_EXPIRY (see
-//     shared/config/env.ts + shared/utils/token.ts), read once at process
-//     boot. There is no per-user session-timeout concept anywhere in the
-//     auth/session architecture -- implementing this for real would mean
-//     redesigning how tokens are issued and validated (e.g. per-user token
-//     TTLs, or a server-side session/activity-tracking table with its own
-//     invalidation sweep) and would risk invalidating every admin's already
-//     -active refresh session. That's real architecture work outside this
-//     pass, so this field is now honestly disabled rather than pretending to
-//     save a value that changes nothing.
-//   - twoFactorEnabled: there is no OTP/MFA challenge step anywhere in the
-//     login flow (no code-generation, verification endpoint, or second
-//     factor of any kind exists in the auth module). Same treatment as the
-//     mfa_enforced feature flag in Feature Configs -- honestly disabled, not
-//     a rushed implementation.
-// Both fields are removed from the submitted/validated form data entirely so
-// a save can never silently imply either one took effect.
+// `sessionTimeout` and `twoFactorEnabled` are intentionally not form fields:
+// token lifetimes are fixed, process-wide config (JWT_ACCESS_EXPIRY/
+// JWT_REFRESH_EXPIRY), not a per-user setting, and there's no OTP/MFA step
+// anywhere in the auth flow. Both are honestly disabled in the UI rather
+// than saving a value that has no runtime effect.
 const adminSettingsSchema = z
   .object({
     name: z.string().min(3, "Name must be at least 3 characters."),
@@ -42,7 +24,7 @@ const adminSettingsSchema = z
   })
   .refine(
     (data) => {
-      // Part 16: standardized to the same 8-char + letter/number complexity
+      // standardized to the same 8-char + letter/number complexity
       // rule used by every other password field in the app (this was the
       // one outlier at `.min(6)` with no complexity requirement, letting
       // admins set weaker passwords than candidates/recruiters).
@@ -104,8 +86,9 @@ export function Settings() {
           newPassword: "",
           confirmNewPassword: "",
         })
-      } catch (err) {
+      } catch (err: any) {
         console.error("Failed to load settings", err)
+        toast.error(err?.message || "Failed to load settings.")
       } finally {
         setIsLoading(false)
       }
@@ -187,7 +170,7 @@ export function Settings() {
                 {/* Admin name */}
                 <div className="space-y-1.5">
                   <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400">
-                    Administrator Name
+                    Administrator Name <span className="text-red-500">*</span>
                   </label>
                   <input
                     type="text"
@@ -205,7 +188,7 @@ export function Settings() {
                 {/* Admin email */}
                 <div className="space-y-1.5">
                   <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400">
-                    Administrative Email
+                    Administrative Email <span className="text-red-500">*</span>
                   </label>
                   <input
                     type="email"
@@ -229,7 +212,7 @@ export function Settings() {
                 <div className="grid gap-4 sm:grid-cols-3">
                   <div className="space-y-1.5">
                     <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400">
-                      Current Password *
+                      Current Password <span className="text-red-500">*</span>
                     </label>
                     <input
                       type="password"
@@ -352,8 +335,8 @@ export function Settings() {
             </div>
           </div>
 
-          <div className="p-3.5 border border-amber-200/40 rounded-xl bg-amber-50/20 dark:border-amber-900/10 dark:bg-amber-955/5 flex gap-2">
-            <ShieldAlert className="size-4 text-amber-500 shrink-0 mt-0.5" />
+          <div className="p-3.5 border border-teal-200/40 rounded-xl bg-teal-50/20 dark:border-teal-900/10 dark:bg-teal-950/5 flex gap-2">
+            <ShieldAlert className="size-4 text-teal-500 shrink-0 mt-0.5" />
             <p className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 leading-normal">
               Admin sessions are tracked by IP audit registries. Suspicious access patterns trigger instant lockouts.
             </p>

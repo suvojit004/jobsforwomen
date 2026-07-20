@@ -26,7 +26,7 @@ export function Login() {
       return
     }
 
-    // Part 16: catch an obvious typo (e.g. missing "@") before round-tripping
+    // catch an obvious typo (e.g. missing "@") before round-tripping
     // to the server -- doesn't change what the backend enforces, just gives
     // faster feedback for the most common mistake.
     if (!isValidEmail(email)) {
@@ -84,7 +84,7 @@ export function Login() {
         <form className="space-y-6" onSubmit={handleLogin}>
           <div className="space-y-4 rounded-md shadow-sm">
             <div className="space-y-1.5">
-              <label htmlFor="email" className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Email Address</label>
+              <label htmlFor="email" className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Email Address <span className="text-red-500">*</span></label>
               <div className="relative">
                 <Mail className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
                 <Input
@@ -107,7 +107,7 @@ export function Login() {
 
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
-                <label htmlFor="password" className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Password</label>
+                <label htmlFor="password" className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Password <span className="text-red-500">*</span></label>
                 <Link to="/auth/forgot-password" className="text-xs font-bold text-[#6B2C91] dark:text-pink-400 hover:underline">
                   Forgot?
                 </Link>

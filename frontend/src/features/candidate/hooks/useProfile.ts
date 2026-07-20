@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react"
+import { toast } from "sonner"
 import { mapResumeData } from "../utils/resumeMapper"
 import { candidateApi } from "../services/candidateApi"
 import type {
@@ -60,8 +61,9 @@ export function useProfile() {
           resume: prev.resume.url ? prev.resume : mapped.resume,
         }
       })
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to fetch profile", err)
+      toast.error(err?.message || "Failed to load profile.")
     } finally {
       if (showLoading) setIsLoading(false)
     }
@@ -310,7 +312,7 @@ export function useProfile() {
         })
       }
       return updated
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to upload resume in hook:", err)
       throw err
     }
@@ -336,7 +338,7 @@ export function useProfile() {
         })
       }
       return updated
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to delete resume in hook:", err)
       throw err
     }

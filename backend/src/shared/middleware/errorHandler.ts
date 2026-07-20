@@ -112,7 +112,7 @@ export function errorHandler(
     message.includes("Access denied") ||
     message.includes("not authorized") ||
     message.includes("Not authorized") ||
-    // CONFIRMED GAP (fixed here): the Admin Management / RBAC privilege
+    // the Admin Management / RBAC privilege
     // guards (admin.service.ts's deleteUser/updateUserStatus/createAdmin/
     // removeAdminRole, rbac.service.ts's assignRolesToUser) all throw plain
     // `new Error("Only a Super Admin can ...")` for privilege-escalation
@@ -144,7 +144,7 @@ export function errorHandler(
     return sendError(res, message, null, 409)
   }
 
-  // Public company-verification resubmission flow (Part 3). Both are
+  // Public company-verification resubmission flow . Both are
   // client-facing, expected outcomes -- an expired/reused link, or a
   // malformed document category -- not server faults.
   if (

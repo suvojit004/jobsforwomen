@@ -11,17 +11,9 @@ import { adminRateLimiter } from "../../shared/middleware/rateLimit.middleware"
 const router = Router()
 const controller = new AdminController()
 
-// CONFIRMED CRITICAL BUG (fixed here): every route below this point used to
-// be reachable by ANY authenticated, active user regardless of role --
-// job moderation, user suspend/ban, company verification, and admin
-// invitations only ever checked authenticateToken + requireActiveUser. The
-// service layer fetches `admin`/`adminId` purely for audit attribution
-// (e.g. `admin?.email`), it never actually verifies the caller holds an
-// admin-tier role. A logged-in Candidate or Recruiter JWT could call
-// POST /admins/jobs/:id/moderate, PUT /admins/users/:id/status,
-// POST /admins/companies/:id/verify, etc. directly and it would succeed.
-// This restores the access levels the route comments already documented
-// but never enforced.
+// Every route below requires an admin-tier role -- the service layer fetches
+// `admin`/`adminId` only for audit attribution, it doesn't itself verify
+// role, so this route-level gate is the actual enforcement point.
 const ADMIN_TIER_ROLES = ["Admin", "Super Admin", "Moderator", "Support Executive"]
 
 // Enforce authentication & active check for all administration endpoints

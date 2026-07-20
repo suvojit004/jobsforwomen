@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from "react"
+import { toast } from "sonner"
 import { useAuth } from "./AuthContext"
 import { AdminApi } from "@/features/admin/services/adminApi"
 import { RecruiterApi } from "@/features/recruiter/services/recruiterApi"
@@ -120,8 +121,9 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
         prev.map((n) => (n.id === id ? { ...n, read: true } : n))
       )
       await api.markNotificationRead(id)
-    } catch (error) {
+    } catch (error: any) {
       console.error("Failed to mark notification as read:", error)
+      toast.error(error?.message || "Failed to mark notification as read.")
       fetchNotifications() // rollback
     }
   }
@@ -133,8 +135,9 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
       // Optimistic UI update
       setNotifications((prev) => prev.map((n) => ({ ...n, read: true })))
       await api.markAllNotificationsRead()
-    } catch (error) {
+    } catch (error: any) {
       console.error("Failed to mark all notifications as read:", error)
+      toast.error(error?.message || "Failed to mark all notifications as read.")
       fetchNotifications() // rollback
     }
   }
@@ -146,8 +149,9 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
       // Optimistic UI update
       setNotifications((prev) => prev.filter((n) => n.id !== id))
       await api.deleteNotification(id)
-    } catch (error) {
+    } catch (error: any) {
       console.error("Failed to delete notification:", error)
+      toast.error(error?.message || "Failed to delete notification.")
       fetchNotifications() // rollback
     }
   }

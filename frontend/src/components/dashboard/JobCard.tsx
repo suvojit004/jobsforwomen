@@ -26,17 +26,8 @@ function JobCardComponent({
   onApply,
 }: JobCardProps) {
   const navigate = useNavigate()
-  // CONFIRMED BUG (fixed here): this linked to "/jobs/:id", a bare top-level
-  // path that matches no registered route -- JobDetails is only mounted at
-  // "/candidate/jobs/:id" (see CandidateRoutes.tsx, nested under the
-  // "/candidate/*" ProtectedRoute in AppRouter.tsx). Clicking it silently
-  // fell through to AppRouter's catch-all (`Navigate to="/dashboard"`),
-  // which is exactly why "clicking the card does nothing" -- it did
-  // something, just not what anyone could see, since it round-tripped back
-  // to a dashboard-ish page. Also widened from "only the title text is a
-  // link" to the whole card being clickable + an explicit View Details
-  // affordance, per spec ("Clicking anywhere on the card or View Details
-  // should open Job Details").
+  // JobDetails is mounted at "/candidate/jobs/:id" (CandidateRoutes.tsx),
+  // not a bare "/jobs/:id". Whole card is clickable, not just the title.
   const detailsHref = `/candidate/jobs/${job.id}`
   const openDetails = () => navigate(detailsHref)
 

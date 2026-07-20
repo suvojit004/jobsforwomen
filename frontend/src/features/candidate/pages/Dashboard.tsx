@@ -138,8 +138,9 @@ export function Dashboard() {
           type: app.status === "Rejected" ? "rejected" : "submitted"
         }))
         setActivities(mappedActivities)
-      } catch (err) {
+      } catch (err: any) {
         console.error("Failed to load dashboard details", err)
+        toast.error(err?.message || "Failed to load dashboard data.")
       } finally {
         setIsLoading(false)
       }

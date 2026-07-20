@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react"
+import { toast } from "sonner"
 import { useSearchParams } from "react-router-dom"
 import { motion } from "framer-motion"
 import { ConversationList } from "../components/Messages/ConversationList"
@@ -30,7 +31,7 @@ export function Messages() {
   const [isLoading, setIsLoading] = useState(true)
 
   const activeConversation = conversations.find((c) => c.id === activeId) || conversations[0]
-  // Final Implementation Pass, Part 11: dedup guard so a duplicate/replayed
+  // dedup guard so a duplicate/replayed
   // socket "notification" event for the same message can never increment an
   // inactive conversation's unread badge twice. A plain ref-backed Set is
   // enough here -- no new state-management dependency needed.
@@ -55,10 +56,7 @@ export function Messages() {
             lastMessageTime: c.messages?.[0]?.timestamp
               ? new Date(c.messages[0].timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
               : "Today",
-            // CONFIRMED BUG (fixed here, Final Implementation Pass Part 11):
-            // this was a hardcoded 0 -- the sidebar/nav badge never reflected
-            // real unread state. ConversationService.getConversations() now
-            // computes a real server-side count (messages from the other
+            // Real server-side unread count (messages from the other
             // participant with readAt still null).
             unreadCount: c.unreadCount ?? 0,
             online: true,
@@ -71,8 +69,9 @@ export function Messages() {
         } else if (formatted.length > 0) {
           setActiveId(formatted[0].id)
         }
-      } catch (err) {
+      } catch (err: any) {
         console.error("Failed to load conversations", err)
+        toast.error(err?.message || "Failed to load conversations.")
       } finally {
         setIsLoading(false)
       }
@@ -95,7 +94,7 @@ export function Messages() {
           prev.map((c) => (c.id === activeId ? { ...c, thread: formattedMsgs } : c))
         )
 
-        // Final Implementation Pass, Part 5: mark received-unread messages
+        // mark received-unread messages
         // as read once their conversation is actually opened. The server
         // verifies participant membership and only touches messages sent by
         // the OTHER participant, so this can never mark the candidate's own
@@ -107,11 +106,12 @@ export function Messages() {
           setConversations((prev) =>
             prev.map((c) => (c.id === activeId ? { ...c, unreadCount: 0 } : c))
           )
-        } catch (err) {
+        } catch (err: any) {
           console.error("Failed to mark conversation as read", err)
         }
-      } catch (err) {
+      } catch (err: any) {
         console.error("Failed to load messages", err)
+        toast.error(err?.message || "Failed to load messages.")
       }
     }
     loadMessages()
@@ -132,7 +132,7 @@ export function Messages() {
 
     const handleNotification = (data: any) => {
       if (data.type === "message" || data.type === "MESSAGE") {
-        // CONFIRMED BUG (fixed here, Final Implementation Pass Part 11): a
+        // a
         // message notification for a conversation OTHER than the one
         // currently open used to be silently dropped entirely -- the
         // sidebar's unread badge never moved for background conversations,
@@ -205,8 +205,9 @@ export function Messages() {
             : c
         )
       )
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to send message", err)
+      toast.error(err?.message || "Failed to send message.")
     }
   }
 

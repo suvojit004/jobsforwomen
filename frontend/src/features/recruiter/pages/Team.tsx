@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react"
+import { toast } from "sonner"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import * as z from "zod"
@@ -69,6 +70,7 @@ export function Team() {
       setCompanyName(data.companyName || "")
     } catch (err: any) {
       console.error("Failed to load recruiter team data", err)
+      toast.error(err?.message || "Failed to load team data.")
     } finally {
       setIsLoading(false)
     }
@@ -156,7 +158,7 @@ export function Team() {
             <form onSubmit={handleSubmit(onInviteSubmit)} className="space-y-4">
               <div className="space-y-1">
                 <label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500">
-                  Email Address
+                  Email Address <span className="text-red-500">*</span>
                 </label>
                 <div className="relative">
                   <Mail className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />

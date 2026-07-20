@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react"
+import { toast } from "sonner"
 import { useNavigate } from "react-router-dom"
 import {
   Search,
@@ -85,8 +86,9 @@ export function CompanyApprovals() {
           feedback: c.feedback || ""
         }
       }))
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to load companies:", err)
+      toast.error(err?.message || "Failed to load company approvals.")
     } finally {
       if (!silent) setLoading(false)
     }
@@ -96,7 +98,7 @@ export function CompanyApprovals() {
     loadCompanies()
   }, [])
 
-  // Part 18: live refresh instead of requiring a manual reload. New
+  // live refresh instead of requiring a manual reload. New
   // registrations, resubmissions, and document uploads all fan out a
   // "Moderation" notification to every active admin (notification.listener.ts)
   // pointed at this exact page -- listen for that and refetch, following the
@@ -120,8 +122,9 @@ export function CompanyApprovals() {
       try {
         await AdminApi.verifyCompany(companyId, "approved")
         loadCompanies()
-      } catch (err) {
+      } catch (err: any) {
         console.error("Failed to approve company", err)
+        toast.error(err?.message || "Failed to approve company.")
       }
     }
   }
@@ -139,8 +142,9 @@ export function CompanyApprovals() {
       setActiveModal(null)
       setModalFeedbackText("")
       loadCompanies()
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to reject or request info", err)
+      toast.error(err?.message || "Failed to submit decision.")
     }
   }
 
@@ -278,7 +282,7 @@ export function CompanyApprovals() {
       header: "Actions",
       className: "text-right",
       cell: (row) => (
-        // Part 15: up to 4 buttons here with no flex-wrap forced the whole
+        // up to 4 buttons here with no flex-wrap forced the whole
         // table into horizontal-scroll mode on mobile just to reach a
         // primary action -- wrapping keeps the table itself narrower.
         <div className="flex flex-wrap justify-end gap-1.5">

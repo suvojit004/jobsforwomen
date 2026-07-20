@@ -4,7 +4,7 @@
 // avoids re-implementing "which icon for this mimetype" or "should this open
 // inline or download" per page -- and is the actual fix for the Company
 // Approval "More Information" viewer forcing a broken download for every
-// file regardless of type (Issue 3): a plain `<a href>` has no way to decide
+// file regardless of type : a plain `<a href>` has no way to decide
 // that, this module does.
 
 export type PreviewAction = "image" | "pdf" | "download"
@@ -93,8 +93,8 @@ export function isPreviewablePdf(mimetype?: string | null): boolean {
   return mimetype === "application/pdf"
 }
 
-// Issue 3's "Smart File Preview" rule: image/* -> inline preview,
-// application/pdf -> open in browser, everything else -> download.
+// image/* -> inline preview, application/pdf -> open in browser, everything
+// else -> download.
 export function getPreviewAction(mimetype?: string | null): PreviewAction {
   if (isPreviewableImage(mimetype)) return "image"
   if (isPreviewablePdf(mimetype)) return "pdf"
@@ -102,16 +102,11 @@ export function getPreviewAction(mimetype?: string | null): PreviewAction {
 }
 
 // Cloudinary's `fl_attachment` delivery flag forces a Content-Disposition:
-// attachment response with the given filename, inserted as a transformation
-// segment right after `/upload/`. This is what actually fixes "downloaded
-// file is corrupted/unreadable" for non-previewable types: the raw secure_url
-// alone (what every doc-listing page used to link to directly) has no
-// filename/extension hint, so the browser saves it with none and the OS has
-// no idea what app should open it -- indistinguishable from corruption to
-// the person who downloaded it, even though the bytes were always intact.
-// Requires a Cloudinary secure_url of the standard
-// `.../upload/v<version>/<public_id>` shape; falls back to the untouched URL
-// if that shape isn't found rather than risk mangling an unexpected URL.
+// attachment response with the given filename (inserted right after
+// `/upload/`) -- without it, the raw secure_url has no filename/extension
+// hint, so downloads save with none and look "corrupted" even though the
+// bytes are fine. Falls back to the untouched URL if the expected
+// `.../upload/v<version>/<public_id>` shape isn't found.
 export function buildCloudinaryDownloadUrl(url: string, filename: string): string {
   const marker = "/upload/"
   const idx = url.indexOf(marker)

@@ -162,16 +162,11 @@ export const uploadVerificationDocumentMiddleware = (req: Request, res: Response
   })
 }
 
-// Perk supporting documents (Parts 6/7 -- e.g. HR leave policy PDFs, WFH
-// policy docs, insurance/benefit brochures, screenshots). Deliberately its
-// own filter/uploader (the divergence the comment on
-// uploadVerificationDocumentMiddleware already anticipated) rather than
-// reusing verificationDocumentUploader, because perk proof needs a wider
-// format allow-list than company verification/identity documents: Office
-// documents (DOC/DOCX/XLS/XLSX/PPT/PPTX) and WEBP images are legitimate perk
-// evidence (e.g. an HR policy exported as a Word doc, a benefits comparison
-// spreadsheet) but have no business being accepted as a GST certificate or
-// ID proof.
+// Perk supporting documents (HR policy PDFs, insurance/benefit brochures,
+// screenshots). Its own filter/uploader rather than reusing
+// verificationDocumentUploader, because perk proof needs a wider format
+// allow-list (Office docs, WEBP) than company identity documents should
+// accept.
 const perkDocumentFilter = (req: Request, file: any, cb: any) => {
   const allowedMimeTypes = [
     "application/pdf",
@@ -201,6 +196,53 @@ const perkDocumentUploader = multer({
 
 export const uploadPerkDocumentMiddleware = (req: Request, res: Response, next: NextFunction) => {
   const upload = perkDocumentUploader.single("document")
+  upload(req, res, async (err: any) => {
+    if (err) {
+      return sendError(res, err.message, null, 400)
+    }
+
+    const file = (req as any).file
+    if (file) {
+      try {
+        const isClean = await scanFileForVirus(file.buffer, file.mimetype)
+        if (!isClean) {
+          return sendError(res, "File rejected: it is empty or its contents do not match the declared file type.", null, 400)
+        }
+      } catch (scanErr: any) {
+        return sendError(res, "File security verification failed.", null, 400)
+      }
+    }
+    next()
+  })
+}
+
+// Offer letter attachment (Release Offer flow -- optional; a recruiter can
+// still release an offer with text-only details and no file). Same
+// PDF/DOC/DOCX allow-list as resumes, since an offer letter is the same
+// class of formal document. The field is optional -- multer's .single()
+// doesn't error if the "offerLetter" part is simply absent from the
+// multipart body, so releasing an offer with no attachment still works.
+const offerLetterFilter = (req: Request, file: any, cb: any) => {
+  const allowedMimeTypes = [
+    "application/pdf",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  ]
+  if (allowedMimeTypes.includes(file.mimetype)) {
+    cb(null, true)
+  } else {
+    cb(new Error("Invalid file type. Only PDF, DOC, and DOCX are allowed for the offer letter."))
+  }
+}
+
+const offerLetterUploader = multer({
+  storage,
+  limits: { fileSize: MAX_SIZE },
+  fileFilter: offerLetterFilter,
+})
+
+export const uploadOfferLetterMiddleware = (req: Request, res: Response, next: NextFunction) => {
+  const upload = offerLetterUploader.single("offerLetter")
   upload(req, res, async (err: any) => {
     if (err) {
       return sendError(res, err.message, null, 400)

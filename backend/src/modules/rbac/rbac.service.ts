@@ -250,15 +250,9 @@ export class RbacService {
   // ==========================================
   // USER ROLES ASSIGNMENT
   // ==========================================
-  // CONFIRMED BUG (fixed here, per the Admin Management spec's privilege-
-  // escalation and last-Super-Admin requirements): this previously let
-  // *any* caller with "manage:users" permission (any Admin, not just Super
-  // Admin) freely add or remove the Super Admin role from anyone, including
-  // silently stripping it from the platform's last Super Admin -- which
-  // would permanently lock everyone out of Super-Admin-only actions (role
-  // management itself included) with no recovery path short of a direct DB
-  // edit. `operatorRoles` (the caller's own JWT roles) and the two guards
-  // below close both gaps.
+  // Only a Super Admin may grant/revoke the Super Admin role, and the last
+  // remaining Super Admin can't be stripped of it -- both guarded below via
+  // `operatorRoles` (the caller's own JWT roles).
   async assignRolesToUser(
     userId: string,
     roleIds: string[],
