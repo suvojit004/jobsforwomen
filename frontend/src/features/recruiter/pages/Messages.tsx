@@ -7,8 +7,10 @@ import {
   Send,
   ArrowLeft,
   Sparkles,
+  Clock,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { InboxPageSkeleton } from "@/components/shared/skeletons/PageSkeletons"
 import { cn } from "@/lib/utils"
 
 interface ChatMessage {
@@ -16,6 +18,10 @@ interface ChatMessage {
   sender: "recruiter" | "candidate"
   text: string
   timestamp: string
+  // True until the server confirms this message (optimistic send) --
+  // rendered dimmed with a pending icon so the composer doesn't look like
+  // it did nothing for the second or two a real round trip takes.
+  pending?: boolean
 }
 
 interface RecruiterConversation {
@@ -210,35 +216,66 @@ export function Messages() {
     e.preventDefault()
     if (!inputText.trim()) return
 
+    const conversationId = activeId
+    const text = inputText
+    const tempId = `temp-${Date.now()}`
+    const nowLabel = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+    setInputText("")
+
+    // Optimistic send: show the message immediately (dimmed, pending icon)
+    // instead of waiting on the real send + refetch round trip.
+    setConversations((prev) =>
+      prev.map((c) =>
+        c.id === conversationId
+          ? {
+              ...c,
+              lastMessageText: text,
+              lastMessageTime: nowLabel,
+              thread: [...c.thread, { id: tempId, sender: "recruiter", text, timestamp: nowLabel, pending: true }],
+            }
+          : c
+      )
+    )
+
     try {
-      await RecruiterApi.sendMessage(activeId, inputText)
+      const result = await RecruiterApi.sendMessage(conversationId, text)
       const socket = getSocket("recruiter")
-      socket.emit("typing", { conversationId: activeId, isTyping: false })
+      socket.emit("typing", { conversationId, isTyping: false })
 
-      const msgs = await RecruiterApi.getMessages(activeId)
-      const formattedMsgs: ChatMessage[] = msgs.map((m: any) => ({
-        id: m.id,
-        sender: m.senderId === currentUserId ? "recruiter" : "candidate",
-        text: m.content,
-        timestamp: new Date(m.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-      }))
-
+      // Swap the optimistic placeholder for the real, server-confirmed
+      // message rather than doing a full getMessages() refetch -- the send
+      // response already contains it.
+      const real = result?.message
       setConversations((prev) =>
         prev.map((c) =>
-          c.id === activeId
+          c.id === conversationId
             ? {
                 ...c,
-                lastMessageText: inputText,
-                lastMessageTime: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-                thread: formattedMsgs,
+                thread: c.thread.map((m) =>
+                  m.id === tempId
+                    ? real
+                      ? {
+                          id: real.id,
+                          sender: real.senderId === currentUserId ? "recruiter" : "candidate",
+                          text: real.content,
+                          timestamp: new Date(real.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+                        }
+                      : { ...m, pending: false }
+                    : m
+                ),
               }
             : c
         )
       )
-      setInputText("")
     } catch (err: any) {
       console.error("Failed to send message", err)
       toast.error(err?.message || "Failed to send message.")
+      // Remove the optimistic bubble -- it never actually sent.
+      setConversations((prev) =>
+        prev.map((c) =>
+          c.id === conversationId ? { ...c, thread: c.thread.filter((m) => m.id !== tempId) } : c
+        )
+      )
     }
   }
 
@@ -250,7 +287,7 @@ export function Messages() {
   )
 
   if (isLoading) {
-    return <div className="p-8 text-center text-sm font-bold text-[#6B2C91]">Loading inbox...</div>
+    return <InboxPageSkeleton />
   }
 
   return (
@@ -419,16 +456,18 @@ export function Messages() {
                     >
                       <div
                         className={cn(
-                          "rounded-2xl px-3.5 py-2 text-xs leading-relaxed",
+                          "rounded-2xl px-3.5 py-2 text-xs leading-relaxed transition-opacity",
                           isMe
                             ? "bg-[#6B2C91] text-white rounded-tr-none dark:bg-pink-600"
-                            : "bg-white border border-slate-200 text-slate-800 rounded-tl-none dark:bg-slate-900 dark:border-slate-800 dark:text-slate-200"
+                            : "bg-white border border-slate-200 text-slate-800 rounded-tl-none dark:bg-slate-900 dark:border-slate-800 dark:text-slate-200",
+                          msg.pending && "opacity-50"
                         )}
                       >
                         {msg.text}
                       </div>
-                      <span className="text-[9px] font-bold text-slate-400 dark:text-slate-500 px-1">
-                        {msg.timestamp}
+                      <span className="flex items-center gap-1 text-[9px] font-bold text-slate-400 dark:text-slate-500 px-1">
+                        {msg.pending && <Clock className="size-2.5" />}
+                        {msg.pending ? "Sending..." : msg.timestamp}
                       </span>
                     </div>
                   )

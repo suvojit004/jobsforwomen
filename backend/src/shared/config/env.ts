@@ -25,9 +25,14 @@ const envSchema = z.object({
   UPSTASH_REDIS_REST_URL: z.string().optional(),
   UPSTASH_REDIS_REST_TOKEN: z.string().optional(),
 
-  CLOUDINARY_CLOUD_NAME: z.string().min(1),
-  CLOUDINARY_API_KEY: z.string().min(1),
-  CLOUDINARY_API_SECRET: z.string().min(1),
+  // Local disk storage (replaces Cloudinary). DISK_MOUNT_PATH must point at a
+  // Render Persistent Disk mount in production -- Render's regular filesystem
+  // is wiped on every redeploy/restart. BACKEND_URL is this API's own public
+  // base URL, used to build absolute links to /files/... routes (mirrors what
+  // Cloudinary's secure_url used to give us) since uploads happen deep in
+  // services that don't have access to the current request.
+  DISK_MOUNT_PATH: z.string().default("./uploads"),
+  BACKEND_URL: z.string().url().default("http://localhost:5000"),
 
   SMTP_HOST: z.string().min(1),
   SMTP_PORT: z.coerce.number().default(587),

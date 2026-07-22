@@ -1,5 +1,6 @@
-import { lazy } from "react"
+import { lazy, Suspense } from "react"
 import { Navigate, Route, Routes } from "react-router-dom"
+import { GenericDashboardSkeleton } from "@/components/shared/skeletons/PageSkeletons"
 
 const Dashboard = lazy(() => import("@/features/recruiter/pages/Dashboard").then(m => ({ default: m.Dashboard })))
 const PostJob = lazy(() => import("@/features/recruiter/pages/PostJob").then(m => ({ default: m.PostJob })))
@@ -20,31 +21,33 @@ const Team = lazy(() => import("@/features/recruiter/pages/Team").then(m => ({ d
 
 export function RecruiterRoutes() {
   return (
-    <Routes>
-      <Route index element={<Dashboard />} />
-      <Route path="dashboard" element={<Dashboard />} />
-      <Route path="post-job" element={<PostJob />} />
-      <Route path="manage-jobs" element={<ManageJobs />} />
-      <Route path="jobs/:id" element={<JobDetails />} />
-      <Route path="applicants" element={<Applicants />} />
-      <Route path="applicants/:id" element={<CandidatePreview />} />
-      <Route path="company" element={<CompanyProfile />} />
-      <Route path="perks" element={<Perks />} />
-      <Route path="approvals" element={<ApprovalRequests />} />
-      <Route path="team" element={<Team />} />
-      <Route path="analytics" element={<Analytics />} />
-      <Route path="messages" element={<Messages />} />
-      <Route path="notifications" element={<Notifications />} />
-      <Route path="settings" element={<Settings />} />
-      <Route path="help" element={<Help />} />
-      <Route path="logout" element={<Logout />} />
-      {/* Absolute path -- verified via react-router's matchRoutes/resolvePath
-          that the relative form ("dashboard") already resolves correctly
-          for direct fallthrough cases (e.g. "/recruiter/jobs"), but an
-          absolute target removes any ambiguity if this route tree is ever
-          nested differently, and matches the other two role routers. */}
-      <Route path="*" element={<Navigate to="/recruiter/dashboard" replace />} />
-    </Routes>
+    <Suspense fallback={<GenericDashboardSkeleton />}>
+      <Routes>
+        <Route index element={<Dashboard />} />
+        <Route path="dashboard" element={<Dashboard />} />
+        <Route path="post-job" element={<PostJob />} />
+        <Route path="manage-jobs" element={<ManageJobs />} />
+        <Route path="jobs/:id" element={<JobDetails />} />
+        <Route path="applicants" element={<Applicants />} />
+        <Route path="applicants/:id" element={<CandidatePreview />} />
+        <Route path="company" element={<CompanyProfile />} />
+        <Route path="perks" element={<Perks />} />
+        <Route path="approvals" element={<ApprovalRequests />} />
+        <Route path="team" element={<Team />} />
+        <Route path="analytics" element={<Analytics />} />
+        <Route path="messages" element={<Messages />} />
+        <Route path="notifications" element={<Notifications />} />
+        <Route path="settings" element={<Settings />} />
+        <Route path="help" element={<Help />} />
+        <Route path="logout" element={<Logout />} />
+        {/* Absolute path -- verified via react-router's matchRoutes/resolvePath
+            that the relative form ("dashboard") already resolves correctly
+            for direct fallthrough cases (e.g. "/recruiter/jobs"), but an
+            absolute target removes any ambiguity if this route tree is ever
+            nested differently, and matches the other two role routers. */}
+        <Route path="*" element={<Navigate to="/recruiter/dashboard" replace />} />
+      </Routes>
+    </Suspense>
   )
 }
 export default RecruiterRoutes

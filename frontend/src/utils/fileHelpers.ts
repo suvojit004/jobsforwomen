@@ -9,7 +9,7 @@
 
 export type PreviewAction = "image" | "pdf" | "download"
 
-// Mirrors upload.middleware.ts's perkDocumentFilter / cloudinary.ts's
+// Mirrors upload.middleware.ts's perkDocumentFilter / fileStorage.ts's
 // FILE_SIGNATURES allow-list on the backend.
 export const SUPPORTING_DOCUMENT_ACCEPT =
   ".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.png,.jpg,.jpeg,.webp," +
@@ -101,19 +101,20 @@ export function getPreviewAction(mimetype?: string | null): PreviewAction {
   return "download"
 }
 
-// Cloudinary's `fl_attachment` delivery flag forces a Content-Disposition:
-// attachment response with the given filename (inserted right after
-// `/upload/`) -- without it, the raw secure_url has no filename/extension
-// hint, so downloads save with none and look "corrupted" even though the
-// bytes are fine. Falls back to the untouched URL if the expected
-// `.../upload/v<version>/<public_id>` shape isn't found.
-export function buildCloudinaryDownloadUrl(url: string, filename: string): string {
-  const marker = "/upload/"
-  const idx = url.indexOf(marker)
-  if (idx === -1) return url
-  const safeName = encodeURIComponent(filename.replace(/\//g, "_"))
-  const insertAt = idx + marker.length
-  return `${url.slice(0, insertAt)}fl_attachment:${safeName}/${url.slice(insertAt)}`
+// The backend's /files/... route (see backend/src/shared/routes/files.routes.ts)
+// forces a real download with the given filename via Content-Disposition:
+// attachment whenever a `dl` query param is present -- without it, the
+// file is served inline (fine for PDFs/images opening in a new tab, but a
+// download needs an explicit filename). Falls back to the untouched URL if
+// it isn't parseable.
+export function buildFileDownloadUrl(url: string, filename: string): string {
+  try {
+    const parsed = new URL(url, window.location.origin)
+    parsed.searchParams.set("dl", filename.replace(/\//g, "_"))
+    return parsed.toString()
+  } catch {
+    return url
+  }
 }
 
 export interface PreviewableDocument {
@@ -127,7 +128,7 @@ export interface PreviewableDocument {
 // The single entry point every doc-listing page should call on click --
 // decides preview vs. download and, for downloads, builds a URL that
 // preserves the original filename/extension instead of handing the browser
-// an extensionless raw Cloudinary URL.
+// an extensionless raw URL.
 export function openDocument(doc: PreviewableDocument) {
   const action = getPreviewAction(doc.mimetype)
   if (action === "image" || action === "pdf") {
@@ -137,6 +138,6 @@ export function openDocument(doc: PreviewableDocument) {
   const ext = getFileExtension(doc)
   const baseName = doc.originalFilename || doc.category || "document"
   const filename = ext && !baseName.toLowerCase().endsWith(`.${ext}`) ? `${baseName}.${ext}` : baseName
-  const downloadUrl = buildCloudinaryDownloadUrl(doc.url, filename)
+  const downloadUrl = buildFileDownloadUrl(doc.url, filename)
   window.open(downloadUrl, "_blank", "noopener,noreferrer")
 }

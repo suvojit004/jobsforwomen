@@ -33,8 +33,8 @@ router.delete("/company/logo", controller.deleteCompanyLogo)
 // part of the post-approval Company Profile area, not the initial
 // onboarding wizard.
 router.post("/company/gallery", requireApprovedCompany, uploadRateLimiter, uploadGalleryPhotoMiddleware, controller.uploadGalleryPhoto)
-// publicId is passed in the request body, not a URL param -- Cloudinary
-// public_ids contain folder slashes (e.g. "jfw/gallery/xyz"), which would
+// publicId is passed in the request body, not a URL param -- these storage
+// paths contain folder slashes (e.g. "jfw/gallery/xyz.png"), which would
 // otherwise need awkward double-encoding to survive as a single path segment.
 router.delete("/company/gallery", requireApprovedCompany, controller.deleteGalleryPhoto)
 router.put("/company/policies", requireApprovedCompany, controller.updatePolicies)

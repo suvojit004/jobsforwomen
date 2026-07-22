@@ -2,7 +2,7 @@ import prisma from "../../shared/database/db"
 import { logger } from "../../shared/utils/logger"
 import EventBus from "../../shared/eventBus/eventBus"
 import { CompanyStatus, JobStatus, ApplicationStatus, WorkMode, PerkStatus } from "@prisma/client"
-import { deleteFromCloudinary, replaceInCloudinary } from "../../shared/utils/cloudinary"
+import { deleteFile, replaceFile } from "../../shared/utils/fileStorage"
 import { normalizeDocuments } from "../../shared/utils/documents"
 import crypto from "crypto"
 
@@ -1307,11 +1307,11 @@ export class RecruiterService {
     // Attaching an offer letter is optional -- a recruiter can still
     // release an offer with just the free-text details, same as before this
     // was added. Old letter (if replacing one on a re-release) is deleted
-    // first via replaceInCloudinary, same pattern as resume replacement.
+    // first via replaceFile, same pattern as resume replacement.
     let offerLetterUrl = app.offerLetterUrl
     let offerLetterPublicId = app.offerLetterPublicId
     if (offerLetterFile) {
-      const uploadResult = await replaceInCloudinary(
+      const uploadResult = await replaceFile(
         app.offerLetterPublicId,
         offerLetterFile.buffer,
         "jfw/offer-letters",
@@ -1437,14 +1437,14 @@ export class RecruiterService {
     const oldLogoPublicId = profile.company?.logoPublicId
 
     // SAFE REPLACEMENT ORDER: the new asset has already been uploaded to
-    // Cloudinary by the caller (controller) before this method runs. We must
+    // disk by the caller (controller) before this method runs. We must
     // point the database at the new asset FIRST, and only delete the old
     // asset AFTER that succeeds -- never before. This also guards against the
-    // logo uploader's deterministic public_id (`${userId}_logo`): when a user
-    // re-uploads, the new upload overwrites the SAME Cloudinary public_id as
-    // the old one, so oldLogoPublicId === logoDetails.publicId in that case.
-    // Deleting "the old asset" then would delete the brand-new image we just
-    // pointed the database at. Only delete when the public IDs actually differ.
+    // logo uploader's deterministic filename (`${userId}_logo`): when a user
+    // re-uploads, the new upload overwrites the SAME path as the old one, so
+    // oldLogoPublicId === logoDetails.publicId in that case. Deleting "the
+    // old asset" then would delete the brand-new image we just pointed the
+    // database at. Only delete when the public IDs actually differ.
     const updatedCompany = await prisma.company.update({
       where: { id: companyId },
       data: {
@@ -1456,9 +1456,9 @@ export class RecruiterService {
 
     if (oldLogoPublicId && oldLogoPublicId !== logoDetails.publicId) {
       try {
-        await deleteFromCloudinary(oldLogoPublicId, false)
+        await deleteFile(oldLogoPublicId, false)
       } catch (err: any) {
-        logger.warn(`[Cloudinary] Failed to delete old logo asset: ${err.message}`)
+        logger.warn(`[FileStorage] Failed to delete old logo asset: ${err.message}`)
       }
     }
 
@@ -1489,9 +1489,9 @@ export class RecruiterService {
 
     if (logoPublicId) {
       try {
-        await deleteFromCloudinary(logoPublicId, false)
+        await deleteFile(logoPublicId, false)
       } catch (err: any) {
-        logger.warn(`[Cloudinary] Failed to delete logo asset: ${err.message}`)
+        logger.warn(`[FileStorage] Failed to delete logo asset: ${err.message}`)
       }
     }
 
@@ -1585,9 +1585,9 @@ export class RecruiterService {
     })
 
     try {
-      await deleteFromCloudinary(publicId, false)
+      await deleteFile(publicId, false)
     } catch (err: any) {
-      logger.warn(`[Cloudinary] Failed to delete gallery photo asset: ${err.message}`)
+      logger.warn(`[FileStorage] Failed to delete gallery photo asset: ${err.message}`)
     }
 
     EventBus.publish("AuditCreated", {

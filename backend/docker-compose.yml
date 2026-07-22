@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   api:
     build:
@@ -12,6 +10,24 @@ services:
     environment:
       - NODE_ENV=production
       - PORT=5000
+      # Overrides whatever DATABASE_URL/REDIS_URL are set to in .env (likely
+      # your real remote Render/Upstash instances) so `docker compose up`
+      # is fully self-contained and never touches production data -- points
+      # at the local `db`/`redis` containers defined below instead. Delete
+      # these two lines if you'd rather test against your real remote data.
+      - DATABASE_URL=postgresql://postgres:root@db:5432/jobsforwomen
+      - REDIS_URL=redis://redis:6379
+      # Local-disk file storage (replaces Cloudinary). BACKEND_URL is
+      # localhost:5000 since that's the host-mapped port above; the volume
+      # below is what makes /app/uploads survive `docker compose down` (a
+      # container restart alone) -- it does NOT survive `docker compose
+      # down -v`, which deletes volumes too. That's the actual test: bring
+      # the stack down and up again *without* -v and confirm an uploaded
+      # file is still there.
+      - DISK_MOUNT_PATH=/app/uploads
+      - BACKEND_URL=http://localhost:5000
+    volumes:
+      - uploads_data:/app/uploads
     depends_on:
       db:
         condition: service_healthy
@@ -29,8 +45,16 @@ services:
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=root
       - POSTGRES_DB=jobsforwomen
-    ports:
-      - "127.0.0.1:5432:5432" # Bind to localhost to restrict external public traffic
+    # No host port mapping -- the `api` container reaches this one over
+    # Docker's internal network as `db:5432` regardless, and Windows kept
+    # refusing to bind ANY host port here ("forbidden by its access
+    # permissions" on both 5432 and 5433), which points at a Windows-level
+    # restriction (stuck `winnat` service / Hyper-V dynamic port range)
+    # rather than a real conflict. If you want to connect a GUI tool
+    # (psql/DBeaver/TablePlus) from Windows directly, add back a
+    # "127.0.0.1:<port>:5432" mapping once that's sorted out -- see
+    # `net stop winnat && net start winnat` (run as Administrator) as the
+    # usual fix for this class of error.
     volumes:
       - pgdata:/var/lib/postgresql/data
     networks:
@@ -44,8 +68,8 @@ services:
   redis:
     image: redis:7-alpine
     restart: always
-    ports:
-      - "127.0.0.1:6379:6379" # Bind to localhost
+    # No host port mapping, same reasoning as the db service above -- api
+    # reaches this over the internal Docker network as `redis:6379`.
     networks:
       - db-net
     healthcheck:
@@ -62,3 +86,4 @@ networks:
 
 volumes:
   pgdata:
+  uploads_data:

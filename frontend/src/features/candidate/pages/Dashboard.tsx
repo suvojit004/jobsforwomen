@@ -9,6 +9,7 @@ import { ProfileStrengthCard } from "@/components/dashboard/ProfileStrengthCard"
 import { QuickFilters } from "@/components/dashboard/QuickFilters"
 import { RecommendedJobs } from "@/components/dashboard/RecommendedJobs"
 import { ResumeCard } from "@/components/dashboard/ResumeCard"
+import { DashboardPageSkeleton } from "@/components/dashboard/DashboardSkeletons"
 import { useAuth } from "@/hooks/useAuth"
 import { candidateApi } from "../services/candidateApi"
 import { CandidateJobsApi, mapApiApplication } from "../services/jobsApi"
@@ -149,7 +150,7 @@ export function Dashboard() {
   }, [user, refreshProfile])
 
   if (isLoading) {
-    return <div className="p-8 text-center text-sm font-bold text-[#6B2C91]">Loading candidate workspace...</div>
+    return <DashboardPageSkeleton />
   }
 
   return (

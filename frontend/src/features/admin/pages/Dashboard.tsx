@@ -21,6 +21,7 @@ import {
   ResponsiveContainer,
 } from "recharts"
 import { DashboardCard } from "@/components/shared/DashboardCard"
+import { GenericDashboardSkeleton } from "@/components/shared/skeletons/PageSkeletons"
 import { cn } from "@/lib/utils"
 import { AdminApi } from "../services/adminApi"
 
@@ -217,7 +218,7 @@ export function Dashboard() {
   })()
 
   if (isLoading) {
-    return <div className="p-8 text-center text-sm font-bold text-[#6B2C91]">Loading admin console...</div>
+    return <GenericDashboardSkeleton />
   }
 
   return (

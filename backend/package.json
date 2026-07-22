@@ -8,7 +8,8 @@
     "start": "node dist/server.js",
     "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
     "test": "jest --runInBand",
-    "email:test": "ts-node src/shared/utils/emailTest.ts"
+    "email:test": "ts-node src/shared/utils/emailTest.ts",
+    "migrate:cloudinary-to-disk": "ts-node src/scripts/migrateCloudinaryToDisk.ts"
   },
   "keywords": [],
   "author": "",
@@ -23,7 +24,6 @@
     "@types/morgan": "^1.9.10",
     "bcrypt": "^6.0.0",
     "bullmq": "^5.79.2",
-    "cloudinary": "^2.10.0",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",

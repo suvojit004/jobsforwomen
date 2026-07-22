@@ -20,6 +20,7 @@ import {
 import { CompanyLogo } from "@/components/shared/CompanyLogo"
 import { StatusBadge } from "@/components/shared/StatusBadge"
 import { DashboardCard } from "@/components/dashboard/DashboardCard"
+import { TablePageSkeleton } from "@/components/shared/skeletons/PageSkeletons"
 import { ApplicationTimeline } from "../components/Applications/ApplicationTimeline"
 import { CandidateJobsApi, mapApiApplication, type DisplayApplication } from "../services/jobsApi"
 import type { Application } from "@/types/dashboard"
@@ -27,6 +28,7 @@ import type { Application } from "@/types/dashboard"
 export function Applications() {
   const [applications, setApplications] = useState<Application[]>([])
   const [selectedApp, setSelectedApp] = useState<Application | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
 
   // Mobile/Tablet detail drawer states
   const [isDrawerOpen, setIsDrawerOpen] = useState(false)
@@ -47,6 +49,8 @@ export function Applications() {
       } catch (err: any) {
         console.error("Failed to load applications", err)
         toast.error(err?.message || "Failed to load your applications.")
+      } finally {
+        if (!cancelled) setIsLoading(false)
       }
     }
 
@@ -55,6 +59,10 @@ export function Applications() {
       cancelled = true
     }
   }, [])
+
+  if (isLoading) {
+    return <TablePageSkeleton rows={5} />
+  }
 
   const handleSelectApplication = (app: Application) => {
     setSelectedApp(app)

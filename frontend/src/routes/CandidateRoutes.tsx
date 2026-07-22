@@ -1,5 +1,6 @@
-import { lazy } from "react"
+import { lazy, Suspense } from "react"
 import { Navigate, Route, Routes } from "react-router-dom"
+import { GenericDashboardSkeleton } from "@/components/shared/skeletons/PageSkeletons"
 
 const Dashboard = lazy(() => import("@/features/candidate/pages/Dashboard").then(m => ({ default: m.Dashboard })))
 const Profile = lazy(() => import("@/features/candidate/pages/Profile").then(m => ({ default: m.Profile })))
@@ -13,19 +14,21 @@ const Settings = lazy(() => import("@/features/candidate/pages/Settings").then(m
 
 export function CandidateRoutes() {
   return (
-    <Routes>
-      <Route index element={<Dashboard />} />
-      <Route path="dashboard" element={<Dashboard />} />
-      <Route path="profile" element={<Profile />} />
-      <Route path="jobs" element={<BrowseJobs />} />
-      <Route path="jobs/:id" element={<JobDetails />} />
-      <Route path="saved-jobs" element={<SavedJobs />} />
-      <Route path="applications" element={<Applications />} />
-      <Route path="notifications" element={<Notifications />} />
-      <Route path="messages" element={<Messages />} />
-      <Route path="settings" element={<Settings />} />
-      <Route path="*" element={<Navigate to="/candidate/dashboard" replace />} />
-    </Routes>
+    <Suspense fallback={<GenericDashboardSkeleton />}>
+      <Routes>
+        <Route index element={<Dashboard />} />
+        <Route path="dashboard" element={<Dashboard />} />
+        <Route path="profile" element={<Profile />} />
+        <Route path="jobs" element={<BrowseJobs />} />
+        <Route path="jobs/:id" element={<JobDetails />} />
+        <Route path="saved-jobs" element={<SavedJobs />} />
+        <Route path="applications" element={<Applications />} />
+        <Route path="notifications" element={<Notifications />} />
+        <Route path="messages" element={<Messages />} />
+        <Route path="settings" element={<Settings />} />
+        <Route path="*" element={<Navigate to="/candidate/dashboard" replace />} />
+      </Routes>
+    </Suspense>
   )
 }
 export default CandidateRoutes

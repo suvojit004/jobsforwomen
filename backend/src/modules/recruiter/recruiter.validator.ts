@@ -47,7 +47,7 @@ export const AllowedPerkDocumentFormats = [
 // Company Verification Document schema helper
 export const verificationDocumentSchema = z.object({
   url: z.string().url("Invalid document URL"),
-  publicId: z.string().min(1, "Cloudinary public ID is required"),
+  publicId: z.string().min(1, "Document storage ID is required"),
   size: z.number().max(MaxDocumentSize, "File size must not exceed 10 MB"),
   mimetype: z.string().refine(val => AllowedDocumentFormats.includes(val), {
     message: "Invalid file format. Allowed formats: PDF, PNG, JPG, JPEG",

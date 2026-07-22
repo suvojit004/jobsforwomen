@@ -15,6 +15,18 @@ COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 
+# File uploads (resumes, logos, offer letters, etc.) are written to
+# DISK_MOUNT_PATH (see shared/config/env.ts) using local disk storage. In
+# production this MUST be a Render Persistent Disk mounted at that path --
+# Render's regular container filesystem is wiped on every redeploy/restart.
+# Persistent Disks are single-instance only (no autoscaling/multiple
+# replicas). Created and chowned here (before USER node below) because a
+# fresh Docker named volume mounted into this path is owned by root by
+# default -- Docker copies this directory's existing ownership into the
+# volume the first time it's mounted, which is what lets the non-root
+# `node` user actually write into it instead of failing with EACCES.
+RUN mkdir -p /app/uploads
+
 # Set correct non-root permissions
 RUN chown -R node:node /app
 USER node

@@ -1,7 +1,7 @@
 import type { Request, Response } from "express"
 import { CandidateService, ServiceContext } from "./candidate.service"
 import { sendSuccess, sendError } from "../../shared/utils/response"
-import { uploadToCloudinary, deleteFromCloudinary } from "../../shared/utils/cloudinary"
+import { uploadFile, deleteFile } from "../../shared/utils/fileStorage"
 import { ConversationService } from "../../shared/services/conversation.service"
 import {
   updateCandidateProfileSchema,
@@ -61,10 +61,10 @@ export class CandidateController {
 
       // Mirrors the recruiter uploadCompanyLogo pattern: reject a missing file
       // with a real 400 in production, but let test mode fall through to a
-      // fixed mock so unit tests don't need a live Cloudinary mock. Previously
-      // this fallback ran unconditionally, meaning a real production request
-      // with no file attached would still succeed with a fake Cloudinary URL
-      // silently overwriting the candidate's real resumeUrl.
+      // fixed mock so unit tests don't need real disk I/O. Previously this
+      // fallback ran unconditionally, meaning a real production request with
+      // no file attached would still succeed with a fake URL silently
+      // overwriting the candidate's real resumeUrl.
       if (!file && process.env.NODE_ENV !== "test") {
         return sendError(res, "No file uploaded. Please upload a PDF, DOC, or DOCX resume.", null, 400)
       }
@@ -72,8 +72,7 @@ export class CandidateController {
       let fileDetails: any
 
       if (file) {
-        // Upload buffer directly to Cloudinary
-        const result = await uploadToCloudinary(file.buffer, "jfw/resumes", `${userId}_resume`, true)
+        const result = await uploadFile(file.buffer, "jfw/resumes", `${userId}_resume`, true, file.originalname)
         fileDetails = {
           url: result.secureUrl,
           publicId: result.publicId,
@@ -87,8 +86,8 @@ export class CandidateController {
       } else {
         // Fallback for tests only (gated above)
         fileDetails = {
-          url: "https://cloudinary.com/resume.pdf",
-          publicId: "resumes/mock_resume",
+          url: "http://localhost:5000/files/jfw/resumes/mock_resume.pdf",
+          publicId: "jfw/resumes/mock_resume.pdf",
           metadata: { size: 102400, mimetype: "application/pdf" },
         }
       }
@@ -106,7 +105,7 @@ export class CandidateController {
       const context = this.getContext(req)
       const profile = await this.service.getProfile(userId)
       if (profile && (profile as any).resumePublicId) {
-        await deleteFromCloudinary((profile as any).resumePublicId, true)
+        await deleteFile((profile as any).resumePublicId, true)
       }
       const updated = await this.service.deleteResume(userId, context)
       return sendSuccess(res, { profile: updated }, "Resume deleted successfully.")

@@ -1,4 +1,6 @@
 import request from "supertest"
+import fs from "fs"
+import path from "path"
 
 // Mock Prisma DB Operations
 jest.mock("../database/db", () => {
@@ -39,36 +41,6 @@ jest.mock("resend", () => {
   }
 })
 
-// Mock Cloudinary SDK
-jest.mock("cloudinary", () => {
-  const { Writable } = require("stream")
-  const mockUploader = {
-    upload_stream: jest.fn().mockImplementation((options, callback) => {
-      const mockResult = {
-        url: "http://cloudinary.com/test.png",
-        secure_url: "https://cloudinary.com/test.png",
-        public_id: "test_key",
-        bytes: 2048,
-      }
-      setTimeout(() => callback(null, mockResult), 50)
-      return new Writable({
-        write(chunk: any, encoding: any, next: any) {
-          next()
-        }
-      })
-    }),
-    destroy: jest.fn().mockImplementation((publicId, options, callback) => {
-      callback(null, { result: "ok" })
-    }),
-  }
-  return {
-    v2: {
-      config: jest.fn(),
-      uploader: mockUploader,
-    },
-  }
-})
-
 // Mock Redis Caching operations inline in factory
 jest.mock("./redis", () => {
   const localRedisMock = {
@@ -91,7 +63,7 @@ jest.mock("./redis", () => {
 import app from "../../app"
 import jwt from "jsonwebtoken"
 import env from "../config/env"
-import { uploadToCloudinary, deleteFromCloudinary, replaceInCloudinary } from "./cloudinary"
+import { uploadFile, deleteFile, replaceFile } from "./fileStorage"
 import { EmailService, emailMetrics } from "./email"
 import { addJob, queueMetrics } from "../queue/queue"
 import { stripHtml } from "./emailTemplates"
@@ -106,22 +78,34 @@ describe("Infrastructure Hardening Integration Tests (Phase 8 - Hardened)", () =
     jest.clearAllMocks()
   })
 
-  describe("1. Cloudinary Hardening & Security Checks", () => {
-    it("should successfully upload a mock file buffer to Cloudinary with antivirus scan passing", async () => {
-      const buffer = Buffer.from("clean pdf data")
-      const result = await uploadToCloudinary(buffer, "jfw/resumes", "candidate_resume.pdf", true)
-
-      expect(result.publicId).toBe("test_key")
-      expect(result.secureUrl).toBe("https://cloudinary.com/test.png")
-      expect(result.size).toBe(2048)
+  describe("1. Local Disk File Storage Hardening & Security Checks", () => {
+    afterEach(async () => {
+      await fs.promises.rm(env.DISK_MOUNT_PATH, { recursive: true, force: true }).catch(() => {})
     })
 
-    it("should successfully replace an asset in Cloudinary on replaceInCloudinary", async () => {
-      const newBuffer = Buffer.from("new pdf content")
-      const result = await replaceInCloudinary("old_key", newBuffer, "jfw/resumes", "updated_resume.pdf", true)
+    it("should successfully write a clean file buffer to disk with antivirus scan passing", async () => {
+      const buffer = Buffer.from("clean pdf data")
+      const result = await uploadFile(buffer, "jfw/resumes", "candidate_resume", true, "resume.pdf")
 
-      expect(result.publicId).toBe("test_key")
-      expect(result.secureUrl).toBe("https://cloudinary.com/test.png")
+      expect(result.publicId).toBe("jfw/resumes/candidate_resume.pdf")
+      expect(result.format).toBe("pdf")
+      expect(result.size).toBe(buffer.length)
+
+      const written = await fs.promises.readFile(path.join(env.DISK_MOUNT_PATH, result.publicId))
+      expect(written.toString()).toBe("clean pdf data")
+    })
+
+    it("should successfully replace an asset on disk via replaceFile, removing the old one", async () => {
+      const first = await uploadFile(Buffer.from("old pdf content"), "jfw/resumes", "updated_resume", true, "resume.pdf")
+      const result = await replaceFile(first.publicId, Buffer.from("new pdf content"), "jfw/resumes", "updated_resume", true, "resume.pdf")
+
+      expect(result.publicId).toBe("jfw/resumes/updated_resume.pdf")
+      const written = await fs.promises.readFile(path.join(env.DISK_MOUNT_PATH, result.publicId))
+      expect(written.toString()).toBe("new pdf content")
+    })
+
+    it("should treat deleting an already-missing asset as a no-op, not an error", async () => {
+      await expect(deleteFile("jfw/resumes/does_not_exist.pdf", true)).resolves.toBeUndefined()
     })
   })
 
@@ -170,7 +154,7 @@ describe("Infrastructure Hardening Integration Tests (Phase 8 - Hardened)", () =
   })
 
   describe("4. Readiness probes database checks and versions mappings", () => {
-    it("should report overall health metrics covering Redis, Sockets, and Cloudinary storage usage on /health", async () => {
+    it("should report overall health metrics covering Redis, Sockets, and disk storage usage on /health", async () => {
       mockPrisma.$queryRaw.mockResolvedValueOnce([{ 1: 1 }])
 
       const res = await request(app).get("/health")
@@ -179,7 +163,7 @@ describe("Infrastructure Hardening Integration Tests (Phase 8 - Hardened)", () =
       expect(res.body.data).toHaveProperty("database")
       expect(res.body.data).toHaveProperty("sockets")
       expect(res.body.data).toHaveProperty("queues")
-      expect(res.body.data).toHaveProperty("cloudinary")
+      expect(res.body.data).toHaveProperty("storage")
     })
   })
 })

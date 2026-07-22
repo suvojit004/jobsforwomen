@@ -6,7 +6,7 @@ import { calculateProfileCompletion } from "../../shared/utils/profileCompletion
 import { logger } from "../../shared/utils/logger"
 import EventBus from "../../shared/eventBus/eventBus"
 import { UserStatus } from "@prisma/client"
-import { deleteFromCloudinary } from "../../shared/utils/cloudinary"
+import { deleteFile } from "../../shared/utils/fileStorage"
 import prisma from "../../shared/database/db"
 
 export class AuthService {
@@ -585,18 +585,17 @@ export class AuthService {
       }
     }
 
-    // AdminService.deleteUser already cleans up the candidate's
-    // Cloudinary resume asset before deleting the row -- this self-service
-    // path (Settings -> Delete Account) never did, so a candidate deleting
-    // their own account left an orphaned file in Cloudinary storage forever
-    // (the DB pointer is gone via cascade, but nothing ever asked Cloudinary
-    // to delete the actual asset).
+    // AdminService.deleteUser already cleans up the candidate's resume file
+    // before deleting the row -- this self-service path (Settings -> Delete
+    // Account) never did, so a candidate deleting their own account left an
+    // orphaned file on disk forever (the DB pointer is gone via cascade, but
+    // nothing ever deleted the actual file).
     const resumePublicId = (user as any).candidateProfile?.resumePublicId
     if (resumePublicId) {
       try {
-        await deleteFromCloudinary(resumePublicId, true)
+        await deleteFile(resumePublicId, true)
       } catch (err: any) {
-        logger.warn(`[Cloudinary] Failed to delete resume asset for self-deleted account ${userId}: ${err.message}`)
+        logger.warn(`[FileStorage] Failed to delete resume asset for self-deleted account ${userId}: ${err.message}`)
       }
     }
 

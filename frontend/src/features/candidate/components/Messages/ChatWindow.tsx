@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react"
-import { Send, ArrowLeft } from "lucide-react"
+import { Send, ArrowLeft, Clock } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import type { Conversation } from "@/types/message"
 import { cn } from "@/lib/utils"
@@ -98,18 +98,20 @@ export function ChatWindow({
             >
               <div
                 className={cn(
-                  "max-w-[72%] rounded-2xl px-4 py-2 text-xs leading-5 shadow-sm relative",
+                  "max-w-[72%] rounded-2xl px-4 py-2 text-xs leading-5 shadow-sm relative transition-opacity",
                   isMe
                     ? "bg-[#6B2C91] text-white rounded-tr-none dark:bg-pink-600 dark:text-white"
-                    : "bg-white text-slate-800 rounded-tl-none border border-slate-100 dark:bg-slate-800 dark:border-slate-700/60 dark:text-slate-200"
+                    : "bg-white text-slate-800 rounded-tl-none border border-slate-100 dark:bg-slate-800 dark:border-slate-700/60 dark:text-slate-200",
+                  msg.pending && "opacity-50"
                 )}
               >
                 <p className="break-words">{msg.text}</p>
                 <span className={cn(
-                  "block text-[9px] mt-1 font-semibold text-right",
+                  "flex items-center justify-end gap-1 text-[9px] mt-1 font-semibold text-right",
                   isMe ? "text-pink-100/70" : "text-slate-400 dark:text-slate-500"
                 )}>
-                  {msg.timestamp}
+                  {msg.pending && <Clock className="size-2.5" />}
+                  {msg.pending ? "Sending..." : msg.timestamp}
                 </span>
               </div>
             </div>

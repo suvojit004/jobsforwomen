@@ -1,6 +1,6 @@
 import prisma from "../../shared/database/db"
 import EventBus from "../../shared/eventBus/eventBus"
-import { uploadToCloudinary } from "../../shared/utils/cloudinary"
+import { uploadFile } from "../../shared/utils/fileStorage"
 import { AllowedDocumentCategories } from "../recruiter/recruiter.validator"
 
 // Public, unauthenticated resubmission flow (Part 3 of the recruiter
@@ -108,7 +108,7 @@ export class CompanyVerificationService {
 
     const company = await this.findValidByToken(token)
 
-    const result = await uploadToCloudinary(
+    const result = await uploadFile(
       file.buffer,
       "jfw/company-verification",
       `${company.id}_${category}_${Date.now()}`,

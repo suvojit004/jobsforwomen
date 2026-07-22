@@ -2,6 +2,7 @@ import { useState, useEffect } from "react"
 import { toast } from "sonner"
 import { Link, useNavigate } from "react-router-dom"
 import { RecruiterApi } from "../services/recruiterApi"
+import { GenericDashboardSkeleton } from "@/components/shared/skeletons/PageSkeletons"
 import {
   Briefcase,
   Users,
@@ -251,7 +252,7 @@ export function Dashboard() {
   }
 
   if (isLoading) {
-    return <div className="p-8 text-center text-sm font-bold text-[#6B2C91]">Loading dashboard...</div>
+    return <GenericDashboardSkeleton />
   }
 
   return (

@@ -2,11 +2,12 @@
 import multer from "multer"
 import type { Request, Response, NextFunction } from "express"
 import { sendError } from "../utils/response"
-import { scanFileForVirus } from "../utils/cloudinary"
+import { scanFileForVirus } from "../utils/fileStorage"
 
 const MAX_SIZE = 10 * 1024 * 1024 // 10 MB
 
-// Memory storage to keep buffer for Cloudinary streaming
+// Memory storage so the file buffer is available for the virus-signature
+// scan and the disk write in fileStorage.ts
 const storage = multer.memoryStorage()
 
 const resumeFilter = (req: Request, file: any, cb: any) => {

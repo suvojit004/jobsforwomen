@@ -7,7 +7,7 @@ import crypto from "crypto"
 import redis from "../../shared/utils/redis"
 import { verifyEmailTransport, EmailService } from "../../shared/utils/email"
 import env from "../../shared/config/env"
-import { verifyCloudinaryConnection, runOrphanAssetCleanup, deleteFromCloudinary } from "../../shared/utils/cloudinary"
+import { verifyStorageConnection, runOrphanAssetCleanup, deleteFile } from "../../shared/utils/fileStorage"
 import { normalizeDocuments } from "../../shared/utils/documents"
 import { RECRUITER_SUMMARY_SELECT, shapeRecruiterSummary } from "../../shared/utils/recruiterSummary"
 import { io as socketIo } from "../../shared/socket/socket"
@@ -15,7 +15,7 @@ import { createAuditLog } from "../../shared/utils/audit"
 import { invalidateFeatureFlagCache } from "../../shared/utils/featureFlags"
 import { queueMetrics, getDeadLetterQueueStats } from "../../shared/queue/queue"
 import { socketMetrics } from "../../shared/socket/socket"
-import { cloudinaryMetrics } from "../../shared/utils/cloudinary"
+import { storageMetrics } from "../../shared/utils/fileStorage"
 import { emailMetrics } from "../../shared/utils/email"
 import { AppError } from "../../shared/middleware/errorHandler"
 import { hashPassword } from "../../shared/utils/password"
@@ -64,10 +64,10 @@ export class AdminService {
       emailStatus = "DOWN"
     }
 
-    // Real Cloudinary check
+    // Real disk-storage connectivity check
     let storageStatus = "DOWN"
     try {
-      storageStatus = (await verifyCloudinaryConnection()) ? "UP" : "DOWN"
+      storageStatus = (await verifyStorageConnection()) ? "UP" : "DOWN"
     } catch (err) {
       storageStatus = "DOWN"
     }
@@ -83,7 +83,7 @@ export class AdminService {
 
     // the raw top-level GET /health endpoint
     // (app.ts) already exposed real BullMQ queue counts, real connected
-    // Socket.IO counts, and real Cloudinary/email delivery metrics -- but
+    // Socket.IO counts, and real storage/email delivery metrics -- but
     // the Admin-facing System Health page (this endpoint) never surfaced
     // any of it, so the UI's "queue depth / failed jobs / active socket
     // connections" story was simply missing rather than fake. This reuses
@@ -116,12 +116,12 @@ export class AdminService {
         failed: emailMetrics.failed,
       },
       storageMetrics: {
-        uploadCount: cloudinaryMetrics.uploadCount,
-        deleteCount: cloudinaryMetrics.deleteCount,
-        averageLatencyMs: Math.round(cloudinaryMetrics.averageLatencyMs),
-        retryCount: cloudinaryMetrics.retryCount,
+        uploadCount: storageMetrics.uploadCount,
+        deleteCount: storageMetrics.deleteCount,
+        averageLatencyMs: Math.round(storageMetrics.averageLatencyMs),
+        retryCount: storageMetrics.retryCount,
       },
-      // Metric semantics: queueMetrics/emailMetrics/cloudinaryMetrics are
+      // Metric semantics: queueMetrics/emailMetrics/storageMetrics are
       // in-memory and reset to 0 on every restart/redeploy, so the frontend
       // needs to know which category each field falls into rather than
       // presenting all numbers as equally durable.
@@ -174,7 +174,7 @@ export class AdminService {
     }
   }
 
-  // Read-only orphan storage asset dry run (Cloudinary vs DB cross-reference).
+  // Read-only orphan storage asset dry run (disk vs DB cross-reference).
   // Never deletes anything -- see runOrphanAssetCleanup() for details.
   async getOrphanAssetReport() {
     return runOrphanAssetCleanup()
@@ -282,10 +282,10 @@ export class AdminService {
       return { day: key, Users: runningTotal }
     })
 
-    // Deliberately not calling getSystemHealth() here: it makes uncached,
-    // untimed network calls (Resend, Cloudinary) that can hang this whole
-    // response if either is slow. The dashboard never reads that data
-    // anyway -- System Health has its own dedicated endpoint/page.
+    // Deliberately not calling getSystemHealth() here: it makes an uncached,
+    // untimed network call (Resend) that can hang this whole response if
+    // it's slow. The dashboard never reads that data anyway -- System
+    // Health has its own dedicated endpoint/page.
 
     const recentAudits = await prisma.auditLog.findMany({
       orderBy: { timestamp: "desc" },
@@ -819,8 +819,8 @@ export class AdminService {
 
   // Permanent user deletion. Every relation a User owns is `onDelete:
   // Cascade` in schema.prisma, so `prisma.user.delete()` removes all of it.
-  // The one thing cascade can't reach is the resume file in Cloudinary
-  // (only the DB pointer), so that's cleaned up explicitly first.
+  // The one thing cascade can't reach is the resume file on disk (only the
+  // DB pointer), so that's cleaned up explicitly first.
   async deleteUser(
     adminId: string,
     targetUserId: string,
@@ -892,9 +892,9 @@ export class AdminService {
     const resumePublicId = target.candidateProfile?.resumePublicId
     if (resumePublicId) {
       try {
-        await deleteFromCloudinary(resumePublicId, true)
+        await deleteFile(resumePublicId, true)
       } catch (err: any) {
-        logger.warn(`[Cloudinary] Failed to delete resume asset for deleted user ${targetUserId}: ${err.message}`)
+        logger.warn(`[FileStorage] Failed to delete resume asset for deleted user ${targetUserId}: ${err.message}`)
       }
     }
 

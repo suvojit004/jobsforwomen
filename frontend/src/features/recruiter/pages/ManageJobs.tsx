@@ -11,6 +11,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { DashboardCard } from "@/components/shared/DashboardCard"
 import { DataTable, type ColumnDef } from "@/components/shared/DataTable"
+import { TableSkeleton } from "@/components/shared/skeletons/PageSkeletons"
 import { cn } from "@/lib/utils"
 import { RecruiterApi, type RecruiterJobRow } from "../services/recruiterApi"
 
@@ -301,14 +302,20 @@ export function ManageJobs() {
         </div>
       </DashboardCard>
 
-      {/* DataTable Container */}
-      <DashboardCard className="p-4">
-        <DataTable
-          columns={columns}
-          data={filteredJobs}
-          emptyMessage={isLoading ? "Loading job postings..." : "No job postings match your filters."}
-        />
-      </DashboardCard>
+      {/* DataTable Container -- full skeleton only on the very first load
+          (no data yet); a later refetch (pause/resume/delete) keeps the
+          existing rows visible instead of flashing. */}
+      {isLoading && jobs.length === 0 ? (
+        <TableSkeleton rows={6} columns={4} />
+      ) : (
+        <DashboardCard className="p-4">
+          <DataTable
+            columns={columns}
+            data={filteredJobs}
+            emptyMessage="No job postings match your filters."
+          />
+        </DashboardCard>
+      )}
     </div>
   )
 }

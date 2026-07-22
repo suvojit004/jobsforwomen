@@ -3,3 +3,6 @@ node_modules
 .env
 
 /generated/prisma
+
+# Local-disk file storage (dev only -- production uses a Render Persistent Disk)
+/uploads

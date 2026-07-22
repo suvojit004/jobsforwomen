@@ -1,7 +1,7 @@
 import type { Request, Response } from "express"
 import { RecruiterService, ServiceContext } from "./recruiter.service"
 import { sendSuccess, sendError } from "../../shared/utils/response"
-import { uploadToCloudinary, deleteFromCloudinary } from "../../shared/utils/cloudinary"
+import { uploadFile, deleteFile } from "../../shared/utils/fileStorage"
 import { logger } from "../../shared/utils/logger"
 import { NotificationService } from "../../shared/services/notification.service"
 import { ConversationService } from "../../shared/services/conversation.service"
@@ -99,7 +99,7 @@ export class RecruiterController {
       return sendError(res, "Document category is required.", null, 400)
     }
 
-    const result = await uploadToCloudinary(
+    const result = await uploadFile(
       file.buffer,
       "jfw/perk-documents",
       `${userId}_${category}_${Date.now()}`,
@@ -345,8 +345,7 @@ export class RecruiterController {
       let logoDetails: any
 
       if (file) {
-        // Upload new logo buffer to Cloudinary
-        const result = await uploadToCloudinary(file.buffer, "jfw/logos", `${userId}_logo`, false)
+        const result = await uploadFile(file.buffer, "jfw/logos", `${userId}_logo`, false, file.originalname)
         logoDetails = {
           url: result.secureUrl,
           publicId: result.publicId,
@@ -355,8 +354,8 @@ export class RecruiterController {
       } else {
         // Fallback for tests
         logoDetails = {
-          url: "https://cloudinary.com/logo.png",
-          publicId: "logos/mock_logo",
+          url: "http://localhost:5000/files/jfw/logos/mock_logo.png",
+          publicId: "jfw/logos/mock_logo.png",
           metadata: { size: 51200, mimetype: "image/png" }
         }
       }
@@ -365,15 +364,15 @@ export class RecruiterController {
         const updatedCompany = await this.service.updateCompanyLogo(userId, logoDetails, context)
         return sendSuccess(res, { company: updatedCompany }, "Company logo updated successfully.")
       } catch (dbErr: any) {
-        // DB update failed after the new asset was already uploaded to Cloudinary.
-        // Clean up the newly uploaded asset (safe: it was never persisted to any
-        // company record) instead of leaving it orphaned, and let the old logo
-        // (still referenced by the DB) remain untouched.
+        // DB update failed after the new asset was already saved to disk.
+        // Clean up the newly uploaded asset (safe: it was never persisted to
+        // any company record) instead of leaving it orphaned, and let the
+        // old logo (still referenced by the DB) remain untouched.
         if (file && logoDetails?.publicId) {
           try {
-            await deleteFromCloudinary(logoDetails.publicId, false)
+            await deleteFile(logoDetails.publicId, false)
           } catch (cleanupErr: any) {
-            logger.warn(`[Cloudinary] Failed to clean up orphaned logo upload after DB error: ${cleanupErr.message}`)
+            logger.warn(`[FileStorage] Failed to clean up orphaned logo upload after DB error: ${cleanupErr.message}`)
           }
         }
         throw dbErr
@@ -414,7 +413,7 @@ export class RecruiterController {
         // re-upload overwrites), gallery photos are many-per-company, so
         // each upload needs its own unique public_id.
         const uniqueName = `${userId}_gallery_${Date.now()}_${Math.round(Math.random() * 1e6)}`
-        const result = await uploadToCloudinary(file.buffer, "jfw/gallery", uniqueName, false)
+        const result = await uploadFile(file.buffer, "jfw/gallery", uniqueName, false, file.originalname)
         photoDetails = {
           url: result.secureUrl,
           publicId: result.publicId,
@@ -425,8 +424,8 @@ export class RecruiterController {
       } else {
         // Fallback for tests
         photoDetails = {
-          url: "https://cloudinary.com/gallery.png",
-          publicId: `gallery/mock_${Date.now()}`,
+          url: `http://localhost:5000/files/jfw/gallery/mock_${Date.now()}.png`,
+          publicId: `jfw/gallery/mock_${Date.now()}.png`,
           size: 51200,
           mimetype: "image/png",
           caption: caption || undefined,
@@ -439,9 +438,9 @@ export class RecruiterController {
       } catch (dbErr: any) {
         if (file && photoDetails?.publicId) {
           try {
-            await deleteFromCloudinary(photoDetails.publicId, false)
+            await deleteFile(photoDetails.publicId, false)
           } catch (cleanupErr: any) {
-            logger.warn(`[Cloudinary] Failed to clean up orphaned gallery upload after DB error: ${cleanupErr.message}`)
+            logger.warn(`[FileStorage] Failed to clean up orphaned gallery upload after DB error: ${cleanupErr.message}`)
           }
         }
         throw dbErr

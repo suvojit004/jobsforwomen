@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button"
 import { DashboardCard } from "@/components/shared/DashboardCard"
 import { DataTable, type ColumnDef } from "@/components/shared/DataTable"
 import { StatusBadge } from "@/components/shared/StatusBadge"
+import { TableSkeleton } from "@/components/shared/skeletons/PageSkeletons"
 import { RecruiterApi, type ApplicantRow } from "../services/recruiterApi"
 import { ScheduleInterviewModal, type ScheduleInterviewSubject } from "../components/ScheduleInterviewModal"
 
@@ -107,7 +108,7 @@ export function Applicants() {
     }
   }
 
-  // Opens the candidate's real uploaded resume (Cloudinary URL) in a new tab.
+  // Opens the candidate's real uploaded resume in a new tab.
   // Previously this only flashed a fake "download started" toast without
   // actually opening or fetching any file, real or otherwise.
   const handleDownloadResume = (row: ApplicantRow) => {
@@ -329,20 +330,26 @@ export function Applicants() {
         </div>
       </DashboardCard>
 
-      {/* Main Applicants DataTable */}
-      <DashboardCard className="p-4">
-        {downloadSuccessId && (
-          <div className="mb-4 bg-emerald-50 dark:bg-emerald-950/20 text-emerald-600 dark:text-emerald-400 p-2.5 rounded-lg text-xs font-bold flex items-center gap-2 select-none border border-emerald-100 dark:border-emerald-950/50">
-            <FileDown className="size-4 animate-bounce" />
-            Resume download started successfully.
-          </div>
-        )}
-        <DataTable
-          columns={columns}
-          data={filteredApplicants}
-          emptyMessage={isLoading ? "Loading applicants..." : "No applicants found matching selected criteria."}
-        />
-      </DashboardCard>
+      {/* Main Applicants DataTable -- full skeleton only on the very first
+          load (no data yet); a later refetch (e.g. after releasing an
+          offer) keeps the existing rows visible instead of flashing. */}
+      {isLoading && applicants.length === 0 ? (
+        <TableSkeleton rows={6} columns={4} />
+      ) : (
+        <DashboardCard className="p-4">
+          {downloadSuccessId && (
+            <div className="mb-4 bg-emerald-50 dark:bg-emerald-950/20 text-emerald-600 dark:text-emerald-400 p-2.5 rounded-lg text-xs font-bold flex items-center gap-2 select-none border border-emerald-100 dark:border-emerald-950/50">
+              <FileDown className="size-4 animate-bounce" />
+              Resume download started successfully.
+            </div>
+          )}
+          <DataTable
+            columns={columns}
+            data={filteredApplicants}
+            emptyMessage="No applicants found matching selected criteria."
+          />
+        </DashboardCard>
+      )}
 
       {/* Schedule Interview modal */}
       <ScheduleInterviewModal

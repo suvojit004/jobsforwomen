@@ -143,6 +143,10 @@ app.use("/api/v1/admins", adminRouter)
 import companyVerificationRouter from "./modules/company-verification/company-verification.routes"
 app.use("/api/v1/company-verification", companyVerificationRouter)
 
+// Local-disk file storage delivery route (replaces Cloudinary asset URLs).
+import filesRouter from "./shared/routes/files.routes"
+app.use("/files", filesRouter)
+
 // Swagger API Documentation routes mount
 import { serveSwaggerJson, serveSwaggerUi } from "./shared/utils/swagger"
 app.get("/api/v1/api-docs.json", serveSwaggerJson)
@@ -194,7 +198,7 @@ app.post("/api/v1/emails/complaint", async (req, res) => {
 // Health check endpoint
 import { socketMetrics } from "./shared/socket/socket"
 import { queueMetrics } from "./shared/queue/queue"
-import { cloudinaryMetrics } from "./shared/utils/cloudinary"
+import { storageMetrics } from "./shared/utils/fileStorage"
 
 app.get("/health", async (req, res) => {
   logger.debug("System health check triggered")
@@ -219,7 +223,7 @@ app.get("/health", async (req, res) => {
     },
     sockets: socketMetrics,
     queues: queueMetrics,
-    cloudinary: cloudinaryMetrics,
+    storage: storageMetrics,
     email: emailMetrics,
   }, "System is healthy")
 })

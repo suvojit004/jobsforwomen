@@ -4,6 +4,7 @@ import { useSearchParams } from "react-router-dom"
 import { motion } from "framer-motion"
 import { ConversationList } from "../components/Messages/ConversationList"
 import { ChatWindow } from "../components/Messages/ChatWindow"
+import { InboxPageSkeleton } from "@/components/shared/skeletons/PageSkeletons"
 import type { Conversation, Message } from "@/types/message"
 import { cn } from "@/lib/utils"
 import { candidateApi } from "../services/candidateApi"
@@ -181,26 +182,52 @@ export function Messages() {
   }
 
   const handleSendMessage = async (text: string) => {
-    try {
-      await candidateApi.sendMessage(activeId, text)
-      const socket = getSocket("candidate")
-      socket.emit("typing", { conversationId: activeId, isTyping: false })
+    const conversationId = activeId
+    const tempId = `temp-${Date.now()}`
+    const nowLabel = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
 
-      const msgs = await candidateApi.getMessages(activeId)
-      const formattedMsgs: Message[] = msgs.map((m: any) => ({
-        id: m.id,
-        sender: m.senderId === currentUserId ? "candidate" : "recruiter",
-        text: m.content,
-        timestamp: new Date(m.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-      }))
+    // Optimistic send: the message appears immediately (dimmed, pending
+    // icon via ChatWindow) instead of the composer looking like it did
+    // nothing for the second or two a real send + response takes.
+    setConversations((prev) =>
+      prev.map((c) =>
+        c.id === conversationId
+          ? {
+              ...c,
+              lastMessageText: text,
+              lastMessageTime: nowLabel,
+              thread: [...c.thread, { id: tempId, sender: "candidate", text, timestamp: nowLabel, pending: true }],
+            }
+          : c
+      )
+    )
+
+    try {
+      const result = await candidateApi.sendMessage(conversationId, text)
+      const socket = getSocket("candidate")
+      socket.emit("typing", { conversationId, isTyping: false })
+
+      // Swap the optimistic placeholder for the real, server-confirmed
+      // message (real id/timestamp) rather than doing a full getMessages()
+      // refetch -- the send response already contains it.
+      const real = result?.message
       setConversations((prev) =>
         prev.map((c) =>
-          c.id === activeId
+          c.id === conversationId
             ? {
                 ...c,
-                lastMessageText: text,
-                lastMessageTime: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-                thread: formattedMsgs,
+                thread: c.thread.map((m) =>
+                  m.id === tempId
+                    ? real
+                      ? {
+                          id: real.id,
+                          sender: real.senderId === currentUserId ? "candidate" : "recruiter",
+                          text: real.content,
+                          timestamp: new Date(real.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+                        }
+                      : { ...m, pending: false }
+                    : m
+                ),
               }
             : c
         )
@@ -208,11 +235,18 @@ export function Messages() {
     } catch (err: any) {
       console.error("Failed to send message", err)
       toast.error(err?.message || "Failed to send message.")
+      // Remove the optimistic bubble -- it never actually sent, so leaving
+      // it in the thread (even marked pending) would be misleading.
+      setConversations((prev) =>
+        prev.map((c) =>
+          c.id === conversationId ? { ...c, thread: c.thread.filter((m) => m.id !== tempId) } : c
+        )
+      )
     }
   }
 
   if (isLoading) {
-    return <div className="p-8 text-center text-sm font-bold text-[#6B2C91]">Loading conversations...</div>
+    return <InboxPageSkeleton />
   }
 
   return (

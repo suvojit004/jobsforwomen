@@ -74,11 +74,10 @@ jest.mock("../../shared/utils/redis", () => {
   }
 })
 
-// getSystemHealth() also performs a real SMTP verify() and a real Cloudinary
-// Admin API ping. Both would otherwise make real outbound network calls
-// during tests (slow, flaky, and dependent on live credentials), so only
-// those two specific functions are stubbed here -- everything else these
-// modules export keeps its real implementation via jest.requireActual.
+// getSystemHealth() also performs a real SMTP verify() and a real disk
+// write/unlink probe. Both would otherwise be slow/flaky in a test run, so
+// only those two specific functions are stubbed here -- everything else
+// these modules export keeps its real implementation via jest.requireActual.
 jest.mock("../../shared/utils/email", () => {
   const actual = jest.requireActual("../../shared/utils/email")
   return {
@@ -97,11 +96,11 @@ jest.mock("../../shared/utils/email", () => {
   }
 })
 
-jest.mock("../../shared/utils/cloudinary", () => {
-  const actual = jest.requireActual("../../shared/utils/cloudinary")
+jest.mock("../../shared/utils/fileStorage", () => {
+  const actual = jest.requireActual("../../shared/utils/fileStorage")
   return {
     ...actual,
-    verifyCloudinaryConnection: jest.fn().mockResolvedValue(true),
+    verifyStorageConnection: jest.fn().mockResolvedValue(true),
     __esModule: true,
   }
 })
@@ -711,14 +710,13 @@ describe("Admin Module Integration Tests (Phase 7)", () => {
       expect(res.body.data.apiUptime).toBeDefined()
     })
 
-    // Final Implementation Pass, Part 8: metric semantics. Every numeric
-    // field on this page used to be presented identically, with no
-    // indication that most of them (queueMetrics/emailMetrics/
-    // cloudinaryMetrics, all plain in-memory objects) silently reset to 0
-    // on every server restart. These assert that the classification is
-    // actually present and internally consistent -- every field mentioned
-    // in either list must really exist somewhere in the response, and the
-    // two lists must not overlap.
+    // Metric semantics: every numeric field on this page used to be
+    // presented identically, with no indication that most of them
+    // (queueMetrics/emailMetrics/storageMetrics, all plain in-memory
+    // objects) silently reset to 0 on every server restart. These assert
+    // that the classification is actually present and internally
+    // consistent -- every field mentioned in either list must really exist
+    // somewhere in the response, and the two lists must not overlap.
     it("classifies every queue/email/storage metric as CURRENT_STATE or PROCESS_LIFETIME_COUNTER, and reports when the process started", async () => {
       const res = await request(app)
         .get("/api/v1/admins/health")
@@ -733,7 +731,7 @@ describe("Admin Module Integration Tests (Phase 7)", () => {
       expect(metricSemantics.persistentHistoricalMetric).toEqual([])
 
       // Known in-memory counters (queue.ts's queueMetrics, email.ts's
-      // emailMetrics, cloudinary.ts's cloudinaryMetrics) must be classified
+      // emailMetrics, fileStorage.ts's storageMetrics) must be classified
       // as PROCESS_LIFETIME_COUNTER, never CURRENT_STATE.
       expect(metricSemantics.processLifetimeCounter).toEqual(
         expect.arrayContaining([

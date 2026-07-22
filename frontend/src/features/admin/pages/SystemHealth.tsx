@@ -87,7 +87,7 @@ export function SystemHealth() {
   }
 
   // Real service statuses reported by GET /api/v1/admins/health, which
-  // actually pings the database, Redis, SMTP transport, Cloudinary, and
+  // actually pings the database, Redis, SMTP transport, disk storage, and
   // checks whether Socket.IO was really initialized -- as opposed to the
   // previous version of this page, which was a fully hardcoded list that
   // always showed every service as "Healthy" with fabricated latency and
@@ -113,9 +113,9 @@ export function SystemHealth() {
           icon: Mail,
         },
         {
-          name: "Object Storage (Cloudinary)",
+          name: "Object Storage (Local Disk)",
           status: health.storage || "UNKNOWN",
-          details: "Live connectivity ping against the configured Cloudinary account.",
+          details: "Live write/read probe against the configured disk mount.",
           icon: HardDrive,
         },
         {
