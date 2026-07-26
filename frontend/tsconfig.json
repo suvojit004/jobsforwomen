@@ -3,5 +3,16 @@
   "references": [
     { "path": "./tsconfig.app.json" },
     { "path": "./tsconfig.node.json" }
-  ]
+  ],
+  // baseUrl/paths are duplicated here (they also live in tsconfig.app.json)
+  // so tooling that reads only the root tsconfig -- notably the shadcn/ui
+  // CLI -- can resolve the "@/..." alias. Without this the CLI cannot map
+  // "@/components/ui", falls back to treating it as a literal path, and
+  // creates a real directory named "@" at the project root instead of
+  // writing into src/. TypeScript and Vite were unaffected (Vite has its
+  // own alias in vite.config.ts), which is why it went unnoticed.
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": { "@/*": ["./src/*"] }
+  }
 }
