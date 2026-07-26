@@ -56,4 +56,4 @@ Platform feature states are toggled dynamically inside `FeatureConfigs.tsx`:
   * **Database Status**: Verifies active Prisma query latency.
   * **Redis Cache**: Displays connection state and memory occupancy.
   * **Email Service**: Shows startup verification checks.
-  * **Cloudinary Storage**: Evaluates asset upload-stream latency.
+  * **File Storage**: Writes and deletes a probe file to confirm the disk mount is genuinely writable, not merely configured.

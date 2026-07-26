@@ -18,9 +18,14 @@ This guide helps new engineers get started with development on the platform.
 4. **Boot Services**:
    * Start backend dev server: `npm run dev` inside `backend/`.
    * Start frontend dev server: `npm run dev` inside `frontend/`.
-5. **Access Platform**: Open `http://localhost:3000` (or `http://localhost:5173`) in your browser. Log in with the default admin account:
+5. **Access Platform**: Open `http://localhost:5173` in your browser. Log in with the default admin account:
    * **Username**: `admin@jobsforwomen.info`
    * **Password**: `admin123`
+   * > These are **development-only** bootstrap credentials. They must be changed or removed before any environment is publicly reachable.
+
+**Alternative — full stack in Docker.** `cd backend && docker compose up --build` starts the API, PostgreSQL, and Redis together with no local database install required. Apply migrations with `docker compose exec api npx prisma migrate deploy`. See [16. Build & Deployment](16_DEPLOYMENT.md).
+
+**Before your first change, read** [OPERATIONS_RUNBOOK.md](OPERATIONS_RUNBOOK.md) — particularly the "Known defects and landmines" section. Several behaviours are surprising (scheduled jobs never run, three queues have no workers, workers share the API process) and will otherwise cost you an afternoon.
 
 ---
 

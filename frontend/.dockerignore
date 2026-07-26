@@ -1,0 +1,32 @@
+# Keeps the build context small and prevents local artefacts/secrets from
+# being copied into an image layer by `COPY . .`.
+node_modules
+dist
+dist-ssr
+
+# Local env files -- VITE_API_URL is passed as a --build-arg instead.
+.env
+.env.*
+
+# Logs
+logs
+*.log
+vite-dev.log
+vite-dev.err.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# VCS / editor / OS
+.git
+.gitignore
+.vscode
+.idea
+.DS_Store
+*.local
+
+# Docker + docs (not needed inside the build)
+Dockerfile
+.dockerignore
+README.md

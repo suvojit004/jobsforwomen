@@ -13,7 +13,6 @@ Ensure you have the following installed on your system:
   * **PostgreSQL**: `v15+` (Local server or Cloud database instance).
   * **Redis**: `v6+` (For BullMQ queue management and authentication caches).
 * **External API Accounts**:
-  * **Cloudinary**: Active account for file storage (logos and resumes).
   * **Resend**: API key for transactional emails.
   * **Google Cloud Console**: Project setup for Google OAuth login.
 
@@ -34,7 +33,7 @@ Navigate to the `backend/` directory, copy the template `.env.example`, and fill
 cd backend
 cp .env.example .env
 ```
-Update `.env` with your database credentials, Redis URL, Cloudinary configuration, and Resend settings. (See [4. Environment Variables](04_ENVIRONMENT_VARIABLES.md) for full details).
+Update `.env` with your database credentials, Redis URL, storage path (`DISK_MOUNT_PATH`), and Resend settings. (See [4. Environment Variables](04_ENVIRONMENT_VARIABLES.md) for full details).
 
 ### Step 3: Install Backend Dependencies
 Install backend Node packages:
@@ -55,6 +54,8 @@ Seed the database with default roles, permissions, department lists, and the def
 npm run seed
 ```
 *(Default Super Admin: Email `admin@jobsforwomen.info` | Password `admin123`)*
+
+> **Security:** these are development-only bootstrap credentials created by the seed script. **Change the password or delete this account before any environment is publicly reachable.**
 
 ### Step 6: Configure Frontend Environment Variables
 Navigate to the `frontend/` directory, copy the template environment configuration, and specify the local API server URL:

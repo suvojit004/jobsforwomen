@@ -16,8 +16,9 @@ The backend follows a domain-driven modular structure grouped under `/src/module
 ├── src/
 │   ├── app.ts                 # Express app setup, middlewares, and routers registration
 │   ├── server.ts              # Entry point bootstrap starting HTTP & Socket servers
-│   ├── database/              # DB clients and seeder
-│   │   └── seed.ts            # DB seed script
+│   ├── database/              # DB seeder and admin bootstrap
+│   │   ├── seed.ts            # DB seed script
+│   │   └── create-admin.ts    # CLI to create a Super Admin account
 │   ├── modules/               # Modular API domains
 │   │   ├── admin/             # System config, flags, logs, verification controllers
 │   │   ├── auth/              # JWT, OAuth, Registration, Verification endpoints
@@ -25,16 +26,26 @@ The backend follows a domain-driven modular structure grouped under `/src/module
 │   │   ├── company-verification/ # Company registration, approval histories
 │   │   ├── rbac/              # Role, permission, and access middleware layer
 │   │   └── recruiter/         # Job posting, team management, metrics
-│   ├── shared/                # Common resources across domains
-│   │   ├── config/            # Env loaders (Zod schemas)
-│   │   ├── eventBus/          # Pub/sub event hub (EventBus)
-│   │   ├── listeners/         # Event listeners (Notifications, emails)
-│   │   ├── queue/             # BullMQ queue managers and Redis workers
-│   │   └── utils/             # Loggers, encryptors, email helpers
-│   ├── sockets/               # Sockets namespaces and events registration
-│   └── workers/               # Background task scheduler jobs
+│   ├── scripts/               # One-off maintenance scripts (storage migration)
+│   └── shared/                # Common resources across domains
+│       ├── config/            # Env loaders (Zod schemas)
+│       ├── database/          # Prisma client singleton
+│       ├── eventBus/          # Pub/sub event hub (EventBus)
+│       ├── listeners/         # Event listeners (Audit, Notifications, emails)
+│       ├── middleware/        # Auth, rate limiting, uploads, errors, request IDs
+│       ├── queue/             # BullMQ queues, workers, dead-letter queue, scheduler
+│       ├── routes/            # Cross-cutting routes (files.routes.ts)
+│       ├── services/          # Shared domain services (conversations, etc.)
+│       ├── socket/            # Socket.IO server, namespaces, Redis adapter
+│       └── utils/             # Logger, file storage, email, tokens, response helpers
+├── Dockerfile                 # Two-stage production image (see docs 16)
+├── docker-compose.yml         # Local full stack: api + postgres + redis
+├── nginx.conf                 # Reverse-proxy config for VPS/self-hosted deploys
+├── .dockerignore              # Excludes node_modules, .env, uploads, logs from builds
 └── package.json               # Backend npm configurations
 ```
+
+> Note: `src/sockets/`, `src/workers/`, `src/queues/`, and `src/emails/` exist on disk but are **empty placeholders**. The real implementations live under `src/shared/socket/` and `src/shared/queue/` respectively.
 
 ---
 
@@ -48,8 +59,9 @@ The frontend uses a modern feature-oriented architectural pattern. Shared layout
 │   ├── api/                   # Hand-rolled HTTP clients (client.ts) and socket setups (socket.ts)
 │   ├── app/                   # Root App hooks and configuration
 │   ├── components/            # Reusable UI elements (ui/ buttons, inputs, cards)
-│   │   ├── dashboard/         # Dashboard layout parts (charts, feed, cards)
+│   │   ├── dashboard/         # Dashboard layout parts (charts, feed, cards, skeletons)
 │   │   └── shared/            # Shared status indicators, badges, layouts
+│   │       └── skeletons/     # Page-level loading placeholders (PageSkeletons.tsx)
 │   ├── contexts/              # React Context providers (Auth, Notifications)
 │   ├── features/              # Feature modules containing pages, hooks, services
 │   │   ├── admin/             # Admin page views (Moderation, Health, Configs)
@@ -65,19 +77,40 @@ The frontend uses a modern feature-oriented architectural pattern. Shared layout
 │   ├── utils/                 # Formatting, date helpers
 │   ├── index.css              # Global custom styling sheet
 │   └── main.tsx               # Client entry bootstrap mounting React DOM
+├── Dockerfile                 # Two-stage build: Vite bundle -> nginx (see docs 16)
+├── nginx.conf                 # SPA fallback, gzip, cache headers for the container
+├── .dockerignore              # Excludes node_modules, dist, .env from builds
+├── vercel.json                # SPA rewrite rule for Vercel deploys
 └── package.json               # Frontend npm configurations
 ```
 
 ---
 
-## 2.3 Routing Architecture
+## 2.3 Repository Root
+
+```
+/
+├── backend/                   # Express API (see 2.1)
+├── frontend/                  # React SPA (see 2.2)
+├── docs/                      # This documentation set
+│   └── OPERATIONS_RUNBOOK.md  # Incident response & deployment runbook
+└── k6-load-tests/             # Rate-limit and workflow load-test suite
+```
+
+---
+
+## 2.4 Routing Architecture
 
 ### Backend Routes:
 Backend routes are grouped in modules and registered in `app.ts` under prefix `/api/v1/`:
 * `auth`: `/api/v1/auth` (Login, registration, password resets, Google OAuth callback)
 * `candidate`: `/api/v1/candidates` (Profile retrieval, resume uploading, job search, apply actions)
 * `recruiter`: `/api/v1/recruiters` (Job creation/updates, application moderation, metrics, coworker invites)
-* `admin`: `/api/v1/admin` (Verify companies, audit logs, feature flags, system health check)
+* `admin`: `/api/v1/admins` (Verify companies, audit logs, feature flags, system health check) — note the **plural** mount point in `app.ts`
+* `rbac`: `/api/v1/rbac` (Role and permission management)
+* `company-verification`: `/api/v1/company-verification` (Public, token-authenticated resubmission flow)
+* `files`: `/files/jfw/:type/:filename` (Uploaded file delivery — **not** under `/api/v1`)
+* Health probes: `/health`, `/live`, `/ready`, `/version` (mounted at the app root)
 
 ### Frontend Routes:
 Frontend routes are managed in `src/routes/AppRouter.tsx` using `react-router-dom`:

@@ -15,7 +15,7 @@ This roadmap outlines recommended improvements to scale, secure, and expand the 
 ## 25.2 Medium-Term Improvements (3 - 6 Months)
 
 * **Push Notification Subscriptions**: Complete service worker routing integration to enable native browser push alerts.
-* **Antivirus Scanning Node**: Integrate a live file scanner (like ClamAV or VirusTotal API) to scan resumes for viruses before uploading to Cloudinary.
+* **Antivirus Scanning Node**: Integrate a live file scanner (like ClamAV or VirusTotal API). Uploads are currently validated only structurally (magic-byte vs declared MIME type) — there is **no malware scanning** today.
 * **Multi-Factor Authentication**: Wire TOTP-based authentication (such as Google Authenticator) for Admin and Recruiter logins.
 
 ---

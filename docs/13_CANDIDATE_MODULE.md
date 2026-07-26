@@ -15,10 +15,11 @@ Candidates manage their details in `Profile.tsx`.
 
 ---
 
-## 13.2 Resume Management (Cloudinary Integration)
+## 13.2 Resume Management (Local Disk Storage)
 
-Resumes are managed inside `ResumeCard.tsx` using Cloudinary:
-* **Upload**: Candidates upload a PDF or Word document (max 2MB). The frontend calls `POST /api/v1/candidates/resume` sending `multipart/form-data`. The file is scanned for size and MIME constraints, uploaded to Cloudinary, and its metadata is stored in the database.
+Resumes are managed inside `ResumeCard.tsx`:
+* **Upload**: Candidates upload a PDF, DOC, or DOCX document (max 10MB, enforced by Multer). The frontend calls `POST /api/v1/candidates/resume` sending `multipart/form-data`. The file's magic bytes are checked against its declared MIME type, it is written to `DISK_MOUNT_PATH/jfw/resumes/`, and its metadata is stored in the database.
+* **Retrieval**: Resumes are private. API responses return a signed, time-limited URL (`?exp=...&sig=...`, 1-hour TTL) generated automatically by `sendSuccess()`. An expired link returns 403 and is refreshed by reloading the page.
 * **Immediate State Sync**: The frontend updates state immediately upon receiving an HTTP 200 upload/delete response, providing instant feedback without page reloads.
 * **Refetch Sync**: A silent background profile refetch updates the profile completion rate.
 

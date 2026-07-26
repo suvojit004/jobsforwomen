@@ -15,11 +15,11 @@ This matrix lists the implementation status of core system capabilities across t
 | **Job Posting Lifecycle** | Yes | - | Yes | Yes | Yes | Yes | Yes | Approvals required from Admin before visibility. |
 | **Real-time Notifications** | Yes | - | Yes | Yes | Yes | Yes | Yes | Delivered via Sockets and Email. |
 | **Real-time Chat Messaging** | Yes | - | Yes | Yes | Yes | Yes | Yes | Client-Recruiter chat integration via namespaces. |
-| **Candidate Resume Upload** | Yes | - | Yes | Yes | Yes | Yes | Yes | Managed via Cloudinary secure uploads. |
+| **Candidate Resume Upload** | Yes | - | Yes | Yes | Yes | Yes | Yes | Local disk storage with signed, time-limited URLs. |
 | **Interactive Job Filters** | Yes | - | Yes | Yes | Yes | Yes | Yes | Filter by progressive benefit tags. |
 | **Feature Configuration Flags** | Yes | - | Yes | Yes | Yes | Yes | Yes | Managed dynamically from Admin view. |
 | **Audit Activity Logs** | Yes | - | Yes | Yes | Yes | Yes | Yes | Stores before/after changes. |
-| **System Diagnostics Health** | Yes | - | Yes | Yes | Yes | Yes | Yes | Verifies Redis, Postgres, Cloudinary latency. |
+| **System Diagnostics Health** | Yes | - | Yes | Yes | Yes | Yes | Yes | Verifies Redis, Postgres, disk writability, queues, email. |
 | **Push Notifications** | - | Yes | Yes | No | No | No | No | Mocked in Feature Config flags, requires Service Worker subscription flow. |
 | **Two-Factor Authentication**| - | Yes | Yes | No | No | No | No | Toggle exists on flags and models, requires TOTP integration. |
 | **Advanced Conversion Analytics**| - | Yes | Yes | No | No | No | No | Toggle exists, renders mockup components. |

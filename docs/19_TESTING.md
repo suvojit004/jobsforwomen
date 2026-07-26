@@ -15,13 +15,15 @@ npm run test
 ```
 The suite executes in serial mode (`--runInBand`) to prevent write conflicts on mock databases and Redis instances.
 
+Under `NODE_ENV=test` two behaviours change deliberately: **rate limiting is bypassed entirely** (every tier calls `next()` immediately), and **queues use in-memory mocks** that execute jobs synchronously instead of connecting to Redis.
+
 ### 2. Test Architecture
 Tests are grouped under their respective feature domains (e.g. `src/modules/candidate/candidate.test.ts`, `src/shared/utils/email.test.ts`, etc.).
 * **Mocks Setup**:
   * **Database**: Prisma operations are mocked inline using `jest.mock("../database/db")` to intercept queries and return deterministic records without hitting a live database.
   * **Redis**: Redis caches and clients are mocked in `redis.ts` mocks.
   * **Email**: The Resend client is mocked to prevent sending real emails.
-  * **File Uploads**: Cloudinary streams are mocked to process mock buffers in-memory.
+  * **File Uploads**: `shared/utils/fileStorage` is mocked in module tests; `infrastructure.test.ts` exercises real disk I/O against a temporary `DISK_MOUNT_PATH` and cleans up afterwards.
 
 ---
 
@@ -49,3 +51,7 @@ Before pushing changes to staging, verify the following:
 | **Recruiter** | Post Job | Fill forms, post job, and redirect. | Redirects to `/recruiter/manage-jobs`, status is `pending_approval`. |
 | **Admin** | Moderation | Admin approves job. Recruiter and matching candidates receive notifications. | Real-time counts increment; notifications database entry is created. |
 | **Sockets** | Re-auth | Token refreshes while Socket is open. | Socket updates token and reconnects without losing listeners. |
+| **Messaging** | Optimistic send | Send a chat message. | Bubble appears instantly, dimmed with a clock icon, then resolves to a normal timestamp on confirmation. |
+| **Loading** | Skeletons | Hard-refresh any dashboard or list page. | A content-shaped skeleton renders — never a blank screen or raw "Loading..." text. |
+| **Files** | Persistence | Upload a file, redeploy, reopen it. | File still opens. Failure here means `DISK_MOUNT_PATH` is not on persistent storage. |
+| **Files** | Signed URL expiry | Leave a page open >1 hour, click a private file link. | 403 with an "expired link" message; reloading the page restores access. |

@@ -14,7 +14,7 @@ The platform models three primary user types, each with segregated routing and d
 
 | User Role | Description | Core Responsibilities |
 | :--- | :--- | :--- |
-| **Candidate** | Job seekers seeking roles. | Build profile, upload resume (Cloudinary), search and filter jobs, submit applications, receive real-time notifications. |
+| **Candidate** | Job seekers seeking roles. | Build profile, upload resume, search and filter jobs, submit applications, receive real-time notifications. |
 | **Recruiter** | Talent acquisition users representing companies. | Manage company profile, upload logo, post job vacancies, manage candidates, invite colleague recruiters, review applications. |
 | **Admin / Super Admin** | Platform operators. | Moderate job postings, verify company accounts, monitor platform health, configure feature flags, audit system actions. |
 
@@ -29,7 +29,7 @@ graph TD
     Client["React Frontend (SPA)"] <-->|REST API / Socket.IO| Server["Express Backend"]
     Server <-->|ORM| DB[("PostgreSQL")]
     Server <-->|BullMQ / Cache| Redis[("Upstash Redis")]
-    Server -->|File Storage| Cloudinary[("Cloudinary Cloud")]
+    Server -->|File Storage| Disk[("Local Disk / Persistent Volume")]
     Server -->|Emails| Resend[("Resend HTTPS API")]
 ```
 
@@ -39,7 +39,8 @@ graph TD
 * **Database & ORM**: PostgreSQL, Prisma ORM.
 * **Asynchronous Tasks & Caching**: Redis (Upstash / Memory), BullMQ (Queue processing).
 * **Real-Time WebSockets**: Socket.IO.
-* **External Providers**: Cloudinary (Asset storage), Resend (Transactional emails).
+* **File Storage**: Local disk on a persistent volume, served via a signed-URL route (`/files/jfw/...`). Migrated off Cloudinary; no third-party storage provider is used.
+* **External Providers**: Resend (Transactional emails), Google (OAuth).
 
 ---
 

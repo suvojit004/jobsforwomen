@@ -54,11 +54,45 @@ This guide outlines diagnostic procedures and resolutions for common issues acro
 
 ---
 
-## 17.4 Cloudinary Storage Issues
+## 17.4 File Storage Issues (Local Disk)
+
+Files are written to `DISK_MOUNT_PATH/jfw/<type>/` and served back through `GET /files/jfw/:type/:filename`. Public types (`logos`, `gallery`) need no signature; private types (`resumes`, `offer-letters`, `perk-documents`, `company-verification`) require a valid `?exp=&sig=` pair with a 1-hour TTL.
 
 ### 1. Company Logo Upload fails with HTTP 400
 * **Symptom**: Recruiter uploads a logo, but the upload fails.
 * **Diagnostics**:
-  * Cloudinary credentials missing or incorrect in `.env` (check Zod validation logs at startup).
-  * File size exceeds the **2 MB limit** or file format is unsupported (only PNG, JPEG, GIF, and WEBP are allowed).
-* **Fix**: Check file details and check backend Multer configuration validations.
+  * File size exceeds the **2 MB limit** for images, or the format is unsupported (only PNG, JPEG, GIF, and WEBP are allowed).
+  * The file's magic bytes don't match its declared MIME type — `scanFileForVirus()` rejects renamed files, logging `[FileSecurity] Rejected upload: file content does not match declared type`.
+* **Fix**: Check the file, then the Multer configuration in `shared/middleware/upload.middleware.ts`. Resumes, verification documents, perk documents, and offer letters use a 10 MB limit; logos and gallery photos use 2 MB.
+
+### 2. Upload fails with `EACCES` (permission denied)
+* **Symptom**: Every upload fails in a containerised deployment.
+* **Cause**: The storage volume mounted at `DISK_MOUNT_PATH` is root-owned, but the container runs as the non-root `node` user.
+* **Fix**: The `Dockerfile` creates `/app/uploads` *before* `chown -R node:node /app` precisely to avoid this — Docker copies a directory's existing ownership into a volume on first mount. If you edited the Dockerfile, restore that ordering.
+
+### 3. Private file link returns HTTP 403
+* **Symptom**: "This link has expired or is invalid. Reload the page to get a fresh link."
+* **Cause**: The signed URL is older than its 1-hour TTL, or `JWT_ACCESS_SECRET` (which is also the file-signing secret) was rotated.
+* **Fix**: Reload the page — API responses re-sign URLs on every request. This is working as designed, not a fault.
+
+### 4. Previously-uploaded files return HTTP 404
+* **Symptom**: Files that used to open now 404, typically right after a deploy.
+* **Cause**: `DISK_MOUNT_PATH` is not pointing at genuinely persistent storage, so the ephemeral container filesystem was wiped on redeploy.
+* **Fix**: Mount real persistent storage and set `DISK_MOUNT_PATH` to it (see [16. Build & Deployment](16_DEPLOYMENT.md)). **Files already lost this way are unrecoverable** and must be re-uploaded.
+
+---
+
+## 17.5 Rate Limiting (HTTP 429)
+
+* **Symptom**: Requests rejected with `429 Too many requests`.
+* **Diagnostics**: Read the `X-RateLimit-Limit` header on the 429 response — it tells you *which tier* rejected the request. The global tier (100 req/60s per IP) is stricter than most others and is evaluated first, so a client bursting toward a higher tier's ceiling is usually stopped by the global limiter instead.
+* **Fix**: For legitimate traffic, raise the relevant `RATE_LIMIT_*_MAX` environment variable and restart — no code change needed. For load testing, pace requests below 100/min so the intended tier is the one being exercised.
+
+---
+
+## 17.6 Queues and Background Jobs
+
+* **Symptom**: No emails are sent, but the site otherwise works normally.
+* **Cause**: BullMQ requires Redis. When Redis is unreachable the app degrades gracefully everywhere else (rate limiting falls back to in-process counters, the permission cache is bypassed) but **queues stop entirely** — so "emails stopped, site fine" is the classic Redis-down signature.
+* **Diagnostics**: `GET /health` reports queue metrics; the admin System Health page reports Redis status and the pending dead-letter count.
+* **Jobs that failed permanently**: after 3 attempts with exponential backoff, a job is moved to the `dead-letter` queue and an `AuditLog` row is written with action `QUEUE_JOB_FAILED_DLQ` (payloads are sanitized — tokens and passwords are redacted). Nothing consumes the dead-letter queue; it is an inspection area. There is no automated replay, so fix the root cause and re-trigger the originating action.

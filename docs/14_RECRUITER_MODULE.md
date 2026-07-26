@@ -8,7 +8,7 @@ The Recruiter Module provides tools for talent acquisition teams to verify their
 
 New recruiters must complete company onboarding in `CompanyProfile.tsx`:
 * **Corporate Identification**: Recruiter registers company metadata (name, website, location, industry, and benefits).
-* **Company Logo Upload**: Recruiter can upload a PNG/JPEG logo. The logo is verified (max 2MB), uploaded to Cloudinary, and the previously associated logo is deleted from Cloudinary.
+* **Company Logo Upload**: Recruiter can upload a PNG/JPEG/GIF/WEBP logo. The logo is verified (max 2MB), written to `DISK_MOUNT_PATH/jfw/logos/`, and the previously associated logo file is deleted from disk. Logos are public assets and are served without a signature.
 * **Verification Status**:
   * Until the company status is marked `approved` by an admin, recruiters are blocked from posting job vacancies.
   * In the UI, a banner displays their pending/draft status.

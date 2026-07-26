@@ -26,6 +26,11 @@ services:
       # file is still there.
       - DISK_MOUNT_PATH=/app/uploads
       - BACKEND_URL=http://localhost:5000
+      # LOCAL/TEST ONLY -- lets a seeded load-test account skip the
+      # email-verification link so it can log in immediately. auth.service.ts
+      # only honors this for accounts already in PendingVerification status;
+      # never set this in the real Render environment.
+      - BYPASS_EMAIL_VERIFICATION=true
     volumes:
       - uploads_data:/app/uploads
     depends_on:

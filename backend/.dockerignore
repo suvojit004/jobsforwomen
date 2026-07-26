@@ -1,0 +1,38 @@
+# Keeps the build context small and prevents local artefacts/secrets from
+# being copied into an image layer by `COPY . .` in Dockerfile's build stage.
+#
+# .env is excluded deliberately: without this, a local .env containing real
+# database credentials and JWT secrets would be baked into the image.
+# Configuration is supplied at runtime via --env-file / platform env vars.
+node_modules
+dist
+
+# Local env files
+.env
+.env.*
+
+# Uploaded files -- these live on a mounted volume/persistent disk at
+# runtime, never inside the image.
+uploads
+
+# Logs (winston writes here in non-test mode)
+logs
+*.log
+npm-debug.log*
+
+# VCS / editor / OS
+.git
+.gitignore
+.vscode
+.idea
+.DS_Store
+
+# Docker + local orchestration (not needed inside the build)
+Dockerfile
+.dockerignore
+docker-compose.yml
+nginx.conf
+
+# Test output
+coverage
+*-summary.json
