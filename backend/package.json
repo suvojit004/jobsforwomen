@@ -10,6 +10,7 @@
     "test": "jest --runInBand",
     "email:test": "ts-node src/shared/utils/emailTest.ts",
     "email:preview": "ts-node src/shared/utils/previewEmailTemplate.ts",
+    "find:bad-emails": "ts-node src/scripts/findBadEmails.ts",
     "migrate:cloudinary-to-disk": "ts-node src/scripts/migrateCloudinaryToDisk.ts"
   },
   "keywords": [],

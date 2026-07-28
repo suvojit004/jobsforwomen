@@ -985,6 +985,21 @@ export class AdminService {
     }
 
     if (action === "password-reset") {
+      // Unlike the self-service /forgot-password endpoint (gated by
+      // forgotPasswordSchema's z.string().email() at the API boundary),
+      // this admin-triggered path reads target.email straight from the DB
+      // with no re-validation. A malformed stored address (e.g. a stray
+      // duplicate '@') would otherwise sail through to the email queue,
+      // get permanently rejected by SES minutes later, and land in the
+      // dead-letter queue with no feedback to the admin who triggered it.
+      // Fail fast here instead, with a message that names the actual problem.
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(target.email)) {
+        throw new AppError(
+          `Cannot send a password reset: this account's stored email address is not a valid, deliverable address. Correct the user's email before retrying.`,
+          400
+        )
+      }
+
       const resetToken = crypto.randomBytes(32).toString("hex")
       const expiresAt = new Date(Date.now() + 60 * 60 * 1000) // 1 hour
 

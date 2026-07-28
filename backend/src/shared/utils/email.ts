@@ -61,6 +61,19 @@ export class PermanentEmailError extends Error {
 }
 
 function maskEmail(address: string): string {
+  // A well-formed address has exactly one '@'. The greedy regex below binds
+  // "domain" to whatever follows the LAST '@' in the string -- for a normal
+  // address that's harmless (there's only one), but for a malformed address
+  // with an extra/duplicate '@' it silently masks around the wrong split
+  // point and prints something that LOOKS like a valid address in the logs
+  // (e.g. "sara@old@gmail.com" -> "s****************@gmail.com"), hiding
+  // exactly the anomaly a reader would need to see to diagnose an SES
+  // "Missing final '@domain'" rejection. Flag the malformed case outright
+  // instead of masking it into a false-looking-fine string.
+  const atCount = (address.match(/@/g) || []).length
+  if (atCount !== 1) {
+    return `[malformed-email:${atCount}@chars,${address.length}total]`
+  }
   return address.replace(/^(.)(.*)(@.*)$/, (_, first, middle, domain) => first + "*".repeat(middle.length) + domain)
 }
 
