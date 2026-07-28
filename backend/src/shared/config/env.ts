@@ -6,6 +6,36 @@ import { z } from "zod";
 // already injected into process.env.
 dotenv.config();
 
+// Common paste mistake for env-var UIs that don't parse shell-style quoting
+// (Render's dashboard, among others): copying a value straight out of
+// .env.example -- which wraps it in double quotes for *local .env file*
+// safety -- pastes the literal quote characters into the var's value. A
+// local .env is read through `dotenv`, which strips matching wrapping
+// quotes automatically, so this never surfaces in development. Render (and
+// most host dashboards) inject the value into process.env completely
+// unparsed, so the quotes become part of the real string. For SES_FROM this
+// breaks AWS's address parser -- the quotes swallow the "<...>" address
+// spec, so SES sees no bare "@domain" at the top level and rejects EVERY
+// send with the same generic "BadRequestException - Missing final
+// '@domain'", regardless of recipient, which is exactly what makes it look
+// recipient-specific in the logs when it isn't.
+function stripWrappingQuotes(value: string): string {
+  const trimmed = value.trim()
+  if (
+    (trimmed.startsWith('"') && trimmed.endsWith('"') && trimmed.length >= 2) ||
+    (trimmed.startsWith("'") && trimmed.endsWith("'") && trimmed.length >= 2)
+  ) {
+    return trimmed.slice(1, -1).trim()
+  }
+  return trimmed
+}
+
+// Accepts either a bare address ("a@b.com") or a display-name form
+// ("Name <a@b.com>"), and nothing else -- catches quote characters, missing
+// '@', missing domain, or unbalanced angle brackets at config-load time
+// instead of as a mysterious per-send SES rejection in production.
+const SENDER_ADDRESS_PATTERN = /^(?:[^<>"\s@]+@[^<>"\s@]+\.[^<>"\s@]+|[^<>"]+<[^<>\s@]+@[^<>\s@]+\.[^<>\s@]+>)$/
+
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
 
@@ -46,8 +76,19 @@ const envSchema = z.object({
   AWS_ACCESS_KEY_ID: z.string().optional(),
   AWS_SECRET_ACCESS_KEY: z.string().optional(),
   // The "From" identity. Must be on the verified domain
-  // (e.g. "JobsForWomen <noreply@mail.jobsforwomen.info>").
-  SES_FROM: z.string().min(1),
+  // (e.g. "JobsForWomen <noreply@mail.jobsforwomen.info>" -- entered WITHOUT
+  // surrounding quote characters in Render/host env-var UIs; see
+  // stripWrappingQuotes above for why that matters).
+  SES_FROM: z
+    .string()
+    .min(1)
+    .transform(stripWrappingQuotes)
+    .refine((v: string) => SENDER_ADDRESS_PATTERN.test(v), {
+      message:
+        "SES_FROM is not a valid sender address. Use either a bare address " +
+        '("noreply@mail.jobsforwomen.info") or "Display Name <noreply@mail.jobsforwomen.info>" -- ' +
+        "with no surrounding quote characters in the host's env-var settings.",
+    }),
   // Optional SES Configuration Set -- required if you want SES to publish
   // bounce/complaint/delivery events to SNS. Leave unset to send without one.
   SES_CONFIGURATION_SET: z.string().optional(),
@@ -63,7 +104,11 @@ const envSchema = z.object({
 
   // Inbox that receives admin "Contact Support" ticket emails. Falls back to
   // the SES_FROM address so this feature works without a new required var.
-  SUPPORT_EMAIL: z.string().optional(),
+  // Same quote-stripping as SES_FROM -- same paste mistake is possible here.
+  SUPPORT_EMAIL: z
+    .string()
+    .optional()
+    .transform((v) => (v ? stripWrappingQuotes(v) : v)),
 
   PROFILE_COMPLETION_THRESHOLD: z.coerce.number().default(70),
 
