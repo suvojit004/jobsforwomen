@@ -7,6 +7,12 @@ export interface InvitationParams {
   email: string
   invitationLink: string
   roleName: string
+  // Admin can invite an email that already has an active account (see
+  // admin.service.ts's inviteEmployee, which -- unlike the recruiter
+  // teammate-invite path -- has no existingUser guard). For that case the
+  // recipient doesn't need to "accept" anything, just sign back in, so the
+  // template offers both paths instead of forcing the Accept Invitation flow.
+  loginLink: string
 }
 
 export interface VerificationParams {
@@ -204,6 +210,9 @@ export const EmailTemplates = {
         <p>You have been invited to join the JobsForWomen administration team as a <strong>${params.roleName}</strong>.</p>
         <p>Click the button below to accept the invitation and complete your profile setup:</p>
         ${ctaButton(params.invitationLink, "Accept Invitation", "#4A5568")}
+        <p style="font-size:12px; color:#94A3B8; margin-top:20px; padding-top:16px; border-top:1px solid #E2E8F0;">
+          Already have a JobsForWomen account? <a href="${params.loginLink}" style="color:${BRAND_PURPLE}; font-weight:700; text-decoration:none;">Log in here</a> instead.
+        </p>
       `,
     }),
 

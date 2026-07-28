@@ -6,3 +6,6 @@ node_modules
 
 # Local-disk file storage (dev only -- production uses a Render Persistent Disk)
 /uploads
+
+# Output of `npm run email:preview` -- rendered HTML, not source
+/email-previews

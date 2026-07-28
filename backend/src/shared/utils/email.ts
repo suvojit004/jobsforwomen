@@ -229,7 +229,12 @@ export class EmailService {
     // now that page didn't exist at all, so this link had nowhere valid to
     // go regardless of the prefix.
     const link = `${baseUrl}/auth/accept-invitation?token=${invitationToken}`
-    const html = EmailTemplates.invitation({ email: to, invitationLink: link, roleName })
+    const html = EmailTemplates.invitation({
+      email: to,
+      invitationLink: link,
+      roleName,
+      loginLink: `${baseUrl}/auth/login`,
+    })
     return this.sendMail(to, "JobsForWomen Staff Invitation", html)
   }
 
