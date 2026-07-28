@@ -173,8 +173,16 @@ export function UserModeration() {
   const handleToggleVerification = async (userId: string) => {
     try {
       const recObj = recruiters.find((r) => r.id === userId)
+      // The backend's verify-recruiter endpoint looks up a RecruiterProfile
+      // by id, not a User -- sending userId here always misses (RecruiterProfile.id
+      // and RecruiterProfile.userId are independently-generated UUIDs) and
+      // surfaces as a false "account no longer exists" 404 on every recruiter.
+      if (!recObj?.recruiterProfileId) {
+        toast.error("This recruiter has no profile to verify.")
+        return
+      }
       const nextVerify = !recObj?.verified
-      await AdminApi.verifyRecruiter(userId, nextVerify)
+      await AdminApi.verifyRecruiter(recObj.recruiterProfileId, nextVerify)
       loadUsers()
     } catch (err: any) {
       console.error("Failed to toggle verification", err)
