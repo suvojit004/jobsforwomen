@@ -22,7 +22,7 @@ Tests are grouped under their respective feature domains (e.g. `src/modules/cand
 * **Mocks Setup**:
   * **Database**: Prisma operations are mocked inline using `jest.mock("../database/db")` to intercept queries and return deterministic records without hitting a live database.
   * **Redis**: Redis caches and clients are mocked in `redis.ts` mocks.
-  * **Email**: The Resend client is mocked to prevent sending real emails.
+  * **Email**: The AWS SES v2 client (`@aws-sdk/client-sesv2`) is mocked to prevent sending real emails and consuming sending quota.
   * **File Uploads**: `shared/utils/fileStorage` is mocked in module tests; `infrastructure.test.ts` exercises real disk I/O against a temporary `DISK_MOUNT_PATH` and cleans up afterwards.
 
 ---
@@ -30,9 +30,11 @@ Tests are grouped under their respective feature domains (e.g. `src/modules/cand
 ## 19.2 Direct Email & Queue Tests
 
 New integration tests verified in `email.test.ts` include:
-1. **API Invocations**: Verifies `EmailService` invokes the mocked Resend client with correct recipient, subject, and HTML parameters.
-2. **Error Throwing**: Confirms that if Resend returns an `error` object, `EmailService.sendMail` throws a detailed Error.
-3. **Missing ID Handling**: Ensures that if Resend returns data without a message ID (`data?.id`), the service fails.
+1. **API Invocations**: Verifies `EmailService` issues a `SendEmailCommand` with the correct sender, recipient, subject, HTML body, and derived plain-text alternative.
+2. **Error Throwing**: Confirms a transient SES error propagates so BullMQ retries it.
+3. **Missing ID Handling**: Ensures a response without a `MessageId` fails.
+4. **Permanent vs Transient**: Confirms a sandbox `MessageRejected` surfaces as `PermanentEmailError` (retries skipped) while `TooManyRequestsException` stays retryable.
+5. **Transport Check**: Confirms `verifyEmailTransport()` uses `GetAccount` and never consumes sending quota.
 4. **Queue Worker Propagation**: Verifies that email delivery failures propagate up, causing the BullMQ worker job to fail.
 
 ---

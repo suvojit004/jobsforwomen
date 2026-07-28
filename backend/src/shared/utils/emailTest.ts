@@ -4,8 +4,7 @@ if (!process.env.NODE_ENV || process.env.NODE_ENV === "test") {
 }
 
 import env from "../config/env"
-import { EmailService } from "./email"
-import { logger } from "./logger"
+import { EmailService, verifyEmailTransport } from "./email"
 
 async function runDiagnostic() {
   const recipient = process.argv[2]
@@ -16,15 +15,32 @@ async function runDiagnostic() {
   }
 
   console.log(`[Diagnostic] Resolving configuration...`)
-  const apiKey = env.RESEND_API_KEY || env.SMTP_PASS
-  if (!apiKey) {
-    console.error("❌ Error: Resend API key is not configured in environment (RESEND_API_KEY or SMTP_PASS).")
+  if (!env.SES_FROM) {
+    console.error("❌ Error: SES_FROM is not configured.")
     process.exit(1)
   }
 
-  console.log(`[Diagnostic] Sender configured: ${env.SMTP_FROM}`)
+  console.log(`[Diagnostic] Region:    ${env.AWS_SES_REGION}`)
+  console.log(`[Diagnostic] Sender:    ${env.SES_FROM}`)
   console.log(`[Diagnostic] Recipient: ${recipient}`)
-  console.log(`[Diagnostic] Sending test email via Resend HTTPS API...`)
+  console.log(
+    `[Diagnostic] Credentials: ${
+      env.AWS_ACCESS_KEY_ID && env.AWS_SECRET_ACCESS_KEY
+        ? "explicit (AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY)"
+        : "default AWS provider chain (instance role / profile)"
+    }`
+  )
+
+  // Confirms credentials + region and prints the live sandbox/quota state
+  // before spending any of the daily sending allowance.
+  console.log(`[Diagnostic] Checking SES account status...`)
+  const reachable = await verifyEmailTransport()
+  if (!reachable) {
+    console.error("❌ SES is not reachable with the current configuration. See the logged error above.")
+    process.exit(1)
+  }
+
+  console.log(`[Diagnostic] Sending test email via AWS SES...`)
 
   try {
     const subject = "JobsForWomen Direct Provider Test Email"
@@ -32,9 +48,9 @@ async function runDiagnostic() {
       <div style="font-family: sans-serif; padding: 20px; color: #333;">
         <h2>Direct Provider Connection Test</h2>
         <p>This is a harmless test email sent by the JobsForWomen email diagnostic tool.</p>
-        <p>If you received this email, the Resend HTTPS SDK integration is working successfully!</p>
+        <p>If you received this email, the AWS SES integration is working successfully.</p>
         <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;" />
-        <p style="font-size: 11px; color: #777;">Timestamp: ${new Date().toISOString()}</p>
+        <p style="font-size: 11px; color: #777;">Region: ${env.AWS_SES_REGION} &middot; Timestamp: ${new Date().toISOString()}</p>
       </div>
     `
     const success = await EmailService.sendMail(recipient, subject, html)
@@ -48,15 +64,27 @@ async function runDiagnostic() {
     console.error("❌ Diagnostic Failed!")
     console.error(`Error Name: ${err.name || "Error"}`)
     console.error(`Error Message: ${err.message}`)
-    if (err.status) console.error(`HTTP Status Code: ${err.status}`)
-    if (err.code) console.error(`Error Code: ${err.code}`)
-    
-    // Explicit warning about sandbox restrictions
-    if (err.status === 403 || err.message.includes("403")) {
-      console.warn("\n⚠️ Note: The 403 rejection typically indicates Resend sandbox restrictions.")
-      console.warn("Verify that the recipient is the email address associated with your Resend account.")
+    if (err.$metadata?.httpStatusCode) console.error(`HTTP Status Code: ${err.$metadata.httpStatusCode}`)
+
+    // The overwhelmingly common failure while production access is pending.
+    if (err.name === "MessageRejected" || err.name === "PermanentEmailError") {
+      if (/not verified/i.test(err.message || "")) {
+        console.warn("\n⚠️  SES SANDBOX RESTRICTION")
+        console.warn("While the account is in sandbox mode, SES only delivers to individually")
+        console.warn("verified recipient addresses. Either:")
+        console.warn("  1. Verify this recipient: SES console → Identities → Create identity → Email address, or")
+        console.warn("  2. Send to an already-verified address, or")
+        console.warn("  3. Wait for production access to be approved.")
+        console.warn("Note this is about the RECIPIENT, not the sending domain -- a verified")
+        console.warn("sending domain does not lift the recipient restriction.")
+      }
     }
-    
+
+    if (err.name === "CredentialsProviderError" || /credential/i.test(err.message || "")) {
+      console.warn("\n⚠️  AWS credentials could not be resolved.")
+      console.warn("Set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY, or configure an AWS profile/role.")
+    }
+
     process.exit(1)
   }
 }

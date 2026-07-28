@@ -1,6 +1,6 @@
 # 11. Notification System
 
-The platform features a multi-channel notification engine delivering alerts via the Database, live WebSockets (Socket.IO), and transactional Emails (Resend).
+The platform features a multi-channel notification engine delivering alerts via the Database, live WebSockets (Socket.IO), and transactional Emails (AWS SES).
 
 ---
 
@@ -18,7 +18,7 @@ Platform operations dispatch events to the backend **`EventBus`** (a Node.js Eve
        │
        ├─► [Socket.IO Server] ──► Emit Event to User Namespace Room
        │
-       └─► [BullMQ Queue] ──► Redis Job ──► Email Worker (Resend API)
+       └─► [BullMQ Queue] ──► Redis Job ──► Email Worker (AWS SES v2)
 ```
 
 ---

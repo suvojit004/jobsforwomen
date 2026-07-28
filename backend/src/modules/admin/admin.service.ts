@@ -5,7 +5,7 @@ import { PermissionCacheManager } from "../../shared/utils/permissionCache"
 import { CompanyStatus, JobStatus, ApplicationStatus, UserStatus, JobVisibility, PerkStatus } from "@prisma/client"
 import crypto from "crypto"
 import redis from "../../shared/utils/redis"
-import { verifyEmailTransport, EmailService } from "../../shared/utils/email"
+import { verifyEmailTransport } from "../../shared/utils/email"
 import env from "../../shared/config/env"
 import { verifyStorageConnection, runOrphanAssetCleanup, deleteFile } from "../../shared/utils/fileStorage"
 import { normalizeDocuments } from "../../shared/utils/documents"
@@ -13,7 +13,7 @@ import { RECRUITER_SUMMARY_SELECT, shapeRecruiterSummary } from "../../shared/ut
 import { io as socketIo } from "../../shared/socket/socket"
 import { createAuditLog } from "../../shared/utils/audit"
 import { invalidateFeatureFlagCache } from "../../shared/utils/featureFlags"
-import { queueMetrics, getDeadLetterQueueStats } from "../../shared/queue/queue"
+import { queueMetrics, getDeadLetterQueueStats, addJob } from "../../shared/queue/queue"
 import { socketMetrics } from "../../shared/socket/socket"
 import { storageMetrics } from "../../shared/utils/fileStorage"
 import { emailMetrics } from "../../shared/utils/email"
@@ -53,10 +53,10 @@ export class AdminService {
       redisStatus = "DOWN"
     }
 
-    // Real email-transport check (Resend HTTPS API -- see verifyEmailTransport()
-    // in shared/utils/email.ts; env var names RESEND_API_KEY/SMTP_PASS/SMTP_FROM
-    // are kept from the pre-migration SMTP config for backward compatibility,
-    // but no SMTP protocol connection is made anywhere in this codebase)
+    // Real email-transport check (AWS SES v2 -- see verifyEmailTransport() in
+    // shared/utils/email.ts). Calls SES GetAccount, which validates the
+    // credentials/region and reports sandbox status without sending mail or
+    // consuming sending quota.
     let emailStatus = "DOWN"
     try {
       emailStatus = (await verifyEmailTransport()) ? "UP" : "DOWN"
@@ -283,7 +283,7 @@ export class AdminService {
     })
 
     // Deliberately not calling getSystemHealth() here: it makes an uncached,
-    // untimed network call (Resend) that can hang this whole response if
+    // untimed network call (SES) that can hang this whole response if
     // it's slow. The dashboard never reads that data anyway -- System
     // Health has its own dedicated endpoint/page.
 
@@ -2148,8 +2148,8 @@ export class AdminService {
   // ==========================================
   // SUPPORT TICKET SUBMISSION
   // ==========================================
-  // Sends a real email to the support inbox via the existing Resend-backed
-  // EmailService, and logs a real audit entry. Previously the frontend's
+  // Sends a real email to the support inbox via the existing SES-backed
+  // the email queue, and logs a real audit entry. Previously the frontend's
   // "Contact Support" form was a pure setTimeout that always claimed
   // "Your issue ticket has been filed successfully!" with no backend call
   // at all -- nothing was ever sent or recorded anywhere.
@@ -2168,7 +2168,7 @@ export class AdminService {
       throw new Error("Admin user not found")
     }
 
-    const supportInbox = env.SUPPORT_EMAIL || env.SMTP_USER
+    const supportInbox = env.SUPPORT_EMAIL || env.SES_FROM
     const fromName = admin.adminProfile?.fullName || admin.email
     const html = `
       <h2>New Admin Support Ticket</h2>
@@ -2178,7 +2178,16 @@ export class AdminService {
       <p><strong>Message:</strong></p>
       <p>${message.replace(/\n/g, "<br/>")}</p>
     `
-    const sent = await EmailService.sendMail(supportInbox, `[Support Ticket] ${category}: ${subject}`, html)
+    // Queued rather than sent inline: a direct EmailService.sendMail() here
+    // would bypass the BullMQ email worker's SES rate limiter (1 send/sec) and
+    // race the worker for the send budget, and would get no retry or
+    // dead-letter handling. Enqueuing keeps every outbound email on one
+    // throttled path.
+    await addJob("email", "sendRaw", {
+      to: supportInbox,
+      subject: `[Support Ticket] ${category}: ${subject}`,
+      html,
+    })
 
     await createAuditLog({
       operatorId: adminId,
@@ -2186,17 +2195,17 @@ export class AdminService {
       category: "SUPPORT",
       action: "SUPPORT_TICKET_SUBMITTED",
       entity: "SupportTicket",
-      newValue: { subject, category, delivered: sent },
+      newValue: { subject, category, queued: true },
       ipAddress: context?.ipAddress,
       browser: context?.browser,
       device: context?.device,
     })
 
-    if (!sent) {
-      throw new Error("Failed to send support ticket email. Please try again or email support directly.")
-    }
-
-    return { delivered: true }
+    // The job is queued, not yet delivered -- the worker sends it within the
+    // SES rate limit and retries on transient failure. Reporting "delivered"
+    // here would be a lie; the previous inline call could not report failure
+    // either, since sendMail throws rather than returning false.
+    return { queued: true }
   }
 }
 

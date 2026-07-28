@@ -13,7 +13,7 @@ Ensure you have the following installed on your system:
   * **PostgreSQL**: `v15+` (Local server or Cloud database instance).
   * **Redis**: `v6+` (For BullMQ queue management and authentication caches).
 * **External API Accounts**:
-  * **Resend**: API key for transactional emails.
+  * **AWS**: An IAM user with `ses:SendEmail` and `ses:GetAccount`, plus a domain verified in AWS SES.
   * **Google Cloud Console**: Project setup for Google OAuth login.
 
 ---
@@ -33,7 +33,7 @@ Navigate to the `backend/` directory, copy the template `.env.example`, and fill
 cd backend
 cp .env.example .env
 ```
-Update `.env` with your database credentials, Redis URL, storage path (`DISK_MOUNT_PATH`), and Resend settings. (See [4. Environment Variables](04_ENVIRONMENT_VARIABLES.md) for full details).
+Update `.env` with your database credentials, Redis URL, storage path (`DISK_MOUNT_PATH`), and AWS SES settings. (See [4. Environment Variables](04_ENVIRONMENT_VARIABLES.md) for full details).
 
 ### Step 3: Install Backend Dependencies
 Install backend Node packages:

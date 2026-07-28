@@ -39,7 +39,7 @@ Recruiters track job applications in `Applicants.tsx`:
 ## 14.4 Colleague Team Invitations
 
 Recruiters can invite colleagues to join their company workspace in `Team.tsx`:
-* **Invitation Creation**: Recruiters input a colleague's email address and assign them a role (e.g., `Recruiter`). The system checks for existing users or active pending invites and sends an invitation token email via Resend.
+* **Invitation Creation**: Recruiters input a colleague's email address and assign them a role (e.g., `Recruiter`). The system checks for existing users or active pending invites and sends an invitation token email via AWS SES.
 * **Single-use Verification**: Invitations generate a 32-byte secure token that expires in 48 hours.
 * **Cancellation**: Recruiters can cancel pending invites, which deletes them from the database. The route validates that recruiters can only cancel invites associated with their own company.
 * **Accepting Invites**: When a candidate signs up using a valid invitation token, the system validates the token and registers them as a Recruiter associated with the inviter's `companyId`.

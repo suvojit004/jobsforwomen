@@ -152,7 +152,16 @@ import { serveSwaggerJson, serveSwaggerUi } from "./shared/utils/swagger"
 app.get("/api/v1/api-docs.json", serveSwaggerJson)
 app.get("/api/v1/api-docs", serveSwaggerUi)
 
-// Email Delivery Observability Webhooks
+// Email Delivery Observability
+//
+// AWS SNS endpoint receiving real SES bounce/complaint/delivery events. Must
+// be mounted BEFORE the generic webhooks below, and brings its own raw body
+// parser because SNS posts text/plain, which express.json() ignores.
+import snsRouter from "./shared/routes/sns.routes"
+app.use("/api/v1/emails", snsRouter)
+
+// Generic provider-agnostic webhooks, retained for manual testing and any
+// non-SES sender. SES itself delivers to /api/v1/emails/sns above.
 import { emailMetrics } from "./shared/utils/email"
 app.post("/api/v1/emails/bounce", async (req, res) => {
   const { email, type } = req.body || {}
@@ -165,7 +174,11 @@ app.post("/api/v1/emails/bounce", async (req, res) => {
         action: "EMAIL_BOUNCED",
         entity: "Email",
         entityId: email || "unknown",
-        metadata: req.body,
+        // AuditLog has no `metadata` column -- it exposes oldValue/newValue
+        // (both Json?). Writing `metadata` threw PrismaClientValidationError
+        // at runtime, swallowed by the catch below, so these rows were never
+        // actually persisted.
+        newValue: req.body,
         timestamp: new Date(),
       },
     })
@@ -185,7 +198,11 @@ app.post("/api/v1/emails/complaint", async (req, res) => {
         action: "EMAIL_COMPLAINT",
         entity: "Email",
         entityId: email || "unknown",
-        metadata: req.body,
+        // AuditLog has no `metadata` column -- it exposes oldValue/newValue
+        // (both Json?). Writing `metadata` threw PrismaClientValidationError
+        // at runtime, swallowed by the catch below, so these rows were never
+        // actually persisted.
+        newValue: req.body,
         timestamp: new Date(),
       },
     })

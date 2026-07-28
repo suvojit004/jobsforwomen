@@ -27,17 +27,19 @@ jest.mock("../database/db", () => {
   }
 })
 
-// Mock Resend Transporter inline
-jest.mock("resend", () => {
-  const mockSend = jest.fn().mockResolvedValue({ data: { id: "msg-123" }, error: null })
+// Mock the AWS SES v2 client inline
+jest.mock("@aws-sdk/client-sesv2", () => {
+  const mockSend = jest.fn().mockResolvedValue({ MessageId: "msg-123" })
+  class MockSendEmailCommand {
+    constructor(public input: any) {}
+  }
+  class MockGetAccountCommand {
+    constructor(public input: any) {}
+  }
   return {
-    Resend: jest.fn().mockImplementation(() => {
-      return {
-        emails: {
-          send: mockSend,
-        },
-      }
-    }),
+    SESv2Client: jest.fn().mockImplementation(() => ({ send: mockSend })),
+    SendEmailCommand: MockSendEmailCommand,
+    GetAccountCommand: MockGetAccountCommand,
   }
 })
 
@@ -109,7 +111,7 @@ describe("Infrastructure Hardening Integration Tests (Phase 8 - Hardened)", () =
     })
   })
 
-  describe("2. Resend Email Transport & Plain Text alternate converters", () => {
+  describe("2. SES Email Transport & Plain Text alternate converters", () => {
     it("should strip HTML tags correctly and format clean text-only alternate bodies", () => {
       const htmlBody = `
         <div style="padding: 10px;">
@@ -133,7 +135,7 @@ describe("Infrastructure Hardening Integration Tests (Phase 8 - Hardened)", () =
   })
 
   describe("3. Secure Webhook endpoints for Email Bounces and Complaints", () => {
-    it("should process Resend bounce webhooks, incrementing metrics and logging audits", async () => {
+    it("should process generic bounce webhooks, incrementing metrics and logging audits", async () => {
       const initialBounces = emailMetrics.bounced
       const res = await request(app)
         .post("/api/v1/emails/bounce")

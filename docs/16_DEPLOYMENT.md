@@ -18,7 +18,7 @@ Any host — Render, AWS, Azure, GCP, a bare VPS — must satisfy all of the fol
 | **Persistent file storage** | A durable volume mounted at `DISK_MOUNT_PATH`. Ordinary container filesystems are wiped on redeploy — without this, every uploaded file is destroyed on the next release. |
 | **Single instance** | The persistent disk cannot be shared across replicas, so the API **cannot be horizontally scaled** as currently built. See [21. Scaling](21_SCALING.md). |
 | **Long-lived connections** | Socket.IO needs WebSocket upgrades to pass through any proxy or load balancer, with generous idle timeouts. |
-| **Outbound HTTPS** | To Resend (email) and Google (OAuth). |
+| **Outbound HTTPS** | To AWS SES (email) and Google (OAuth). |
 | **A way to run migrations** | Shell access, a one-off task, or an exec into the running container. |
 
 ### Migrations
@@ -155,5 +155,5 @@ AWS-specific gotchas:
 6. **Seeded admin**: the default `admin@jobsforwomen.info` / `admin123` account has been given a new password or deleted.
 7. **Google OAuth**: the authorized redirect URI matches `GOOGLE_CALLBACK_URL` exactly, and the frontend origin is an authorized JavaScript origin.
 8. **CORS**: the frontend origin is in the allowlist — set `CLIENT_URL`/`FRONTEND_URL`, which feed both `app.ts` and `shared/socket/socket.ts`. Hardcoding only one of those files leaves REST working while WebSockets fail.
-9. **Email**: sending domain verified in Resend; `npm run email:test` succeeds.
+9. **Email**: sending domain verified in AWS SES **in `AWS_SES_REGION`** (identities are regional); `npm run email:test` succeeds. If the account is still in the SES sandbox, delivery is limited to individually verified recipients.
 10. **Smoke test**: `/live`, `/ready`, `/health`; then log in, send a chat message, and upload and reopen a file.

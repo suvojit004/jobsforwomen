@@ -13,7 +13,7 @@ A full-stack job platform connecting women with employers offering flexible, inc
 | **Database** | PostgreSQL with Prisma ORM |
 | **Cache & Queues** | Redis (BullMQ jobs, rate-limit counters, permission cache, Socket.IO fanout) |
 | **Real-time** | Socket.IO with Redis adapter (`/candidate`, `/recruiter`, `/admin` namespaces) |
-| **Email** | Resend (HTTPS API) |
+| **Email** | AWS SES v2 (region `ap-south-1`) |
 | **File storage** | Local disk on a persistent volume, served via HMAC-signed, time-limited URLs |
 | **Containers** | Docker (multi-stage builds for both frontend and backend) |
 

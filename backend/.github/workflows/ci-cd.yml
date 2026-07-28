@@ -72,14 +72,17 @@ jobs:
           DATABASE_URL: "postgresql://postgres:root@localhost:5432/jobsforwomen?schema=public"
           JWT_ACCESS_SECRET: "ci_access_secret_key_validation_123"
           JWT_REFRESH_SECRET: "ci_refresh_secret_key_validation_987"
-          CLOUDINARY_CLOUD_NAME: "mock"
-          CLOUDINARY_API_KEY: "mock"
-          CLOUDINARY_API_SECRET: "mock"
-          SMTP_HOST: "localhost"
-          SMTP_PORT: 1025
-          SMTP_USER: "mock"
-          SMTP_PASS: "mock"
-          SMTP_FROM: "onboarding@resend.dev"
+          # SES config -- the AWS SDK is mocked in tests, so these only need to
+          # satisfy the Zod schema at boot (SES_FROM is required).
+          AWS_SES_REGION: "ap-south-1"
+          SES_FROM: "JobsForWomen <noreply@mail.jobsforwomen.info>"
+          # Storage: local disk replaced Cloudinary; the CLOUDINARY_* vars that
+          # used to live here no longer exist in the schema.
+          DISK_MOUNT_PATH: "./uploads"
+          BACKEND_URL: "http://localhost:5000"
+          GOOGLE_CLIENT_ID: "mock"
+          GOOGLE_CLIENT_SECRET: "mock"
+          GOOGLE_CALLBACK_URL: "http://localhost:5000/api/v1/auth/google/callback"
           REDIS_URL: "redis://localhost:6379"
 
       - name: Compile TypeScript Build

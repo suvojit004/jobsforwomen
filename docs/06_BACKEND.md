@@ -52,7 +52,7 @@ Asynchronous and heavy jobs are delegated to **BullMQ** queues backed by Redis (
 * **Where they run**: workers are registered as an import side-effect of `queue.ts`, which `app.ts` imports — so they run **inside the API process**, not as a separate service.
 * **Retry Policy**: Default configurations specify up to 3 retries per job using an **exponential backoff delay** (starting at 5000ms).
 * **Workers**:
-  * **`email`**: Process and send transactional emails via Resend.
+  * **`email`**: Process and send transactional emails via AWS SES. Rate-limited to `SES_MAX_SEND_RATE_PER_SEC` (default 1/sec) with `concurrency: 1`, so the app stays inside the SES send-rate quota rather than being throttled by it. Permanent rejections (unverified recipient in sandbox) are re-thrown as BullMQ `UnrecoverableError` so they fail once instead of retrying three times.
   * **`cleanup`**: Periodic tasks to close expired job postings, expire unaccepted colleague invitations, and prune old read notifications.
   * > **Only `email` and `cleanup` have workers registered.** Jobs added to `notifications`, `audit`, or `reports` are enqueued but never processed — they accumulate in Redis indefinitely without failing, so they never surface in failure metrics either.
   * > The repeatable cron schedules in `shared/queue/scheduler.ts` (invitation expiry, job expiry, notification cleanup, daily/weekly digests, monthly reports) are **never registered** — `bootstrapScheduler()` is defined and exported but not called anywhere. None of those periodic tasks currently run.

@@ -272,19 +272,28 @@ describe("Authentication Routes Integration Tests (Phase 3)", () => {
   // didn't consistently -- see AuthService.assertAccountActive.
   describe("Account status gate consistency across login paths (Part: soft-delete audit)", () => {
     it("rejects an OAuth login for a Blocked user with an existing linked account", async () => {
-      mockFindOAuthAccount.mockResolvedValue({
-        user: {
-          id: "blocked-user-id",
-          email: "blocked@email.com",
-          status: UserStatus.Blocked,
-          roles: [{ role: { name: "Candidate", permissions: [] } }],
-        },
-      })
+      const blockedUser = {
+        id: "blocked-user-id",
+        email: "blocked@email.com",
+        status: UserStatus.Blocked,
+        roles: [{ role: { name: "Candidate", permissions: [] } }],
+      }
+      mockFindOAuthAccount.mockResolvedValue({ user: blockedUser })
+      // oauth() does not pass the account's embedded user straight through --
+      // it re-reads the full record with findUserById(user.id) and hands THAT
+      // to createAuthSession(). Without this mock the re-read returns
+      // undefined and assertAccountActive() throws a TypeError (a 500) rather
+      // than the "account has been blocked" rejection under test.
+      mockFindUserById.mockResolvedValue(blockedUser)
 
       const res = await request(app)
         .post("/api/v1/auth/oauth")
         .send({
           provider: "google",
+          // `token` is required by oauthSchema -- without it the request fails
+          // Zod validation with a 400 and never reaches the account-status
+          // gate this test is asserting on.
+          token: "google-oauth-token",
           providerUserId: "google-uid-1",
           email: "blocked@email.com",
           fullName: "Blocked User",

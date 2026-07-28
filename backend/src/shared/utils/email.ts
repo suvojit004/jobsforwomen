@@ -1,40 +1,142 @@
-import { Resend } from "resend"
+import { SESv2Client, SendEmailCommand, GetAccountCommand } from "@aws-sdk/client-sesv2"
 import env from "../config/env"
 import { logger } from "./logger"
 import { EmailTemplates, stripHtml } from "./emailTemplates"
 
-const apiKey = env.RESEND_API_KEY || env.SMTP_PASS
+// AWS SES v2 transport (migrated off Resend).
+//
+// SES identities are REGIONAL: the sending domain must be verified in
+// AWS_SES_REGION specifically. A domain verified in ap-south-1 does not exist
+// in us-east-1, and sending from the wrong region fails with MessageRejected.
+//
+// Credentials resolve through the SDK's default provider chain when
+// AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY are unset, so the same code works
+// with an ECS/EC2 task role, a local AWS profile, or explicit keys on Render.
+const ses = new SESv2Client({
+  region: env.AWS_SES_REGION,
+  ...(env.AWS_ACCESS_KEY_ID && env.AWS_SECRET_ACCESS_KEY
+    ? {
+        credentials: {
+          accessKeyId: env.AWS_ACCESS_KEY_ID,
+          secretAccessKey: env.AWS_SECRET_ACCESS_KEY,
+        },
+      }
+    : {}),
+})
 
-if (!apiKey) {
-  throw new Error("Resend API key is not configured")
-}
-
-const resend = new Resend(apiKey)
-
-// Observability metrics for email dispatches
+// Observability metrics for email dispatches. `rejected` counts permanent
+// rejections (unverified recipient in sandbox, suppressed address) separately
+// from `failed`, because they are not retryable and should not be read as
+// transient infrastructure errors.
 export const emailMetrics = {
   sent: 0,
   failed: 0,
   bounced: 0,
+  complaints: 0,
+  rejected: 0,
 }
 
 /**
- * Startup verification check that validates required configuration parameters
- * for the Resend HTTPS email transport. Does NOT send a real email.
+ * SES errors that are PERMANENT -- retrying wastes the daily sending quota and
+ * will never succeed. The most common in a sandbox account is MessageRejected
+ * ("Email address is not verified"), which fires for every recipient that
+ * hasn't been individually verified while production access is pending.
  */
+const PERMANENT_SES_ERRORS = new Set([
+  "MessageRejected",
+  "MailFromDomainNotVerifiedException",
+  "AccountSuspendedException",
+  // Misconfiguration (bad configuration-set name, malformed address). Retrying
+  // cannot fix these either, and each retry costs a send from the daily quota.
+  "NotFoundException",
+  "BadRequestException",
+])
+
+export class PermanentEmailError extends Error {
+  readonly permanent = true
+  constructor(message: string, readonly awsName?: string) {
+    super(message)
+    this.name = "PermanentEmailError"
+  }
+}
+
+function maskEmail(address: string): string {
+  return address.replace(/^(.)(.*)(@.*)$/, (_, first, middle, domain) => first + "*".repeat(middle.length) + domain)
+}
+
+/**
+ * Startup verification check for the SES transport. Calls GetAccount, which
+ * confirms the credentials and region are usable and reports whether the
+ * account is still in the sandbox -- without sending a real email or consuming
+ * any sending quota.
+ */
+// GetAccount has its own low API quota (roughly 1 request/second). The admin
+// System Health page calls verifyEmailTransport() on every load, so an
+// operator leaving that dashboard open -- or any polling of it -- would
+// otherwise throttle the call and report email as DOWN when it is fine.
+// A short cache keeps the check meaningful without hammering the API.
+const TRANSPORT_CHECK_TTL_MS = 60_000
+let transportCheck: { at: number; ok: boolean } | null = null
+
+/**
+ * Clears the cached transport-check result. Exported for tests, which assert
+ * on both the success and failure paths within the same 60s window and would
+ * otherwise get a stale cached answer for the second assertion.
+ */
+export function resetTransportCheckCache(): void {
+  transportCheck = null
+}
+
 export async function verifyEmailTransport(): Promise<boolean> {
-  const checkKey = env.RESEND_API_KEY || env.SMTP_PASS
-  const sender = env.SMTP_FROM
-  if (!checkKey || !sender) {
-    logger.warn(`[EmailService] Configuration check failed: apiKey configured=${Boolean(checkKey)}, sender configured=${Boolean(sender)}`)
+  if (!env.SES_FROM) {
+    logger.warn("[EmailService] Configuration check failed: SES_FROM is not set.")
     return false
   }
-  return true
+  if (transportCheck && Date.now() - transportCheck.at < TRANSPORT_CHECK_TTL_MS) {
+    return transportCheck.ok
+  }
+  try {
+    const account = await ses.send(new GetAccountCommand({}))
+    const production = account.ProductionAccessEnabled === true
+    const quota = account.SendQuota
+    logger.info(
+      `[EmailService] SES reachable in ${env.AWS_SES_REGION}. ` +
+        `Production access: ${production ? "GRANTED" : "SANDBOX"}. ` +
+        `Quota: ${quota?.Max24HourSend ?? "?"}/24h at ${quota?.MaxSendRate ?? "?"}/sec. ` +
+        `Sent in last 24h: ${quota?.SentLast24Hours ?? "?"}.`
+    )
+    if (!production) {
+      logger.warn(
+        "[EmailService] SES is in SANDBOX mode -- delivery is restricted to individually verified recipient addresses. " +
+          "Mail to anyone else will be rejected with MessageRejected."
+      )
+    }
+    transportCheck = { at: Date.now(), ok: true }
+    return true
+  } catch (err: any) {
+    logger.error(`[EmailService] SES configuration check failed: ${err.name} - ${err.message}`)
+    transportCheck = { at: Date.now(), ok: false }
+    return false
+  }
+}
+
+/**
+ * Base URL for links embedded in outgoing email. Previously this sniffed the
+ * sender address for the string "resend" to decide between localhost and
+ * production -- meaningless now that mail is sent through SES, and fragile
+ * even then. Configure FRONTEND_URL (or CLIENT_URL) explicitly instead; the
+ * production domain is only a last-resort fallback.
+ */
+function frontendBaseUrl(): string {
+  return env.FRONTEND_URL || env.CLIENT_URL || "https://jobsforwomen.info"
 }
 
 export class EmailService {
   /**
-   * Sends email containing HTML and auto-generated Plain-text fallback.
+   * Sends an email with an HTML body and an auto-generated plain-text
+   * alternative. Throws on failure so the BullMQ worker records the job as
+   * failed; permanent rejections throw PermanentEmailError so the worker can
+   * skip pointless retries.
    */
   static async sendMail(to: string, subject: string, html: string): Promise<boolean> {
     if (process.env.NODE_ENV === "test") {
@@ -45,68 +147,71 @@ export class EmailService {
     try {
       const text = stripHtml(html)
 
-      // AUDIT: Idempotency Key Support
-      // The installed Resend SDK version supports idempotency keys as an option in the second parameter:
-      // resend.emails.send({...}, { idempotencyKey: "..." })
-      // However, the current EmailService public interface does not receive a stable job/event identity
-      // (such as a unique BullMQ job ID or event UUID) from its callers. Generating a random key on
-      // each retry would defeat the purpose of idempotency, and using sensitive tokens like JWTs, 
-      // verification/reset tokens, or passwords is prohibited for security.
-      // Therefore, we document this limitation here rather than redesigning the entire queue architecture.
+      const result = await ses.send(
+        new SendEmailCommand({
+          FromEmailAddress: env.SES_FROM,
+          Destination: { ToAddresses: [to] },
+          // A Configuration Set is what makes SES publish bounce/complaint/
+          // delivery events to SNS. Omitted entirely when unset -- passing an
+          // empty string would be rejected as an unknown configuration set.
+          ...(env.SES_CONFIGURATION_SET ? { ConfigurationSetName: env.SES_CONFIGURATION_SET } : {}),
+          Content: {
+            Simple: {
+              Subject: { Data: subject, Charset: "UTF-8" },
+              Body: {
+                Html: { Data: html, Charset: "UTF-8" },
+                Text: { Data: text, Charset: "UTF-8" },
+              },
+            },
+          },
+        })
+      )
 
-      const { data, error } = await resend.emails.send({
-        from: env.SMTP_FROM,
-        to: [to],
-        subject,
-        html,
-        text,
-      })
-
-      if (error) {
-        const statusCode = (error as any).statusCode || (error as any).status || 500
-        if (statusCode === 403) {
-          logger.error(`[EmailService] Resend provider rejected email status=403`)
-        } else {
-          logger.error(`[EmailService] Failed to send email to ${to}: ${error.name} - ${error.message} (status: ${statusCode})`)
-        }
-        const detailedError = new Error(error.message || "Resend API Error")
-        detailedError.name = error.name || "ResendError"
-        ;(detailedError as any).code = (error as any).code
-        ;(detailedError as any).status = statusCode
-        throw detailedError
-      }
-
-      if (!data?.id) {
-        const noIdError = new Error("Resend did not return a message ID")
-        noIdError.name = "ResendMissingIdError"
+      if (!result.MessageId) {
+        const noIdError = new Error("SES did not return a MessageId")
+        noIdError.name = "SesMissingIdError"
         throw noIdError
       }
 
       emailMetrics.sent++
-      const maskedEmail = to.replace(/^(.)(.*)(@.*)$/, (_, first, middle, domain) => {
-        return first + "*".repeat(middle.length) + domain
-      })
-      logger.info(`[EmailService] Resend accepted email id=${data.id} recipient=${maskedEmail}`)
+      logger.info(`[EmailService] SES accepted email id=${result.MessageId} recipient=${maskEmail(to)}`)
       return true
     } catch (err: any) {
-      emailMetrics.failed++
-      const meta: Record<string, any> = {
-        name: err.name,
-        message: err.message,
-        code: err.code,
-        status: err.status,
-      }
-      if (err.command) meta.command = err.command
-      if (err.hostname || err.host) meta.host = err.hostname || err.host
-      if (err.port) meta.port = err.port
+      const awsName: string | undefined = err?.name
+      const httpStatus = err?.$metadata?.httpStatusCode
 
-      logger.error(`[EmailService] Failed to send email to ${to}: ${err.message} | Diagnostic: ${JSON.stringify(meta)}`)
+      // Permanent: retrying burns the daily quota and can never succeed.
+      if (awsName && PERMANENT_SES_ERRORS.has(awsName)) {
+        emailMetrics.rejected++
+        const isSandboxRejection = /not verified/i.test(err?.message || "")
+        logger.error(
+          `[EmailService] SES permanently rejected mail to ${maskEmail(to)}: ${awsName} - ${err.message}` +
+            (isSandboxRejection
+              ? " | This is the expected sandbox restriction: verify the recipient in the SES console, or wait for production access."
+              : "")
+        )
+        throw new PermanentEmailError(err.message || awsName, awsName)
+      }
+
+      // Transient: throttling, timeouts, 5xx. Worth the retry/backoff.
+      emailMetrics.failed++
+      if (awsName === "TooManyRequestsException" || awsName === "ThrottlingException") {
+        logger.error(
+          `[EmailService] SES throttled the send to ${maskEmail(to)} (${awsName}). ` +
+            `The client-side limiter is set to ${env.SES_MAX_SEND_RATE_PER_SEC}/sec -- lower it if this recurs.`
+        )
+      } else {
+        logger.error(
+          `[EmailService] Failed to send email to ${maskEmail(to)}: ${err.message} | ` +
+            `Diagnostic: ${JSON.stringify({ name: awsName, httpStatus, region: env.AWS_SES_REGION })}`
+        )
+      }
       throw err
     }
   }
 
   static async sendWelcomeEmail(to: string, verificationToken: string): Promise<boolean> {
-    const baseUrl = process.env.FRONTEND_URL || env.CLIENT_URL || (env.SMTP_FROM.includes("resend") ? "http://localhost:3000" : "https://jobsforwomen.info")
+    const baseUrl = frontendBaseUrl()
     // Root-cause fix: the frontend only registers this page at /auth/verify-email
     // (see frontend/src/routes/AuthRoutes.tsx, mounted under /auth/* in AppRouter.tsx).
     // The previous bare "/verify-email" link matched no route, fell through to the
@@ -117,7 +222,7 @@ export class EmailService {
   }
 
   static async sendEmployeeInvitation(to: string, invitationToken: string, roleName: string): Promise<boolean> {
-    const baseUrl = process.env.FRONTEND_URL || env.CLIENT_URL || (env.SMTP_FROM.includes("resend") ? "http://localhost:3000" : "https://jobsforwomen.info")
+    const baseUrl = frontendBaseUrl()
     // Same class of bug as sendPasswordResetEmail/sendWelcomeEmail above: the
     // frontend page for this lives at /auth/accept-invitation
     // (AuthRoutes.tsx, mounted under /auth/* in AppRouter.tsx) -- and until
@@ -158,7 +263,7 @@ export class EmailService {
   }
 
   static async sendPasswordResetEmail(to: string, resetToken: string): Promise<boolean> {
-    const baseUrl = process.env.FRONTEND_URL || env.CLIENT_URL || (env.SMTP_FROM.includes("resend") ? "http://localhost:3000" : "https://jobsforwomen.info")
+    const baseUrl = frontendBaseUrl()
     // Root-cause fix (same bug already fixed above for sendWelcomeEmail's
     // verify-email link, but never applied here): the frontend only
     // registers this page at /auth/reset-password (AuthRoutes.tsx, mounted

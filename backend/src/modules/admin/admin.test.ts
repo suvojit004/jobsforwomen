@@ -7,7 +7,7 @@ jest.mock("../../shared/database/db", () => {
     role: { findUnique: jest.fn(), findFirst: jest.fn(), findMany: jest.fn(), create: jest.fn(), update: jest.fn(), delete: jest.fn() },
     permission: { findMany: jest.fn() },
     rolePermission: { createMany: jest.fn(), deleteMany: jest.fn() },
-    userRole: { deleteMany: jest.fn(), createMany: jest.fn() },
+    userRole: { deleteMany: jest.fn(), createMany: jest.fn(), count: jest.fn() },
     recruiterProfile: { findUnique: jest.fn(), update: jest.fn(), updateMany: jest.fn(), findMany: jest.fn() },
     company: { findUnique: jest.fn(), update: jest.fn(), count: jest.fn() },
     companyVerificationHistory: { create: jest.fn() },

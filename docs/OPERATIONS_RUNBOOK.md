@@ -17,7 +17,7 @@ This document is self-contained. You do not need to read the other files in `doc
 | **Frontend** | React 19 + Vite SPA. Containerized; currently deployed on **Vercel**. |
 | **Database** | PostgreSQL (currently Render), accessed via Prisma 6.19.3. |
 | **Cache/Queue** | Redis (currently Upstash, `rediss://`). Used for rate limiting, permission cache, BullMQ jobs, and Socket.IO fanout. |
-| **Email** | Resend (HTTPS API — *not* real SMTP, despite the `SMTP_*` variable names). |
+| **Email** | AWS SES v2, region `ap-south-1`, sending domain `mail.jobsforwomen.info`. |
 | **File storage** | **Local disk** on a persistent volume (currently a Render Persistent Disk). Migrated off Cloudinary; no third-party storage remains. |
 | **Real-time** | Socket.IO, namespaces `/candidate`, `/recruiter`, `/admin`. |
 
@@ -57,7 +57,7 @@ curl https://<backend-host>/health    # full subsystem breakdown (JSON)
              └────────────┘ └───────┘ └───────────────┘
                                 │
                           ┌─────▼─────┐
-                          │  Resend   │ (outbound email)
+                          │  AWS SES  │ (outbound email)
                           └───────────┘
 ```
 
@@ -87,7 +87,8 @@ curl https://<backend-host>/health    # full subsystem breakdown (JSON)
 | Queues, workers, dead-letter queue | `backend/src/shared/queue/queue.ts` |
 | Cron schedules (**not wired up** — §12.1) | `backend/src/shared/queue/scheduler.ts` |
 | Socket.IO server + Redis adapter | `backend/src/shared/socket/socket.ts` |
-| Email (Resend) | `backend/src/shared/utils/email.ts` |
+| Email (AWS SES) | `backend/src/shared/utils/email.ts` |
+| SES bounce/complaint webhook | `backend/src/shared/routes/sns.routes.ts` |
 | Auth logic | `backend/src/modules/auth/auth.service.ts` |
 | Refresh-token cookie config | `backend/src/shared/utils/cookies.ts` |
 | Frontend API client + token refresh | `frontend/src/api/client.ts` |
@@ -118,7 +119,7 @@ Validated by Zod at boot in `backend/src/shared/config/env.ts`. **If validation 
 | `JWT_ACCESS_SECRET` | Min 8 chars. **Also signs file-download URLs** — see §10.4 before rotating. |
 | `JWT_REFRESH_SECRET` | Min 8 chars. |
 | `REDIS_URL` | Upstash `rediss://` URL. |
-| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM` | Resend credentials. `SMTP_PASS` doubles as the Resend API key fallback. |
+| `SES_FROM` | Sender identity on the SES-verified domain. |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_CALLBACK_URL` | OAuth. |
 
 ### Has a default (safe to omit, but check the default is right for the environment)
@@ -136,7 +137,7 @@ Validated by Zod at boot in `backend/src/shared/config/env.ts`. **If validation 
 
 ### Optional
 
-`CLIENT_URL`, `FRONTEND_URL` (both feed the CORS allowlist), `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`, `RESEND_API_KEY`, `SUPPORT_EMAIL`.
+`CLIENT_URL`, `FRONTEND_URL` (both feed the CORS allowlist), `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`, `SUPPORT_EMAIL`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` (required on Render — no instance role), `AWS_SES_REGION` (default `ap-south-1`), `SES_MAX_SEND_RATE_PER_SEC` (default `1`), `SES_CONFIGURATION_SET`, `SNS_TOPIC_ARN`.
 
 ### Dangerous — never set in production
 
@@ -166,7 +167,7 @@ This section is platform-neutral. §4.1 states what *any* host must provide; §4
 | **Persistent storage** mounted at `DISK_MOUNT_PATH` | Container filesystems are wiped on redeploy. Without durable storage, every uploaded file is destroyed on the next release |
 | **A single instance** | The persistent disk cannot be shared across replicas — the API cannot be horizontally scaled as built (§12.5) |
 | **WebSocket passthrough** | Socket.IO needs upgrade support and a generous idle timeout on any proxy or load balancer |
-| **Outbound HTTPS** | Resend (email) and Google (OAuth) |
+| **Outbound HTTPS** | AWS SES (email) and Google (OAuth) |
 | **A way to run migrations** | Shell, one-off task, or `exec` into the running container |
 
 **Build and start commands**, identical everywhere:
@@ -375,7 +376,7 @@ Setting `CLIENT_URL` / `FRONTEND_URL` covers this without a code change, since b
 
 **5. Google OAuth** — in Google Cloud Console, add the new callback URI to *Authorized redirect URIs* and the new frontend origin to *Authorized JavaScript origins*. Both must match exactly, including scheme and absence of a trailing slash.
 
-**6. Email sender domain** — verify `jobsforwomen.info` in Resend (DKIM + SPF DNS records) and set `SMTP_FROM` to an address on it. Until the domain is verified, Resend stays sandboxed and will only deliver to the account owner's address (§10.5). Note that `email.ts` falls back to `https://jobsforwomen.info` when `FRONTEND_URL` and `CLIENT_URL` are both unset, so links in emails may look correct while the app is still on the old host — set the env vars explicitly rather than relying on that fallback.
+**6. Email sender domain** — `mail.jobsforwomen.info` is already verified in AWS SES in `ap-south-1`; set `SES_FROM` to an address on it (e.g. `noreply@mail.jobsforwomen.info`). Two things to confirm at cutover: the account is out of the **sandbox** (until then only individually verified recipients receive mail — §10.5), and DKIM/SPF records for the sending domain remain published in DNS if you move nameservers. Note that `email.ts` falls back to `https://jobsforwomen.info` when `FRONTEND_URL` and `CLIENT_URL` are both unset, so links in emails may look correct while the app is still on the old host — set the env vars explicitly rather than relying on that fallback.
 
 **7. Frontend** — set `VITE_API_URL=https://api.jobsforwomen.info` and **redeploy**. Vite inlines this at build time; changing the variable without a rebuild has no effect. On Vercel that means setting the environment variable and triggering a new deployment; if serving the container instead (§4.3), rebuild the image with `--build-arg VITE_API_URL=https://api.jobsforwomen.info`.
 
@@ -420,7 +421,7 @@ Track each row as pass/fail with the date and who ran it. Anything failing is a 
 | Unit/integration tests | `cd backend && npm test` | Suite green |
 | Migration state | `npx prisma migrate status` | No drift, no pending |
 | Rate-limit tiers | `k6-load-tests/` suite, one script at a time (§14) | `checks` > 95%, `X-RateLimit-Limit` matches each tier |
-| Email provider | `npm run email:test <addr>` | `Resend accepted email id=...` |
+| Email provider | `npm run email:test <addr>` | `SES accepted email id=...` |
 
 ### 6.2 Manual functional pass
 
@@ -507,7 +508,7 @@ Prisma has no automatic down-migration. Restore from a Render Postgres backup (d
 ### What rollback does *not* undo
 
 - Files already written to the Persistent Disk stay there.
-- Emails already dispatched to Resend cannot be recalled.
+- Emails already dispatched to SES cannot be recalled.
 - Rate-limit counters in Redis persist until their window expires.
 
 ---
@@ -619,27 +620,48 @@ Files live at `DISK_MOUNT_PATH/jfw/<type>/<filename>`, where `<type>` is one of:
 
 ### 10.5 Email
 
-Everything funnels through one chokepoint: `EmailService.sendMail()` in `backend/src/shared/utils/email.ts`, which calls the **Resend HTTPS API**. The `SMTP_*` variable names are historical; no SMTP connection is ever opened. The API key resolves as `RESEND_API_KEY || SMTP_PASS`.
+Everything funnels through one chokepoint: `EmailService.sendMail()` in `backend/src/shared/utils/email.ts`, which calls the **AWS SES v2 API**.
 
-Flow: `EventBus.publish` → email listener → `addJob("email", ...)` → BullMQ → worker → `EmailService`.
+Flow: `EventBus.publish` → email listener → `addJob("email", ...)` → BullMQ (rate-limited) → worker → `EmailService` → SES.
+
+**Current SES state — read this before diagnosing anything:**
+
+| | |
+|---|---|
+| Region | `ap-south-1` (**identities are regional** — a domain verified elsewhere does not exist here) |
+| Verified sending domain | `mail.jobsforwomen.info` |
+| Account status | **Sandbox** (production access applied for) |
+| Send rate | 1 email/second |
+| Daily cap | 240 emails per 24 hours |
+| Deliverable recipients | Only individually verified addresses |
+
+**Sandbox is a recipient restriction, not a sender one.** Verifying the sending domain does not lift it. While sandboxed, mail to anyone unverified fails with `MessageRejected: Email address is not verified` — which the app classifies as **permanent**, so the job fails once instead of retrying three times and burning three of the 240 daily sends.
 
 | Symptom | Cause | Fix |
 |---|---|---|
 | No emails at all, site otherwise healthy | Redis down → BullMQ dead | §10.3 |
-| Log: `Resend provider rejected email status=403` | Resend account in sandbox mode — can only send to the account owner's address | Verify a sending domain in Resend and set `SMTP_FROM` to it |
-| Emails skipped, log says `email_automation feature flag is disabled` | Admin turned off the `email_automation` feature flag | Re-enable in the admin panel. Note: `sendWelcome` and `sendPasswordReset` are **exempt** and always send — deliberately, so nobody gets locked out |
-| Job retried 3× then vanished | Landed in the dead-letter queue | §10.6 |
+| `MessageRejected: Email address is not verified` | Sandbox recipient restriction | Verify the recipient in the SES console, or wait for production access |
+| `TooManyRequestsException` | Exceeded 1 send/sec | Worker is limited to `SES_MAX_SEND_RATE_PER_SEC` (default 1) with `concurrency: 1`. Lower it if this recurs; raise it once production access grants a higher rate |
+| Sends work early in the day, fail later | 240/24h quota exhausted | `npm run email:test` prints `SentLast24Hours` vs `Max24HourSend` |
+| `CredentialsProviderError` | No credentials resolved | Set `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` — Render has no instance role |
+| `MessageRejected` about the identity, despite a verified domain | Wrong region | Confirm `AWS_SES_REGION` matches where the domain was verified |
+| Emails skipped, log says `email_automation feature flag is disabled` | Admin turned off the `email_automation` feature flag | Re-enable in the admin panel. `sendWelcome` and `sendPasswordReset` are **exempt** and always send — deliberately, so nobody gets locked out |
+| Job failed once and went straight to the DLQ | A permanent rejection, converted to BullMQ `UnrecoverableError` | Expected behaviour — see §10.6 |
 
-**Test the provider without a full signup flow:**
+**Test the transport without a full signup flow:**
 
 ```bash
 cd backend
 npm run email:test <recipient@example.com>
 ```
 
-Success prints `[EmailService] Resend accepted email id=<id>`.
+It prints region, sender, and credential source, then calls SES `GetAccount` — which reports production-access status and remaining quota **without consuming any** — before sending. Success prints `[EmailService] SES accepted email id=<MessageId>`.
 
-Bounce and complaint webhooks are accepted at `POST /api/v1/emails/bounce` and `/api/v1/emails/complaint`, and are written to the `AuditLog` table.
+**Bounces and complaints.** SES publishes these via SNS to `POST /api/v1/emails/sns` (`shared/routes/sns.routes.ts`), which handles the SNS subscription confirmation handshake automatically and writes `EMAIL_BOUNCED_PERMANENT` / `EMAIL_BOUNCED_TRANSIENT` / `EMAIL_COMPLAINT` rows to `AuditLog`. This requires `SES_CONFIGURATION_SET` to be set — without a configuration set SES publishes no events at all and the endpoint stays silent. The older generic `/api/v1/emails/bounce` and `/complaint` routes remain for manual testing but receive nothing from SES.
+
+> **Watch the complaint rate.** Sustained complaints above ~0.1% put SES sending privileges at risk, and AWS reviews this when granting production access.
+
+> **Digests versus the daily cap.** The daily/weekly digest jobs enqueue **one email per candidate**. At any real user count that alone exceeds a 240/day sandbox quota. Those jobs do not currently run (the scheduler is never wired up — §12.1), but they will the moment it is. Add batching or a send budget before enabling them.
 
 ### 10.6 Queues and the dead-letter queue
 
@@ -879,7 +901,7 @@ UPDATE "User" SET status = 'Active' WHERE email = '<loadtest account>';
 |---|---|
 | `JWT_ACCESS_SECRET` | Logs out all users **and** invalidates all file-download links (§10.4) |
 | `JWT_REFRESH_SECRET` | Logs out all users |
-| `SMTP_PASS` / `RESEND_API_KEY` | Email stops until updated; verify with `npm run email:test` |
+| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | Email stops until updated; verify with `npm run email:test` |
 | `GOOGLE_CLIENT_SECRET` | Google login breaks until updated in both Render and Google Cloud Console |
 
 **Node version** is pinned to `22.x`. Do not move to 24+ without verifying native modules (`bcrypt` in particular) build cleanly.

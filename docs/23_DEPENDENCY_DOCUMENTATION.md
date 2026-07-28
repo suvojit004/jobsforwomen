@@ -15,7 +15,7 @@ This document audits the libraries and dependencies configured in the backend an
 * **`socket.io`**: Real-time WebSocket server.
 * **`bullmq`**: Redis-backed queue system for running background operations (such as mailing campaigns and cleanup tasks).
 * **`ioredis`**: Redis client engine used by BullMQ and caching utilities.
-* **`resend`**: Official Node.js SDK used for sending transactional emails.
+* **`@aws-sdk/client-sesv2`**: Official AWS SDK client for SES v2, used for all transactional email.
 * **`multer`**: Multipart form data parser for file uploads. Files are written to local disk by `shared/utils/fileStorage.ts` (no third-party storage SDK is used).
 * **`helmet`**: Secure HTTP headers configuration middleware.
 * **`cors`**: Express CORS policy manager.

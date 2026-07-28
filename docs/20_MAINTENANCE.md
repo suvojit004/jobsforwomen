@@ -51,10 +51,11 @@ If access keys are leaked or rotated:
    * Change `JWT_ACCESS_SECRET` and `JWT_REFRESH_SECRET` in your `.env` or platform settings.
    * This immediately logs out all users globally by invalidating their tokens.
    * > **`JWT_ACCESS_SECRET` has a second, easily-forgotten effect:** it is also the HMAC key used to sign private file-download URLs (`shared/utils/fileStorage.ts`). Rotating it invalidates every outstanding file link as well as every session. Both recover automatically when users reload the page, but expect a burst of 403s in the logs immediately afterwards.
-2. **Resend Key Rotation**:
-   * Create a new key on Resend.
-   * Update `RESEND_API_KEY` (and the `SMTP_PASS` fallback) in production.
-   * Test the new key using `npm run email:test <recipient>`.
+2. **AWS SES Credential Rotation**:
+   * Create a new access key for the IAM user in the AWS console.
+   * Update `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` in production.
+   * Test with `npm run email:test <recipient>`, then deactivate and delete the old key.
+   * The IAM user needs only `ses:SendEmail` and `ses:GetAccount` — grant nothing broader.
 3. **Google OAuth Secret Rotation**:
    * Update `GOOGLE_CLIENT_SECRET` in both the platform environment and Google Cloud Console.
    * Google login is broken between the two updates — do them together.

@@ -47,18 +47,29 @@ Both the backend and frontend systems require environment variables to operate. 
   * Default: `"http://localhost:5000"`
   * Example: `"https://api.jobsforwomen.info"`
 
-### 7. Resend Email Transport Settings
+### 7. AWS SES Email Settings
 
-> Despite the `SMTP_*` naming, no SMTP connection is ever opened — email is sent over the Resend HTTPS API. The names are historical.
+> Email was migrated from Resend to **AWS SES v2**. There are no `SMTP_*` or `RESEND_API_KEY` variables any more — the Zod schema does not accept them.
 
-* **`SMTP_HOST`**: (Required) e.g. `"smtp.resend.com"`.
-* **`SMTP_PORT`**: (Optional) Default: `587`.
-* **`SMTP_USER`**: (Required) e.g. `"resend"`.
-* **`SMTP_PASS`**: (Required) Doubles as the Resend API key fallback when `RESEND_API_KEY` is unset.
-* **`SMTP_FROM`**: (Required, no default) The sender identity used on all platform email dispatches. Must be an address on a domain verified in Resend, or delivery stays restricted to the account owner's own address.
-  * Example: `"JobsForWomen <noreply@jobsforwomen.info>"`
-* **`RESEND_API_KEY`**: (Optional/Canonical) The API key for the Resend Node.js SDK (starts with `re_`). If omitted, the system falls back to `SMTP_PASS`. The resolution order in `shared/utils/email.ts` is literally `RESEND_API_KEY || SMTP_PASS`; if neither is set the process throws at startup.
-* **`SUPPORT_EMAIL`**: (Optional) The system mailbox that receives "Contact Support" ticket emails. Falls back to `SMTP_USER` if not configured.
+* **`AWS_SES_REGION`**: (Optional) Default: `ap-south-1`.
+  * **SES identities are regional.** The sending domain must be verified in this exact region — a domain verified in `ap-south-1` does not exist in `us-east-1`, and sending from the wrong region fails with `MessageRejected`.
+* **`AWS_ACCESS_KEY_ID`** / **`AWS_SECRET_ACCESS_KEY`**: (Optional) When both are set they are used directly. When unset, the SDK's default credential chain applies (EC2/ECS task role, or a local `~/.aws` profile) — which is why they are optional. **On Render there is no instance role, so both must be set.** The IAM user needs only `ses:SendEmail` and `ses:GetAccount`.
+* **`SES_FROM`**: (Required, no default) The sender identity. Must be an address on the verified domain.
+  * Example: `"JobsForWomen <noreply@mail.jobsforwomen.info>"`
+* **`SES_MAX_SEND_RATE_PER_SEC`**: (Optional) Default: `1`. Client-side send-rate ceiling enforced by the BullMQ email worker, so the app never exceeds the SES quota and gets throttled. Raise it to match the granted rate once production access is approved.
+* **`SES_CONFIGURATION_SET`**: (Optional) Name of an SES configuration set. Required **only** if you want bounce/complaint events published to SNS. Omitted from the send request entirely when unset.
+* **`SNS_TOPIC_ARN`**: (Optional) ARN of the SNS topic the configuration set publishes to. When set, `/api/v1/emails/sns` rejects notifications from any other topic; when unset it accepts any and logs a warning.
+* **`SUPPORT_EMAIL`**: (Optional) The system mailbox that receives "Contact Support" ticket emails. Falls back to `SES_FROM` if not configured.
+
+#### Sandbox mode
+
+A new SES account starts in **sandbox mode**, which is a recipient restriction, not a sending-domain one:
+
+* Mail is delivered **only to individually verified recipient addresses.** Verifying the sending domain does not lift this.
+* Quotas are capped (typically 200–240 messages/24h at 1 message/second).
+* Anything sent to an unverified recipient fails with `MessageRejected: Email address is not verified`.
+
+The application treats that rejection as **permanent** rather than retryable, so it fails once instead of consuming three attempts of a small daily quota. Check live status any time with `npm run email:test <addr>`, which calls SES `GetAccount` and prints production-access status and remaining quota before sending anything.
 
 ### 8. Google OAuth Setup
 * **`GOOGLE_CLIENT_ID`**: (Required) Client ID from Google Cloud Console Credentials.

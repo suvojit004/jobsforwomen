@@ -34,16 +34,36 @@ const envSchema = z.object({
   DISK_MOUNT_PATH: z.string().default("./uploads"),
   BACKEND_URL: z.string().url().default("http://localhost:5000"),
 
-  SMTP_HOST: z.string().min(1),
-  SMTP_PORT: z.coerce.number().default(587),
-  SMTP_USER: z.string().min(1),
-  SMTP_PASS: z.string().min(1),
-  SMTP_FROM: z.string().min(1),
-  // Inbox that receives admin "Contact Support" ticket emails. Falls back to
-  // SMTP_USER so this feature works out of the box without a new required env var.
-  SUPPORT_EMAIL: z.string().optional(),
+  // --- Email: AWS SES (migrated off Resend) ---------------------------------
+  // Sending goes through the SES v2 API in AWS_SES_REGION. The sending domain
+  // must be verified in that exact region -- SES identities are regional, so a
+  // domain verified in ap-south-1 does not exist in us-east-1.
+  AWS_SES_REGION: z.string().min(1).default("ap-south-1"),
+  // Credentials are optional here so the app can also run on infrastructure
+  // that supplies them ambiently (an EC2/ECS task role, or a local AWS
+  // profile). When unset, the SDK's default credential chain is used. On
+  // Render, where there is no instance role, both must be set explicitly.
+  AWS_ACCESS_KEY_ID: z.string().optional(),
+  AWS_SECRET_ACCESS_KEY: z.string().optional(),
+  // The "From" identity. Must be on the verified domain
+  // (e.g. "JobsForWomen <noreply@mail.jobsforwomen.info>").
+  SES_FROM: z.string().min(1),
+  // Optional SES Configuration Set -- required if you want SES to publish
+  // bounce/complaint/delivery events to SNS. Leave unset to send without one.
+  SES_CONFIGURATION_SET: z.string().optional(),
+  // ARN of the SNS topic that the SES configuration set publishes bounce and
+  // complaint events to. When set, the /api/v1/emails/sns endpoint rejects
+  // notifications from any other topic; when unset it accepts any (and warns).
+  SNS_TOPIC_ARN: z.string().optional(),
+  // Sending rate ceiling, in emails per second, enforced client-side by the
+  // BullMQ email worker (see shared/queue/queue.ts). SES sandbox accounts are
+  // capped at 1/sec; raise this to match the granted rate once production
+  // access is approved, rather than letting SES throttle and fail sends.
+  SES_MAX_SEND_RATE_PER_SEC: z.coerce.number().positive().default(1),
 
-  RESEND_API_KEY: z.string().optional(),
+  // Inbox that receives admin "Contact Support" ticket emails. Falls back to
+  // the SES_FROM address so this feature works without a new required var.
+  SUPPORT_EMAIL: z.string().optional(),
 
   PROFILE_COMPLETION_THRESHOLD: z.coerce.number().default(70),
 

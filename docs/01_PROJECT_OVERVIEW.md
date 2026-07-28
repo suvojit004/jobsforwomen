@@ -30,7 +30,7 @@ graph TD
     Server <-->|ORM| DB[("PostgreSQL")]
     Server <-->|BullMQ / Cache| Redis[("Upstash Redis")]
     Server -->|File Storage| Disk[("Local Disk / Persistent Volume")]
-    Server -->|Emails| Resend[("Resend HTTPS API")]
+    Server -->|Emails| SES[("AWS SES v2")]
 ```
 
 ### Core Technologies:
@@ -40,7 +40,7 @@ graph TD
 * **Asynchronous Tasks & Caching**: Redis (Upstash / Memory), BullMQ (Queue processing).
 * **Real-Time WebSockets**: Socket.IO.
 * **File Storage**: Local disk on a persistent volume, served via a signed-URL route (`/files/jfw/...`). Migrated off Cloudinary; no third-party storage provider is used.
-* **External Providers**: Resend (Transactional emails), Google (OAuth).
+* **External Providers**: AWS SES (Transactional emails, region `ap-south-1`), Google (OAuth).
 
 ---
 
@@ -67,4 +67,4 @@ stateDiagram-v2
 Colleague invites and company registration audits log actions to `AuditLog`. Company profile updates require Admin approval to be fully verified.
 
 ### 4. Real-time Notification Engine
-Leverages BullMQ background workers and EventBus listeners to trigger real-time browser alerts (via Socket.IO namespaces) and emails (via Resend) when applications are updated or jobs are moderated.
+Leverages BullMQ background workers and EventBus listeners to trigger real-time browser alerts (via Socket.IO namespaces) and emails (via AWS SES) when applications are updated or jobs are moderated.

@@ -1,4 +1,4 @@
-import { Queue, Worker, Job } from "bullmq"
+import { Queue, Worker, Job, UnrecoverableError } from "bullmq"
 import IORedis from "ioredis"
 import env from "../config/env"
 import { logger } from "../utils/logger"
@@ -179,11 +179,11 @@ export async function getDeadLetterQueueStats(): Promise<{ pendingCount: number 
 
 // Single chokepoint every outbound email funnels through, so gating
 // "email_automation" here covers the whole EventBus -> EmailListener ->
-// BullMQ -> Resend chain without touching each listener individually.
+// BullMQ -> SES chain without touching each listener individually.
 // Account-security mail (verification, password reset) is exempt -- turning
 // off automated status-update blasts must not lock users out of their
 // accounts.
-const SECURITY_CRITICAL_EMAIL_JOBS = new Set(["sendWelcome", "sendPasswordReset"])
+const SECURITY_CRITICAL_EMAIL_JOBS = new Set(["sendWelcome", "sendPasswordReset", "sendRaw"])
 
 export async function addJob(queueName: string, jobName: string, data: any) {
   try {
@@ -221,6 +221,16 @@ async function processJobMock(queueName: string, jobName: string, data: any) {
 }
 
 async function handleEmailJob(jobName: string, data: any) {
+  // Generic passthrough for one-off mail that has no dedicated template
+  // (currently the admin "Contact Support" ticket). Exists so such callers go
+  // through the queue -- and therefore the SES rate limiter, retry policy and
+  // dead-letter queue -- instead of calling EmailService.sendMail directly
+  // from a request handler and racing the worker's send budget.
+  if (jobName === "sendRaw") {
+    await EmailService.sendMail(data.to, data.subject, data.html)
+    return
+  }
+
   const { to, token, roleName, companyName, status, notes, jobTitle, recipientName, jobs, scheduledAt, location, timezone, mode, offerDetails, actionLink, actionLabel, perkName, comment, statusHeading, statusMessage } = data
   if (jobName === "sendWelcome") {
     await EmailService.sendWelcomeEmail(to, token)
@@ -341,7 +351,11 @@ async function handleCleanupJob(jobName: string, data: any) {
 
 // Bootstrap workers in non-test mode
 if (!isTest && redisConnection) {
-  const registerWorker = (name: string, handler: (job: Job) => Promise<void>) => {
+  const registerWorker = (
+    name: string,
+    handler: (job: Job) => Promise<void>,
+    workerOptions: Record<string, any> = {}
+  ) => {
     workers[name] = new Worker(
       name,
       async (job: Job) => {
@@ -356,7 +370,7 @@ if (!isTest && redisConnection) {
           queueMetrics.activeJobs = Math.max(0, queueMetrics.activeJobs - 1)
         }
       },
-      { connection: redisConnection as any }
+      { connection: redisConnection as any, ...workerOptions }
     )
 
     // real dead-letter queue. Previously
@@ -370,7 +384,12 @@ if (!isTest && redisConnection) {
     // still surfaces in the Admin Activity Log for visibility.
     workers[name].on("failed", (job: Job | undefined, err: Error) => {
       logger.error(`[Worker:${name}] Job ${job?.id} failed: ${err.message}`)
-      if (job && job.attemptsMade >= (job.opts.attempts || 3)) {
+      // Route to the DLQ once retries are exhausted OR immediately for an
+      // unrecoverable failure -- without the second condition a permanently
+      // rejected email would fail on attempt 1 of 3, never satisfy the
+      // exhausted-retries check, and disappear with no durable record.
+      const isUnrecoverable = err?.name === "UnrecoverableError"
+      if (job && (isUnrecoverable || job.attemptsMade >= (job.opts.attempts || 3))) {
         pushToDeadLetterQueue(name, job, err)
 
         prisma.auditLog.create({
@@ -379,7 +398,11 @@ if (!isTest && redisConnection) {
             action: "QUEUE_JOB_FAILED_DLQ",
             entity: "QueueJob",
             entityId: job.id || "unknown",
-            metadata: {
+            // AuditLog exposes oldValue/newValue, not `metadata` -- the
+            // previous key threw PrismaClientValidationError at runtime and
+            // was swallowed by the .catch() below, so the DLQ audit trail
+            // silently never existed.
+            newValue: {
               queueName: name,
               jobName: job.name,
               error: err.message,
@@ -394,9 +417,42 @@ if (!isTest && redisConnection) {
   }
 
   // Bind workers
-  registerWorker("email", async (job) => {
-    await handleEmailJob(job.name, job.data)
-  })
+  //
+  // The email worker is rate-limited to match the AWS SES sending quota.
+  // SES enforces a hard per-second send rate (1/sec on a sandbox account) and
+  // rejects anything above it with TooManyRequestsException -- which would
+  // otherwise burn retry attempts and, in a sandbox, a meaningful slice of the
+  // 240/24h allowance. Throttling client-side keeps sends inside the quota
+  // instead of discovering the ceiling by failing.
+  //
+  // `concurrency: 1` matters as much as the limiter: BullMQ's limiter caps the
+  // rate at which jobs START, so allowing parallel workers could still put
+  // several requests in flight within the same second.
+  registerWorker(
+    "email",
+    async (job) => {
+      try {
+        await handleEmailJob(job.name, job.data)
+      } catch (err: any) {
+        // A permanent SES rejection (unverified recipient in sandbox, a
+        // suppressed address, a suspended account) can never succeed on retry.
+        // Re-throwing it as UnrecoverableError tells BullMQ to fail the job
+        // immediately instead of burning two more attempts -- and, in a
+        // sandbox account, two more of the 240 daily sends.
+        if (err?.permanent === true || err?.name === "PermanentEmailError") {
+          throw new UnrecoverableError(err.message || "Permanent email rejection")
+        }
+        throw err
+      }
+    },
+    {
+      concurrency: 1,
+      limiter: {
+        max: env.SES_MAX_SEND_RATE_PER_SEC,
+        duration: 1000,
+      },
+    }
+  )
 
   registerWorker("cleanup", async (job) => {
     await handleCleanupJob(job.name, job.data)

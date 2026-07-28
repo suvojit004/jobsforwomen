@@ -32,25 +32,47 @@ This guide outlines diagnostic procedures and resolutions for common issues acro
 
 ---
 
-## 17.3 Email dispatch Issues (Resend)
+## 17.3 Email dispatch Issues (AWS SES)
 
-### 1. Email Fails with 403 Forbidden Error
-* **Symptom**: User registration succeeds but worker fails on Welcome email. Logs show: `[EmailService] Resend provider rejected email status=403`.
-* **Diagnostics**:
-  * Resend accounts in sandbox/test mode are restricted to sending emails **only to the account owner's email address** (e.g. `rksrivastava23-cse@bvucoep.edu.in`).
-  * Sending to other addresses (like `srivastavarishitkumar@gmail.com`) fails with a 403 sandbox restriction.
+### 1. `MessageRejected: Email address is not verified`
+* **Symptom**: Registration succeeds but the welcome email never arrives. Logs show `[EmailService] SES permanently rejected mail to ... MessageRejected`.
+* **Cause**: The SES account is in **sandbox mode**, which only delivers to individually verified *recipient* addresses. This is the single most common email failure before production access is granted.
+* **Important**: verifying the sending **domain** does not lift this. The restriction is on recipients.
+* **Fix**: verify the recipient (SES console → Identities → Create identity → Email address), send to an already-verified address, or wait for production access.
+* The app classifies this as a **permanent** failure, so the job fails once rather than retrying three times and burning three sends from a small daily quota.
+
+### 2. `TooManyRequestsException` / throttling
+* **Symptom**: Intermittent send failures under load.
+* **Cause**: Exceeding the SES per-second send rate (1/sec on a sandbox account).
+* **Fix**: The email worker is already rate-limited to `SES_MAX_SEND_RATE_PER_SEC` (default 1) with `concurrency: 1`. If this still occurs, lower that value; if production access raised your quota, raise it to match.
+
+### 3. Daily quota exhausted
+* **Symptom**: Sends fail late in the day after working earlier.
+* **Cause**: Sandbox accounts allow roughly 200–240 messages per 24 hours.
+* **Diagnostics**: `npm run email:test <addr>` prints `SentLast24Hours` against `Max24HourSend`.
+* **Watch out for digests**: the daily/weekly digest jobs enqueue **one email per candidate**. At any real user count that alone exceeds a sandbox quota. (Those jobs do not currently run — see the scheduler note in the runbook — but they will the moment the scheduler is wired up.)
+
+### 4. `CredentialsProviderError`
+* **Cause**: `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` are unset and no instance role or local AWS profile is available.
+* **Fix**: Set both explicitly. Render has no instance role, so they are mandatory there.
+
+### 5. Wrong region
+* **Symptom**: `MessageRejected` mentioning the identity, despite the domain being verified.
+* **Cause**: SES identities are **regional**. A domain verified in `ap-south-1` does not exist in another region.
+* **Fix**: Confirm `AWS_SES_REGION` matches the region the domain was verified in.
+
+### 6. Bounce/complaint events not arriving
+* **Cause**: SES only publishes events when a **configuration set** with an SNS event destination is attached, and the SNS subscription must be confirmed before anything is delivered.
+* **Fix**: Set `SES_CONFIGURATION_SET` (and `SNS_TOPIC_ARN`), then confirm the subscription — the `/api/v1/emails/sns` endpoint confirms automatically on first contact. Check the SNS console shows the subscription as *Confirmed*, not *Pending confirmation*.
+
+### 7. Running the Direct Diagnostic Test
+* **Symptom**: Need to verify email configuration without going through a full signup.
 * **Fix**:
-  * Use the account owner's email for testing.
-  * Alternatively, verify a custom sending domain in the Resend console and update the `SMTP_FROM` variable in `.env`.
-
-### 2. Running Direct Diagnostic Test
-* **Symptom**: Need to verify the email provider credentials without testing the full signup flow.
-* **Fix**: Run the direct CLI diagnostic script:
   ```bash
   cd backend
   npm run email:test <your-email-address>
   ```
-  Check the console output. If successful, it displays the Resend provider message ID: `[EmailService] Resend accepted email id=<id>`.
+  It prints the region, sender, and credential source, then calls SES `GetAccount` (which consumes no sending quota) to report sandbox status and remaining quota, and only then sends. On success you get `[EmailService] SES accepted email id=<MessageId>`.
 
 ---
 
