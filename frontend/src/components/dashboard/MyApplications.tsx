@@ -1,4 +1,4 @@
-import { useMemo } from "react"
+import { useMemo, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { ChevronRight } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -27,8 +27,17 @@ type MyApplicationsProps = {
   applications?: DisplayApplication[]
 }
 
+type ApplicationFilter = "all" | "applied" | "interviewing" | "closed"
+
 export function MyApplications({ applications = [] }: MyApplicationsProps) {
   const navigate = useNavigate()
+  // Previously these were plain <span>s with counts next to them --
+  // rendered like tabs, but with no onClick and no cursor styling, so
+  // hovering just showed the browser's default text cursor and clicking did
+  // nothing. Now an actual filter, matching the same status groupings the
+  // counts already used.
+  const [activeFilter, setActiveFilter] = useState<ApplicationFilter>("all")
+
   const tableMeta = useMemo(
     () => ({
       hasInterviewDate: applications.some(
@@ -52,6 +61,22 @@ export function MyApplications({ applications = [] }: MyApplicationsProps) {
     }
   }, [applications])
 
+  const filteredApplications = useMemo(() => {
+    if (activeFilter === "all") return applications
+    if (activeFilter === "applied") return applications.filter((a) => a.status === "Applied")
+    if (activeFilter === "interviewing") {
+      return applications.filter((a) => a.status === "Interview Scheduled" || a.status === "Under Review")
+    }
+    return applications.filter((a) => a.status === "Rejected" || a.status === "Selected")
+  }, [applications, activeFilter])
+
+  const filterTabs: { key: ApplicationFilter; label: string; count: number }[] = [
+    { key: "all", label: "All", count: counts.all },
+    { key: "applied", label: "Applied", count: counts.applied },
+    { key: "interviewing", label: "Interviewing", count: counts.interviewing },
+    { key: "closed", label: "Closed", count: counts.closed },
+  ]
+
   return (
     <section>
       <SectionHeader
@@ -71,11 +96,21 @@ export function MyApplications({ applications = [] }: MyApplicationsProps) {
       <DashboardCard className="overflow-hidden">
         {applications.length > 0 ? (
           <>
-            <div className="flex gap-5 overflow-x-auto border-b border-slate-200 px-4 py-3 text-xs font-extrabold text-slate-500 dark:border-slate-800 dark:text-slate-400">
-              <span className="shrink-0 text-[#6B2C91] dark:text-pink-200">All ({counts.all})</span>
-              <span className="shrink-0">Applied ({counts.applied})</span>
-              <span className="shrink-0">Interviewing ({counts.interviewing})</span>
-              <span className="shrink-0">Closed ({counts.closed})</span>
+            <div className="flex gap-1 overflow-x-auto border-b border-slate-200 px-3 py-2 text-xs font-extrabold text-slate-500 dark:border-slate-800 dark:text-slate-400">
+              {filterTabs.map((tab) => (
+                <button
+                  key={tab.key}
+                  type="button"
+                  onClick={() => setActiveFilter(tab.key)}
+                  className={`shrink-0 rounded-lg px-2 py-1 transition-colors ${
+                    activeFilter === tab.key
+                      ? "bg-[#6B2C91]/10 text-[#6B2C91] dark:bg-pink-500/15 dark:text-pink-200"
+                      : "hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+                  }`}
+                >
+                  {tab.label} ({tab.count})
+                </button>
+              ))}
             </div>
             <Table>
               <TableHeader>
@@ -93,7 +128,7 @@ export function MyApplications({ applications = [] }: MyApplicationsProps) {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {applications.map((application) => (
+                {filteredApplications.map((application) => (
                   <TableRow key={application.id}>
                     <TableCell>
                       <div className="flex items-center gap-3">
@@ -150,6 +185,16 @@ export function MyApplications({ applications = [] }: MyApplicationsProps) {
                     </TableCell>
                   </TableRow>
                 ))}
+                {filteredApplications.length === 0 && (
+                  <TableRow>
+                    <TableCell
+                      colSpan={3 + (tableMeta.hasInterviewDate ? 1 : 0) + (tableMeta.hasRecruiter ? 1 : 0) + 3}
+                      className="py-6 text-center text-xs font-semibold text-slate-400 dark:text-slate-500"
+                    >
+                      No applications in this category.
+                    </TableCell>
+                  </TableRow>
+                )}
               </TableBody>
             </Table>
           </>

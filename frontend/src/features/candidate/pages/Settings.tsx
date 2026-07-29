@@ -48,6 +48,8 @@ export function Settings() {
   const [emailStatusUpdate, setEmailStatusUpdate] = useState(true)
   const [emailInterviews, setEmailInterviews] = useState(true)
   const [emailPlatformNews, setEmailPlatformNews] = useState(false)
+  const [dailyDigest, setDailyDigest] = useState(true)
+  const [weeklyDigest, setWeeklyDigest] = useState(true)
   const [notifSuccess, setNotifSuccess] = useState(false)
 
   // Privacy states
@@ -77,6 +79,11 @@ export function Settings() {
           setEmailStatusUpdate(!!setts.emailStatusUpdate)
           setEmailInterviews(!!setts.emailInterviews)
           setEmailPlatformNews(!!setts.emailPlatformNews)
+          // Both default true server-side (getSettings' defaultPrefs) --
+          // `?? true` so an existing candidate whose stored preferences
+          // predate these two keys doesn't see them flip to "off" on load.
+          setDailyDigest(setts.dailyDigestEnabled ?? true)
+          setWeeklyDigest(setts.weeklyDigestEnabled ?? true)
           setTwoFactor(!!setts.twoFactorEnabled)
           setProfileVisibility(setts.profileVisibility || "Public")
         }
@@ -177,6 +184,8 @@ export function Settings() {
         emailStatusUpdate,
         emailInterviews,
         emailPlatformNews,
+        dailyDigestEnabled: dailyDigest,
+        weeklyDigestEnabled: weeklyDigest,
         twoFactorEnabled: twoFactor,
       })
       setNotifSuccess(true)
@@ -533,6 +542,32 @@ export function Settings() {
                       type="checkbox"
                       checked={emailPlatformNews}
                       onChange={(e) => setEmailPlatformNews(e.target.checked)}
+                      className="rounded border-slate-300 text-[#6B2C91] focus:ring-[#6B2C91] dark:border-slate-700 dark:bg-slate-950 cursor-pointer"
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-0.5">
+                      <p className="text-xs font-extrabold text-slate-800 dark:text-slate-200">Daily Job Digest</p>
+                      <p className="text-[11px] text-slate-500">A daily email summarizing jobs posted in the last 24 hours.</p>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={dailyDigest}
+                      onChange={(e) => setDailyDigest(e.target.checked)}
+                      className="rounded border-slate-300 text-[#6B2C91] focus:ring-[#6B2C91] dark:border-slate-700 dark:bg-slate-950 cursor-pointer"
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-0.5">
+                      <p className="text-xs font-extrabold text-slate-800 dark:text-slate-200">Weekly Job Digest</p>
+                      <p className="text-[11px] text-slate-500">A weekly roundup email every Friday of jobs posted that week.</p>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={weeklyDigest}
+                      onChange={(e) => setWeeklyDigest(e.target.checked)}
                       className="rounded border-slate-300 text-[#6B2C91] focus:ring-[#6B2C91] dark:border-slate-700 dark:bg-slate-950 cursor-pointer"
                     />
                   </div>

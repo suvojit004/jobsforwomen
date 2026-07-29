@@ -729,6 +729,11 @@ export class CandidateService {
       emailInterviews: true,
       emailPlatformNews: false,
       twoFactorEnabled: false,
+      // Read by queue.ts's compileDailyDigests/compileWeeklyDigests
+      // (`prefs.dailyDigestEnabled !== false`) -- default true so existing
+      // candidates keep receiving digests until they explicitly opt out.
+      dailyDigestEnabled: true,
+      weeklyDigestEnabled: true,
     }
 
     return user.preferences ? { ...defaultPrefs, ...(user.preferences as any) } : defaultPrefs

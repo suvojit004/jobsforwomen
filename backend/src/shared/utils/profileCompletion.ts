@@ -34,7 +34,16 @@ export function calculateProfileCompletion(user: any): number {
     if (profile.skills && profile.skills.length > 0) filled++
     if (profile.experience && profile.experience.length > 0) filled++
     if (profile.education && profile.education.length > 0) filled++
-    if (profile.careerBreak && (profile.careerBreak as any).hasBreak) filled++
+    // Bug: this used to only award the point when hasBreak === true, so a
+    // candidate who has never taken a career break -- i.e. answered the
+    // question "no" -- was structurally capped at 14/15 (93%) and could
+    // never reach 100%, no matter how complete the rest of their profile
+    // was. careerBreak is null only until the candidate's first profile
+    // save (see useProfile.ts's mapProfileToState, which seeds a concrete
+    // { hasBreak: false, ... } object from then on) -- so "has the
+    // candidate touched this section at all" is what should count toward
+    // completion, not which answer they gave.
+    if (profile.careerBreak !== null && profile.careerBreak !== undefined) filled++
   } else if (user.recruiterProfile || (isProfileDirect && user.companyId !== undefined)) {
     const profile = user.recruiterProfile || user
     const fields = ["fullName", "phone"]

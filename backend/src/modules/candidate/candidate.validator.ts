@@ -56,6 +56,11 @@ export const updateCandidateSettingsSchema = z.object({
   emailInterviews: z.boolean().optional(),
   emailPlatformNews: z.boolean().optional(),
   twoFactorEnabled: z.boolean().optional(),
+  // Read by queue.ts's compileDailyDigests/compileWeeklyDigests (the
+  // scheduled job-recommendation emails) -- checked with `!== false`, so
+  // these must be settable to false or a candidate has no way to opt out.
+  dailyDigestEnabled: z.boolean().optional(),
+  weeklyDigestEnabled: z.boolean().optional(),
 })
 
 export const reportJobSchema = z.object({
