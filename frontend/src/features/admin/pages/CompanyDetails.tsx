@@ -16,7 +16,8 @@ import { DashboardCard } from "@/components/shared/DashboardCard"
 import { AdminApi } from "../services/adminApi"
 import { cn } from "@/lib/utils"
 import { FileTypeIcon } from "@/components/shared/forms/SupportingDocumentsUploader"
-import { openDocument, formatFileSize, getFileIconKind } from "@/utils/fileHelpers"
+import { DocumentPreviewModal } from "@/components/shared/DocumentPreviewModal"
+import { formatFileSize, getFileIconKind, type PreviewableDocument } from "@/utils/fileHelpers"
 
 interface CompanyRecruiterContact {
   name: string
@@ -77,6 +78,7 @@ export function CompanyDetails() {
   const [selectedCompanyId, setSelectedCompanyId] = useState("")
   const [allJobs, setAllJobs] = useState<AdminJob[]>([])
   const [loading, setLoading] = useState(true)
+  const [previewDoc, setPreviewDoc] = useState<PreviewableDocument | null>(null)
 
   useEffect(() => {
     const loadDetails = async () => {
@@ -338,16 +340,14 @@ export function CompanyDetails() {
                         never a preview -- and (since raw uploads had no
                         extension/format hint) often saved with no usable
                         filename, which looked like a corrupted file even
-                        though the bytes were intact. openDocument() now
-                        picks the right action per mimetype: inline preview
-                        for images, browser-native viewer for PDFs, and a
-                        correctly-named download for anything else (Office
-                        docs). */}
+                        though the bytes were intact. Now opens an in-app
+                        preview modal: inline for images/PDFs, a clean
+                        download fallback for anything else (Office docs). */}
                     {selectedCompany.verificationDocuments.map((doc, i) => (
                       <button
                         key={i}
                         type="button"
-                        onClick={() => openDocument(doc)}
+                        onClick={() => setPreviewDoc(doc)}
                         className="flex w-full items-center justify-between gap-2 rounded-lg bg-slate-50 dark:bg-slate-950/40 px-3 py-2 text-[11px] font-semibold text-slate-600 dark:text-slate-300 hover:underline text-left"
                       >
                         <span className="flex items-center gap-1.5 min-w-0">
@@ -459,6 +459,8 @@ export function CompanyDetails() {
           </div>
         </div>
       )}
+
+      <DocumentPreviewModal doc={previewDoc} onClose={() => setPreviewDoc(null)} />
     </div>
   )
 }

@@ -251,6 +251,23 @@ export class EmailService {
     return this.sendMail(to, "JobsForWomen Staff Invitation", html)
   }
 
+  static async sendAdminAccountCreatedEmail(
+    to: string,
+    fullName: string,
+    password: string,
+    roleNames: string[]
+  ): Promise<boolean> {
+    const baseUrl = frontendBaseUrl()
+    const html = EmailTemplates.adminAccountCreated({
+      fullName,
+      email: to,
+      password,
+      roleNames,
+      loginLink: `${baseUrl}/auth/login`,
+    })
+    return this.sendMail(to, "Your JobsForWomen Administrator Account", html)
+  }
+
   static async sendCompanyVerificationEmail(
     to: string,
     companyName: string,

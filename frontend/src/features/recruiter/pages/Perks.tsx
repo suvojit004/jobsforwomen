@@ -15,7 +15,8 @@ import { Button } from "@/components/ui/button"
 import { RecruiterApi } from "../services/recruiterApi"
 import { getSocket } from "@/api/socket"
 import { SupportingDocumentsUploader, FileTypeIcon, type StagedDocument } from "@/components/shared/forms/SupportingDocumentsUploader"
-import { openDocument, formatFileSize, getFileIconKind, SUPPORTING_DOCUMENT_ACCEPT } from "@/utils/fileHelpers"
+import { DocumentPreviewModal } from "@/components/shared/DocumentPreviewModal"
+import { formatFileSize, getFileIconKind, SUPPORTING_DOCUMENT_ACCEPT, type PreviewableDocument } from "@/utils/fileHelpers"
 
 // Canonical perk registry. "Menstrual Leave Champion" must match exactly
 // what Dashboard.tsx's status card checks for -- the two previously
@@ -81,6 +82,7 @@ export function Perks() {
   // submission succeeds. Keyed by perk name, same pattern as
   // commentDrafts/categoryDrafts above.
   const [stagedDocs, setStagedDocs] = useState<Record<string, StagedDocument[]>>({})
+  const [previewDoc, setPreviewDoc] = useState<PreviewableDocument | null>(null)
 
   const load = async (silent = false) => {
     try {
@@ -262,7 +264,7 @@ export function Perks() {
                       <button
                         key={i}
                         type="button"
-                        onClick={() => openDocument(doc)}
+                        onClick={() => setPreviewDoc(doc)}
                         className="flex w-full items-center gap-1.5 rounded px-1 py-0.5 text-left text-[10px] font-semibold text-slate-500 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-900"
                       >
                         <FileTypeIcon kind={getFileIconKind(doc)} className="size-3" />
@@ -357,6 +359,8 @@ export function Perks() {
           })}
         </div>
       )}
+
+      <DocumentPreviewModal doc={previewDoc} onClose={() => setPreviewDoc(null)} />
     </div>
   )
 }

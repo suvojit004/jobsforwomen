@@ -19,6 +19,8 @@ import {
 import { Button } from "@/components/ui/button"
 import { DashboardCard } from "@/components/shared/DashboardCard"
 import { StatusBadge } from "@/components/shared/StatusBadge"
+import { DocumentPreviewModal } from "@/components/shared/DocumentPreviewModal"
+import type { PreviewableDocument } from "@/utils/fileHelpers"
 import { cn } from "@/lib/utils"
 import { RecruiterApi, type ApplicantRow } from "../services/recruiterApi"
 import { ScheduleInterviewModal, type ScheduleInterviewSubject } from "../components/ScheduleInterviewModal"
@@ -46,6 +48,7 @@ export function CandidatePreview() {
   const [offerDetailsText, setOfferDetailsText] = useState("")
   const [offerLetterFile, setOfferLetterFile] = useState<File | null>(null)
   const [offerSubmitting, setOfferSubmitting] = useState(false)
+  const [previewDoc, setPreviewDoc] = useState<(PreviewableDocument & { title?: string }) | null>(null)
 
   const load = useCallback(async () => {
     setIsLoading(true)
@@ -107,7 +110,14 @@ export function CandidatePreview() {
       toast.error("This candidate has not uploaded a resume yet.")
       return
     }
-    window.open(profile.resumeUrl, "_blank", "noopener,noreferrer")
+    // Opens in-app instead of window.open() -- sidesteps the popup-blocker
+    // silent-failure case entirely (see Applicants.tsx for the same change).
+    setPreviewDoc({ url: profile.resumeUrl, originalFilename: `${profile.name} - Resume` })
+  }
+
+  const handleViewOfferLetter = () => {
+    if (!profile?.offerLetterUrl) return
+    setPreviewDoc({ url: profile.offerLetterUrl, originalFilename: `${profile.name} - Offer Letter` })
   }
 
   // the Messages page could only ever list
@@ -427,15 +437,14 @@ export function CandidatePreview() {
                 </p>
                 <p className="text-[10px] text-slate-500">{profile.offerDetails}</p>
                 {profile.offerLetterUrl && (
-                  <a
-                    href={profile.offerLetterUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
+                  <button
+                    type="button"
+                    onClick={handleViewOfferLetter}
                     className="inline-flex items-center gap-1 text-[10px] font-black text-[#6B2C91] dark:text-pink-300 hover:underline"
                   >
                     <FileText className="size-3" />
                     View Offer Letter
-                  </a>
+                  </button>
                 )}
               </div>
             )}
@@ -536,6 +545,8 @@ export function CandidatePreview() {
           </div>
         </div>
       )}
+
+      <DocumentPreviewModal doc={previewDoc} onClose={() => setPreviewDoc(null)} />
     </div>
   )
 }

@@ -7,7 +7,7 @@
 // file regardless of type : a plain `<a href>` has no way to decide
 // that, this module does.
 
-export type PreviewAction = "image" | "pdf" | "download"
+export type PreviewAction = "image" | "pdf" | "office" | "download"
 
 // Mirrors upload.middleware.ts's perkDocumentFilter / fileStorage.ts's
 // FILE_SIGNATURES allow-list on the backend.
@@ -93,12 +93,66 @@ export function isPreviewablePdf(mimetype?: string | null): boolean {
   return mimetype === "application/pdf"
 }
 
-// image/* -> inline preview, application/pdf -> open in browser, everything
-// else -> download.
-export function getPreviewAction(mimetype?: string | null): PreviewAction {
+const IMAGE_EXTENSIONS = new Set(["png", "jpg", "jpeg", "webp", "gif"])
+const OFFICE_EXTENSIONS = new Set(["doc", "docx", "xls", "xlsx", "ppt", "pptx"])
+const OFFICE_MIME_TYPES = new Set([
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.ms-excel",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "application/vnd.ms-powerpoint",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+])
+
+export function isPreviewableOffice(mimetype?: string | null): boolean {
+  return !!mimetype && OFFICE_MIME_TYPES.has(mimetype)
+}
+
+// image/* -> inline preview, application/pdf -> open in browser, Word/Excel/
+// PowerPoint -> Google Docs Viewer embed (see buildGoogleViewerUrl below),
+// everything else -> download. `url` is an optional fallback for records
+// that never had a mimetype stored (e.g. resumeUrl/offerLetterUrl on some
+// API responses, which carry only a URL) -- sniffs the extension instead of
+// defaulting every un-typed document straight to "download".
+export function getPreviewAction(mimetype?: string | null, url?: string | null): PreviewAction {
   if (isPreviewableImage(mimetype)) return "image"
   if (isPreviewablePdf(mimetype)) return "pdf"
+  if (isPreviewableOffice(mimetype)) return "office"
+  if (!mimetype && url) {
+    const match = /\.([a-zA-Z0-9]+)(?:$|\?)/.exec(url)
+    const ext = match?.[1]?.toLowerCase()
+    if (ext === "pdf") return "pdf"
+    if (ext && IMAGE_EXTENSIONS.has(ext)) return "image"
+    if (ext && OFFICE_EXTENSIONS.has(ext)) return "office"
+  }
   return "download"
+}
+
+// Google Docs Viewer renders Office documents in an <iframe> by fetching the
+// given URL server-side (Google's servers, not the visitor's browser, make
+// the request) -- so it needs a URL Google can actually reach.
+export function buildGoogleViewerUrl(fileUrl: string): string {
+  return `https://docs.google.com/viewer?url=${encodeURIComponent(fileUrl)}&embedded=true`
+}
+
+// Because Google fetches server-side, it can never reach a URL pointing at
+// localhost or a private network address -- only a URL with a real public
+// hostname works, which in practice means "the app is actually deployed."
+// Used to skip attempting the Google Docs Viewer embed during local dev
+// (where it would just render Google's own "couldn't load" page) and fall
+// back straight to the honest download state instead.
+export function isPubliclyReachableUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url, window.location.origin)
+    const host = parsed.hostname
+    if (host === "localhost" || host === "127.0.0.1" || host === "::1") return false
+    if (/^10\./.test(host) || /^127\./.test(host)) return false
+    if (/^192\.168\./.test(host)) return false
+    if (/^172\.(1[6-9]|2\d|3[0-1])\./.test(host)) return false
+    return true
+  } catch {
+    return false
+  }
 }
 
 // The backend's /files/... route (see backend/src/shared/routes/files.routes.ts)
@@ -130,9 +184,13 @@ export interface PreviewableDocument {
 // preserves the original filename/extension instead of handing the browser
 // an extensionless raw URL.
 export function openDocument(doc: PreviewableDocument) {
-  const action = getPreviewAction(doc.mimetype)
+  const action = getPreviewAction(doc.mimetype, doc.url)
   if (action === "image" || action === "pdf") {
     window.open(doc.url, "_blank", "noopener,noreferrer")
+    return
+  }
+  if (action === "office" && isPubliclyReachableUrl(doc.url)) {
+    window.open(buildGoogleViewerUrl(doc.url), "_blank", "noopener,noreferrer")
     return
   }
   const ext = getFileExtension(doc)

@@ -15,6 +15,19 @@ export interface InvitationParams {
   loginLink: string
 }
 
+export interface AdminAccountCreatedParams {
+  fullName: string
+  email: string
+  // Plaintext, deliberately: this account is activated immediately by a
+  // Super Admin (admin.service.ts's createAdmin) with no "set your own
+  // password" step, so this email is the only place the recipient can learn
+  // their password. See createAdmin's comment on EventBus.publish for the
+  // handling tradeoff this implies.
+  password: string
+  roleNames: string[]
+  loginLink: string
+}
+
 export interface VerificationParams {
   companyName: string
   status: string
@@ -212,6 +225,37 @@ export const EmailTemplates = {
         ${ctaButton(params.invitationLink, "Accept Invitation", "#4A5568")}
         <p style="font-size:12px; color:#94A3B8; margin-top:20px; padding-top:16px; border-top:1px solid #E2E8F0;">
           Already have a JobsForWomen account? <a href="${params.loginLink}" style="color:${BRAND_PURPLE}; font-weight:700; text-decoration:none;">Log in here</a> instead.
+        </p>
+      `,
+    }),
+
+  // Admin Management: a Super Admin created this account directly (no
+  // self-serve "accept invite" step -- see invitation above for that flow),
+  // so it ships the recipient's login credentials plus a straight-to-login
+  // button, and a password-change nudge since the password was chosen by
+  // someone else.
+  adminAccountCreated: (params: AdminAccountCreatedParams): string =>
+    renderShell({
+      preheader: `Your JobsForWomen administrator account is ready.`,
+      heading: "Your Administrator Account Is Ready",
+      bodyHtml: `
+        <p>Hi ${params.fullName},</p>
+        <p>An administrator account has been created for you on JobsForWomen with the following role${
+          params.roleNames.length > 1 ? "s" : ""
+        }: <strong>${params.roleNames.join(", ")}</strong>.</p>
+        <table role="presentation" cellpadding="0" cellspacing="0" style="margin:16px 0; width:100%; background-color:#F8FAFC; border:1px solid #E2E8F0; border-radius:8px;">
+          <tr>
+            <td style="padding:12px 16px;">
+              <p style="margin:0 0 4px; font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:0.3px; color:#94A3B8;">Username</p>
+              <p style="margin:0 0 12px; font-weight:700; color:#0F172A;">${params.email}</p>
+              <p style="margin:0 0 4px; font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:0.3px; color:#94A3B8;">Password</p>
+              <p style="margin:0; font-weight:700; color:#0F172A; font-family: ui-monospace, Menlo, monospace;">${params.password}</p>
+            </td>
+          </tr>
+        </table>
+        ${ctaButton(params.loginLink, "Log In Now")}
+        <p style="font-size:12px; color:#94A3B8;">
+          For security, sign in and change this password as soon as possible. If you weren't expecting this account, contact your platform administrator.
         </p>
       `,
     }),

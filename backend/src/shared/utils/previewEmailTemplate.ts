@@ -34,6 +34,15 @@ const SAMPLE_RENDERERS: Record<string, () => string> = {
       loginLink: "http://localhost:5173/auth/login",
     }),
 
+  adminAccountCreated: () =>
+    EmailTemplates.adminAccountCreated({
+      fullName: "Jane Doe",
+      email: "jane@example.com",
+      password: "T3mp-Passw0rd!",
+      roleNames: ["Moderator"],
+      loginLink: "http://localhost:5173/auth/login",
+    }),
+
   companyVerification: () =>
     EmailTemplates.companyVerification({
       companyName: "Acme Corp",

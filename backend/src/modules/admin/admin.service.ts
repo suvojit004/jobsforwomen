@@ -1935,10 +1935,18 @@ export class AdminService {
 
     // Notification.listener.ts subscribes to this to welcome the new admin
     // in-app (Admin Management spec's "Notifications: on account created").
+    // email.listener.ts also subscribes to this same event to send the new
+    // admin their login credentials -- this account has no self-serve
+    // "set your own password" step (unlike inviteEmployee's token flow), so
+    // the plaintext password is included here deliberately: it's the only
+    // way this admin ever learns it. It exists only transiently in the
+    // in-process EventBus payload and the resulting BullMQ job until the
+    // email send completes, never written to the database or logged.
     EventBus.publish("AdminAccountCreated", {
       userId: created.id,
       email: created.email,
       fullName: data.fullName,
+      password: data.password,
       roleNames,
       context,
     })

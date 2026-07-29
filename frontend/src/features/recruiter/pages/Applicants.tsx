@@ -17,6 +17,8 @@ import { DashboardCard } from "@/components/shared/DashboardCard"
 import { DataTable, type ColumnDef } from "@/components/shared/DataTable"
 import { StatusBadge } from "@/components/shared/StatusBadge"
 import { TableSkeleton } from "@/components/shared/skeletons/PageSkeletons"
+import { DocumentPreviewModal } from "@/components/shared/DocumentPreviewModal"
+import type { PreviewableDocument } from "@/utils/fileHelpers"
 import { RecruiterApi, type ApplicantRow } from "../services/recruiterApi"
 import { ScheduleInterviewModal, type ScheduleInterviewSubject } from "../components/ScheduleInterviewModal"
 
@@ -30,6 +32,7 @@ export function Applicants() {
   const [jobFilter, setJobFilter] = useState<string>("All")
   const [sortBy, setSortBy] = useState<"date" | "name">("date")
   const [downloadSuccessId, setDownloadSuccessId] = useState<string | null>(null)
+  const [previewDoc, setPreviewDoc] = useState<(PreviewableDocument & { title?: string }) | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [applicants, setApplicants] = useState<ApplicantRow[]>([])
 
@@ -116,9 +119,18 @@ export function Applicants() {
       toast.error(`${row.name} has not uploaded a resume yet.`)
       return
     }
-    window.open(row.resumeUrl, "_blank", "noopener,noreferrer")
+    // Previously window.open(row.resumeUrl, "_blank") -- which the browser's
+    // popup blocker could silently swallow with zero visible feedback (no
+    // exception, no toast, nothing). Opening in-app sidesteps that failure
+    // mode entirely instead of just detecting and reporting it.
+    setPreviewDoc({ url: row.resumeUrl, originalFilename: `${row.name} - Resume` })
     setDownloadSuccessId(row.id)
     setTimeout(() => setDownloadSuccessId(null), 2500)
+  }
+
+  const handleViewOfferLetter = (row: ApplicantRow) => {
+    if (!row.offerLetterUrl) return
+    setPreviewDoc({ url: row.offerLetterUrl, originalFilename: `${row.name} - Offer Letter` })
   }
 
   // Filter and Sort Logic
@@ -206,15 +218,14 @@ export function Applicants() {
             </p>
           )}
           {row.offerLetterUrl && (
-            <a
-              href={row.offerLetterUrl}
-              target="_blank"
-              rel="noopener noreferrer"
+            <button
+              type="button"
+              onClick={() => handleViewOfferLetter(row)}
               className="text-[9px] font-bold text-[#6B2C91] dark:text-pink-300 flex items-center gap-1 hover:underline"
             >
               <FileDown className="size-2.5 shrink-0" />
               View Offer Letter
-            </a>
+            </button>
           )}
         </div>
       ),
@@ -238,7 +249,7 @@ export function Applicants() {
             size="icon"
             onClick={() => handleDownloadResume(row)}
             className="h-8 w-8 text-slate-400 hover:text-[#6B2C91] dark:hover:text-pink-200"
-            title="Download Resume"
+            title="Preview Resume"
           >
             {downloadSuccessId === row.id ? (
               <CheckCircle className="size-3.5 text-emerald-500 stroke-[3]" />
@@ -412,6 +423,8 @@ export function Applicants() {
           </div>
         </div>
       )}
+
+      <DocumentPreviewModal doc={previewDoc} onClose={() => setPreviewDoc(null)} />
     </div>
   )
 }

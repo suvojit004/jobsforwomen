@@ -1,8 +1,9 @@
 import { useRef, useState } from "react"
 import { toast } from "sonner"
-import { Download, FileText, Loader2, RefreshCw, Trash2, Upload } from "lucide-react"
+import { Eye, FileText, Loader2, RefreshCw, Trash2, Upload } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { DashboardCard } from "@/components/dashboard/DashboardCard"
+import { DocumentPreviewModal } from "@/components/shared/DocumentPreviewModal"
 import { candidateApi } from "@/features/candidate/services/candidateApi"
 
 const ALLOWED_TYPES = [
@@ -33,6 +34,7 @@ export function ResumeCard({ resume, onChanged, onUpload, onDelete }: ResumeCard
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [isUploading, setIsUploading] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
+  const [previewing, setPreviewing] = useState(false)
 
   if (!resume) return null
 
@@ -95,9 +97,9 @@ export function ResumeCard({ resume, onChanged, onUpload, onDelete }: ResumeCard
     }
   }
 
-  const handleDownload = () => {
+  const handlePreview = () => {
     if (!resume.url) return
-    window.open(resume.url, "_blank", "noopener,noreferrer")
+    setPreviewing(true)
   }
 
   return (
@@ -179,15 +181,24 @@ export function ResumeCard({ resume, onChanged, onUpload, onDelete }: ResumeCard
             </Button>
             <Button
               type="button"
-              onClick={handleDownload}
+              onClick={handlePreview}
               className="h-9 justify-center gap-1.5 bg-[#6B2C91] hover:bg-[#5a237b]"
             >
-              <Download className="size-3.5" />
-              Download
+              <Eye className="size-3.5" />
+              Preview
             </Button>
           </>
         )}
       </div>
+
+      <DocumentPreviewModal
+        doc={
+          previewing
+            ? { url: resume.url, mimetype: resume.mimetype, originalFilename: resume.originalName || resume.name }
+            : null
+        }
+        onClose={() => setPreviewing(false)}
+      />
     </DashboardCard>
   )
 }

@@ -16,7 +16,8 @@ import { DashboardCard } from "@/components/shared/DashboardCard"
 import { AdminApi } from "../services/adminApi"
 import { getSocket } from "@/api/socket"
 import { FileTypeIcon } from "@/components/shared/forms/SupportingDocumentsUploader"
-import { openDocument, formatFileSize, getFileIconKind } from "@/utils/fileHelpers"
+import { DocumentPreviewModal } from "@/components/shared/DocumentPreviewModal"
+import { formatFileSize, getFileIconKind, type PreviewableDocument } from "@/utils/fileHelpers"
 
 interface PerkDocument {
   url: string
@@ -50,6 +51,7 @@ export function CompanyPerkRequests() {
   const [searchQuery, setSearchQuery] = useState("")
   const [filterMode, setFilterMode] = useState<"all" | "pending" | "approved" | "info_requested" | "rejected">("all")
   const [loading, setLoading] = useState(true)
+  const [previewDoc, setPreviewDoc] = useState<PreviewableDocument | null>(null)
 
   const [activeModal, setActiveModal] = useState<{
     requestId: string
@@ -181,7 +183,7 @@ export function CompanyPerkRequests() {
               <button
                 key={i}
                 type="button"
-                onClick={() => openDocument(doc)}
+                onClick={() => setPreviewDoc(doc)}
                 className="flex items-center gap-1 text-[10px] font-bold text-[#6B2C91] dark:text-pink-300 hover:underline text-left"
               >
                 <FileTypeIcon kind={getFileIconKind(doc)} className="size-3" />
@@ -394,6 +396,8 @@ export function CompanyPerkRequests() {
           </div>
         </div>
       )}
+
+      <DocumentPreviewModal doc={previewDoc} onClose={() => setPreviewDoc(null)} />
     </div>
   )
 }

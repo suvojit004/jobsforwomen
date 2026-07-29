@@ -183,7 +183,7 @@ export async function getDeadLetterQueueStats(): Promise<{ pendingCount: number 
 // Account-security mail (verification, password reset) is exempt -- turning
 // off automated status-update blasts must not lock users out of their
 // accounts.
-const SECURITY_CRITICAL_EMAIL_JOBS = new Set(["sendWelcome", "sendPasswordReset", "sendRaw"])
+const SECURITY_CRITICAL_EMAIL_JOBS = new Set(["sendWelcome", "sendPasswordReset", "sendRaw", "sendAdminAccountCreated"])
 
 export async function addJob(queueName: string, jobName: string, data: any) {
   try {
@@ -231,11 +231,13 @@ async function handleEmailJob(jobName: string, data: any) {
     return
   }
 
-  const { to, token, roleName, companyName, status, notes, jobTitle, recipientName, jobs, scheduledAt, location, timezone, mode, offerDetails, actionLink, actionLabel, perkName, comment, statusHeading, statusMessage } = data
+  const { to, token, roleName, roleNames, fullName, password, companyName, status, notes, jobTitle, recipientName, jobs, scheduledAt, location, timezone, mode, offerDetails, actionLink, actionLabel, perkName, comment, statusHeading, statusMessage } = data
   if (jobName === "sendWelcome") {
     await EmailService.sendWelcomeEmail(to, token)
   } else if (jobName === "sendEmployeeInvitation") {
     await EmailService.sendEmployeeInvitation(to, token, roleName)
+  } else if (jobName === "sendAdminAccountCreated") {
+    await EmailService.sendAdminAccountCreatedEmail(to, fullName, password, roleNames || [])
   } else if (jobName === "sendCompanyVerification") {
     await EmailService.sendCompanyVerificationEmail(to, companyName, status, notes, actionLink, actionLabel)
   } else if (jobName === "sendPerkVerification") {

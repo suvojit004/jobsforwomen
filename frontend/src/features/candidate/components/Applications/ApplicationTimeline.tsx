@@ -8,7 +8,7 @@ import { CompanyLogo } from "@/components/shared/CompanyLogo"
 import type { Application } from "@/types/dashboard"
 import { cn } from "@/lib/utils"
 import { candidateApi } from "../../services/candidateApi"
-import { openDocument, getFileExtension } from "@/utils/fileHelpers"
+import { DocumentPreviewModal } from "@/components/shared/DocumentPreviewModal"
 
 type ApplicationTimelineProps = {
   application: Application
@@ -20,6 +20,7 @@ export function ApplicationTimeline({ application, onClose }: ApplicationTimelin
   const status = application.status
   const navigate = useNavigate()
   const [messaging, setMessaging] = useState(false)
+  const [previewingOffer, setPreviewingOffer] = useState(false)
 
   // there was previously no way to start a
   // conversation with the recruiter from anywhere in the Candidate module --
@@ -307,14 +308,7 @@ export function ApplicationTimeline({ application, onClose }: ApplicationTimelin
                 )}
                 <button
                   type="button"
-                  onClick={() => {
-                    const ext = getFileExtension({ url: application.offerLetterUrl })
-                    openDocument({
-                      url: application.offerLetterUrl!,
-                      mimetype: ext === "pdf" ? "application/pdf" : undefined,
-                      originalFilename: `Offer_Letter${ext ? `.${ext}` : ""}`,
-                    })
-                  }}
+                  onClick={() => setPreviewingOffer(true)}
                   className="font-extrabold text-[#6B2C91] dark:text-pink-200 hover:underline"
                 >
                   View offer letter
@@ -345,6 +339,11 @@ export function ApplicationTimeline({ application, onClose }: ApplicationTimelin
           </div>
         </div>
       </div>
+
+      <DocumentPreviewModal
+        doc={previewingOffer && application.offerLetterUrl ? { url: application.offerLetterUrl, originalFilename: "Offer Letter" } : null}
+        onClose={() => setPreviewingOffer(false)}
+      />
     </DashboardCard>
   )
 }
