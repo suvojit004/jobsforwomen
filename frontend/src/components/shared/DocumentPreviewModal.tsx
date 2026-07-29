@@ -1,3 +1,5 @@
+import { useState } from "react"
+import { createPortal } from "react-dom"
 import { X, ExternalLink, Download } from "lucide-react"
 import { FileTypeIcon } from "@/components/shared/forms/SupportingDocumentsUploader"
 import {
@@ -30,7 +32,19 @@ interface DocumentPreviewModalProps {
 // the file server-side on Google's end) -- which only works once the app has
 // a real public URL, so local dev falls back to an honest download state.
 export function DocumentPreviewModal({ doc, onClose }: DocumentPreviewModalProps) {
+  // Keyed remount below (via <DocumentPreviewModalContent key={doc.url}>)
+  // handles resetting per-image load-failure state when a different
+  // document is opened -- see that component for why.
   if (!doc) return null
+  return createPortal(<DocumentPreviewModalContent key={doc.url} doc={doc} onClose={onClose} />, document.body)
+}
+
+function DocumentPreviewModalContent({ doc, onClose }: { doc: PreviewableDocument & { title?: string }; onClose: () => void }) {
+  // Tracks a failed <img> load (action === "image") so a genuinely broken
+  // URL shows an explained, actionable state instead of the browser's bare
+  // "broken image" icon with zero context -- which is indistinguishable at a
+  // glance from a real bug in this component.
+  const [imgFailed, setImgFailed] = useState(false)
 
   const action = getPreviewAction(doc.mimetype, doc.url)
   const displayName = doc.title || doc.originalFilename || doc.category || "Document"
@@ -41,7 +55,7 @@ export function DocumentPreviewModal({ doc, onClose }: DocumentPreviewModalProps
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4"
       onClick={onClose}
       role="dialog"
       aria-modal="true"
@@ -84,9 +98,14 @@ export function DocumentPreviewModal({ doc, onClose }: DocumentPreviewModalProps
         </div>
 
         <div className="flex-1 overflow-auto bg-slate-50 dark:bg-slate-950">
-          {action === "image" ? (
+          {action === "image" && !imgFailed ? (
             <div className="flex min-h-full items-center justify-center p-4">
-              <img src={doc.url} alt={displayName} className="max-h-full max-w-full rounded-lg object-contain shadow-sm" />
+              <img
+                src={doc.url}
+                alt={displayName}
+                className="max-h-full max-w-full rounded-lg object-contain shadow-sm"
+                onError={() => setImgFailed(true)}
+              />
             </div>
           ) : action === "pdf" ? (
             <iframe src={doc.url} title={displayName} className="h-full w-full border-0" />
@@ -95,12 +114,15 @@ export function DocumentPreviewModal({ doc, onClose }: DocumentPreviewModalProps
           ) : (
             <div className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center">
               <FileTypeIcon kind={getFileIconKind(doc)} className="size-12" />
-              <p className="text-sm font-bold text-slate-700 dark:text-slate-200">Preview isn't available for this file type</p>
+              <p className="text-sm font-bold text-slate-700 dark:text-slate-200">
+                {imgFailed ? "This image couldn't be loaded" : "Preview isn't available for this file type"}
+              </p>
               <p className="max-w-xs text-xs font-semibold text-slate-450 dark:text-slate-400">
-                {action === "office"
-                  ? "Google Docs Viewer needs a publicly reachable link, which only works once the app is deployed -- not on a local dev server."
-                  : `${ext ? `.${ext} files` : "This file"} can't be rendered in-browser.`}{" "}
-                Download it to open in the right application.
+                {imgFailed
+                  ? "The link may have expired -- close this and reopen the preview, or try downloading it directly."
+                  : action === "office"
+                    ? "Google Docs Viewer needs a publicly reachable link, which only works once the app is deployed -- not on a local dev server."
+                    : `${ext ? `.${ext} files` : "This file"} can't be rendered in-browser. Download it to open in the right application.`}
               </p>
               <a
                 href={downloadUrl}
