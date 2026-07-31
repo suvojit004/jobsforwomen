@@ -269,7 +269,7 @@ export function Messages() {
       <div className="flex-1 min-h-0 grid md:grid-cols-12 gap-5 relative">
         {/* Contact List column */}
         <div className={cn(
-          "h-full md:col-span-4",
+          "h-full min-w-0 md:col-span-4",
           mobileShowChat ? "hidden md:block" : "block"
         )}>
           <ConversationList
@@ -281,7 +281,7 @@ export function Messages() {
 
         {/* Chat window column */}
         <div className={cn(
-          "h-full md:col-span-8",
+          "h-full min-w-0 md:col-span-8",
           !mobileShowChat ? "hidden md:block" : "block"
         )}>
           {activeConversation ? (

@@ -165,7 +165,19 @@ export const scheduleInterviewSchema = z
   .object({
     title: z.string().min(1, "Title is required").max(150),
     description: z.string().max(1000).optional(),
-    scheduledAt: z.string().refine((v) => !isNaN(Date.parse(v)), "Invalid date/time"),
+    // Previously only checked that the string parsed as a date at all, so a
+    // recruiter could schedule (and the candidate would be emailed/notified
+    // about) an interview dated in the past -- nothing downstream re-checked
+    // this. A 2-minute grace window absorbs normal form-submission lag
+    // (picking a time, then the request actually reaching the server)
+    // without allowing genuinely backdated interviews.
+    scheduledAt: z
+      .string()
+      .refine((v) => !isNaN(Date.parse(v)), "Invalid date/time")
+      .refine(
+        (v) => Date.parse(v) > Date.now() - 2 * 60 * 1000,
+        "Interview date/time must be in the future."
+      ),
     timezone: z.string().max(100).optional(),
     durationMins: z.number().int().positive().max(600).optional(),
     mode: z.enum(["Online", "Offline"]).optional(),

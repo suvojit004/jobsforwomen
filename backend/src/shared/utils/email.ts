@@ -1,7 +1,7 @@
 import { SESv2Client, SendEmailCommand, GetAccountCommand } from "@aws-sdk/client-sesv2"
 import env from "../config/env"
 import { logger } from "./logger"
-import { EmailTemplates, stripHtml } from "./emailTemplates"
+import { EmailTemplates, stripHtml, adminRoleLabel } from "./emailTemplates"
 
 // AWS SES v2 transport (migrated off Resend).
 //
@@ -265,7 +265,35 @@ export class EmailService {
       roleNames,
       loginLink: `${baseUrl}/auth/login`,
     })
-    return this.sendMail(to, "Your JobsForWomen Administrator Account", html)
+    // Kept in sync with adminAccountCreated's in-body heading -- both must
+    // use the same role label, or the inbox subject line and the opened
+    // email disagree about which of the four admin-tier roles this account
+    // actually has.
+    const roleLabel = adminRoleLabel(roleNames)
+    return this.sendMail(to, `Your JobsForWomen ${roleLabel} Account`, html)
+  }
+
+  // Candidate/recruiter account moderation -- admin.service.ts's
+  // updateUserStatus previously only notified admin-tier targets (via an
+  // in-app notification, no email); ordinary candidates/recruiters got no
+  // signal at all that their account had been suspended or blocked.
+  static async sendAccountStatusChangedEmail(
+    to: string,
+    fullName: string,
+    status: "Suspended" | "Blocked"
+  ): Promise<boolean> {
+    const supportEmail = env.SUPPORT_EMAIL || env.SES_FROM
+    const html = EmailTemplates.accountStatusChanged({ fullName, status, supportEmail })
+    return this.sendMail(to, `Your JobsForWomen Account Has Been ${status}`, html)
+  }
+
+  // Candidate/recruiter account deletion -- admin.service.ts's deleteUser
+  // previously sent no email at all; the account just vanished with only an
+  // audit log entry as a record it ever existed.
+  static async sendAccountDeletedEmail(to: string, fullName: string): Promise<boolean> {
+    const supportEmail = env.SUPPORT_EMAIL || env.SES_FROM
+    const html = EmailTemplates.accountDeleted({ fullName, supportEmail })
+    return this.sendMail(to, "Your JobsForWomen Account Has Been Deleted", html)
   }
 
   static async sendCompanyVerificationEmail(

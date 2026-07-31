@@ -246,6 +246,31 @@ export function initEmailListener() {
     })
   })
 
+  // 6c. Candidate/recruiter account suspended or blocked by an admin.
+  // Distinct from AdminAccountStatusChanged (admin-tier targets only, in-app
+  // notification only, no email) -- this is the ordinary-user counterpart
+  // that previously sent nothing at all, so a suspended candidate/recruiter
+  // had no way to know why they suddenly couldn't log in.
+  EventBus.subscribe("UserAccountStatusChanged", async (payload: any) => {
+    logger.info(`[EmailListener] Enqueueing Account ${payload.status} email to: ${payload.email}`)
+    await addJob("email", "sendAccountStatusChanged", {
+      to: payload.email,
+      fullName: payload.fullName,
+      status: payload.status,
+    })
+  })
+
+  // 6d. Candidate/recruiter account permanently deleted by an admin.
+  // admin.service.ts's deleteUser previously published only an audit log
+  // entry -- the account owner never learned their account was gone.
+  EventBus.subscribe("UserAccountDeleted", async (payload: any) => {
+    logger.info(`[EmailListener] Enqueueing Account Deleted email to: ${payload.email}`)
+    await addJob("email", "sendAccountDeleted", {
+      to: payload.email,
+      fullName: payload.fullName,
+    })
+  })
+
   // 7. Password Reset Token Dispatch (always send, transactional)
   EventBus.subscribe("PasswordResetRequested", async (payload: any) => {
     logger.info(`[EmailListener] Enqueueing Password Reset email to: ${payload.email}`)

@@ -183,7 +183,18 @@ export async function getDeadLetterQueueStats(): Promise<{ pendingCount: number 
 // Account-security mail (verification, password reset) is exempt -- turning
 // off automated status-update blasts must not lock users out of their
 // accounts.
-const SECURITY_CRITICAL_EMAIL_JOBS = new Set(["sendWelcome", "sendPasswordReset", "sendRaw", "sendAdminAccountCreated"])
+const SECURITY_CRITICAL_EMAIL_JOBS = new Set([
+  "sendWelcome",
+  "sendPasswordReset",
+  "sendRaw",
+  "sendAdminAccountCreated",
+  // A candidate/recruiter needs to know their account was suspended, blocked,
+  // or deleted regardless of the email_automation flag -- these aren't
+  // promotional/digest mail, they're the only notice the account holder gets
+  // that something happened to their account at all.
+  "sendAccountStatusChanged",
+  "sendAccountDeleted",
+])
 
 export async function addJob(queueName: string, jobName: string, data: any) {
   try {
@@ -256,6 +267,10 @@ async function handleEmailJob(jobName: string, data: any) {
     await EmailService.sendOfferReleasedEmail(to, recipientName, jobTitle, companyName, offerDetails)
   } else if (jobName === "sendApplicationStatusUpdate") {
     await EmailService.sendApplicationStatusUpdateEmail(to, recipientName, jobTitle, companyName, statusHeading, statusMessage, notes)
+  } else if (jobName === "sendAccountStatusChanged") {
+    await EmailService.sendAccountStatusChangedEmail(to, fullName, status)
+  } else if (jobName === "sendAccountDeleted") {
+    await EmailService.sendAccountDeletedEmail(to, fullName)
   }
 }
 

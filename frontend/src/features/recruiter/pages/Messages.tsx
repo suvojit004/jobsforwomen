@@ -312,7 +312,7 @@ export function Messages() {
         {/* Left Side: Contact List */}
         <div
           className={cn(
-            "h-full md:col-span-4 flex flex-col bg-white border border-slate-200 rounded-xl overflow-hidden dark:bg-slate-900 dark:border-slate-800",
+            "h-full min-w-0 md:col-span-4 flex flex-col bg-white border border-slate-200 rounded-xl overflow-hidden dark:bg-slate-900 dark:border-slate-800",
             mobileShowChat ? "hidden md:flex" : "flex"
           )}
         >
@@ -399,7 +399,7 @@ export function Messages() {
         {/* Right Side: Chat Window */}
         <div
           className={cn(
-            "h-full md:col-span-8 flex flex-col bg-white border border-slate-200 rounded-xl overflow-hidden dark:bg-slate-900 dark:border-slate-800",
+            "h-full min-w-0 md:col-span-8 flex flex-col bg-white border border-slate-200 rounded-xl overflow-hidden dark:bg-slate-900 dark:border-slate-800",
             !mobileShowChat ? "hidden md:flex" : "flex"
           )}
         >
@@ -456,7 +456,16 @@ export function Messages() {
                     >
                       <div
                         className={cn(
-                          "rounded-2xl px-3.5 py-2 text-xs leading-relaxed transition-opacity",
+                          // break-words: without it, one long unbroken string
+                          // in a candidate's message (a pasted URL, a long
+                          // word with no spaces) overflows past this bubble's
+                          // max-w-[80%] instead of wrapping -- max-width caps
+                          // normal sizing but doesn't force-break unbreakable
+                          // content, so the bubble (and the chat column) would
+                          // grow wider than the viewport. The candidate-side
+                          // ChatWindow.tsx already has this; this recruiter-side
+                          // copy is a separate implementation that didn't.
+                          "rounded-2xl px-3.5 py-2 text-xs leading-relaxed transition-opacity break-words",
                           isMe
                             ? "bg-[#6B2C91] text-white rounded-tr-none dark:bg-pink-600"
                             : "bg-white border border-slate-200 text-slate-800 rounded-tl-none dark:bg-slate-900 dark:border-slate-800 dark:text-slate-200",

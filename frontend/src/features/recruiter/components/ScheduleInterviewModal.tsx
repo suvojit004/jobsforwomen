@@ -35,6 +35,17 @@ function guessTimezone(): string {
   }
 }
 
+// Formats "now" as a datetime-local input expects ("YYYY-MM-DDTHH:mm", in the
+// browser's local time, no timezone suffix) so it can be used as the input's
+// `min` -- this is what actually grays out past dates/times in the native
+// picker, rather than just rejecting them after the fact on submit.
+function nowForDateTimeLocal(): string {
+  const d = new Date()
+  d.setSeconds(0, 0)
+  const pad = (n: number) => String(n).padStart(2, "0")
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
 export interface ScheduleInterviewSubject {
   applicationId: string
   name: string
@@ -76,6 +87,14 @@ export function ScheduleInterviewModal({ subject, onClose, onScheduled }: Schedu
   const handleConfirm = async () => {
     if (!title.trim() || !dateTime) {
       toast.error("Title and date/time are required.")
+      return
+    }
+    // Mirrors the backend's scheduleInterviewSchema check (recruiter.validator.ts)
+    // -- catching it here means the recruiter sees the problem immediately
+    // instead of after a round trip, but the server-side check is the real
+    // guard since a client-side check alone can always be bypassed.
+    if (new Date(dateTime).getTime() <= Date.now()) {
+      toast.error("Interview date/time must be in the future.")
       return
     }
     if (mode === "Offline" && !venue.trim()) {
@@ -125,12 +144,18 @@ export function ScheduleInterviewModal({ subject, onClose, onScheduled }: Schedu
               className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6B2C91]/30 dark:border-slate-800 dark:bg-slate-950 dark:text-white"
             />
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          {/* sm:grid-cols-2, not a bare grid-cols-2: this modal is capped at
+              max-w-md, so on the narrowest phones (~320-360px) an unconditional
+              2-column split leaves each column under 150px -- tight for a
+              native datetime-local input, which every other 2-up field row in
+              this codebase avoids by staying single-column below sm:. */}
+          <div className="grid gap-3 sm:grid-cols-2">
             <div>
               <label className="text-[10px] font-black uppercase text-slate-400">Date & Time <span className="text-red-500">*</span></label>
               <input
                 type="datetime-local"
                 value={dateTime}
+                min={nowForDateTimeLocal()}
                 onChange={(e) => setDateTime(e.target.value)}
                 className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6B2C91]/30 dark:border-slate-800 dark:bg-slate-950 dark:text-white"
               />

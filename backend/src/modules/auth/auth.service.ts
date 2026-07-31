@@ -8,6 +8,7 @@ import EventBus from "../../shared/eventBus/eventBus"
 import { UserStatus } from "@prisma/client"
 import { deleteFile } from "../../shared/utils/fileStorage"
 import prisma from "../../shared/database/db"
+import { AppError } from "../../shared/middleware/errorHandler"
 
 export class AuthService {
   private authRepository = new AuthRepository()
@@ -15,7 +16,16 @@ export class AuthService {
   async registerCandidate(email: string, passwordHashRaw: string, fullName: string) {
     const existing = await this.authRepository.findUserByEmail(email)
     if (existing) {
-      throw new Error("Email already registered")
+      // Was a plain `new Error("Email already registered")` -- every other
+      // duplicate-email guard in the codebase (admin.service.ts's createAdmin,
+      // recruiter.service.ts's inviteEmployee) says "already exists", which
+      // errorHandler.ts's text-matching net recognizes and maps to 409. This
+      // one said "registered" instead, matched none of that net's phrases,
+      // and fell through to the generic 500 handler -- so a duplicate
+      // signup attempt looked like a server crash instead of the ordinary,
+      // expected conflict it actually is. AppError sidesteps the text-net
+      // entirely and returns the correct status directly.
+      throw new AppError("An account with this email address already exists.", 409)
     }
 
     const passwordHash = await hashPassword(passwordHashRaw)
@@ -56,7 +66,16 @@ export class AuthService {
   ) {
     const existing = await this.authRepository.findUserByEmail(email)
     if (existing) {
-      throw new Error("Email already registered")
+      // Was a plain `new Error("Email already registered")` -- every other
+      // duplicate-email guard in the codebase (admin.service.ts's createAdmin,
+      // recruiter.service.ts's inviteEmployee) says "already exists", which
+      // errorHandler.ts's text-matching net recognizes and maps to 409. This
+      // one said "registered" instead, matched none of that net's phrases,
+      // and fell through to the generic 500 handler -- so a duplicate
+      // signup attempt looked like a server crash instead of the ordinary,
+      // expected conflict it actually is. AppError sidesteps the text-net
+      // entirely and returns the correct status directly.
+      throw new AppError("An account with this email address already exists.", 409)
     }
 
     const passwordHash = await hashPassword(passwordHashRaw)

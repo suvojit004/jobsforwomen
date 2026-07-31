@@ -11,7 +11,8 @@
  *   npm run email:preview -- companyVerification
  *   npm run email:preview            (defaults to "invitation")
  *
- * Available names: welcome, invitation, companyVerification, perkVerification,
+ * Available names: welcome, invitation, adminAccountCreated, accountSuspended,
+ * accountBlocked, accountDeleted, companyVerification, perkVerification,
  * jobModeration, interviewScheduled, applicationStatusUpdate, offerReleased,
  * passwordReset, dailyDigest, weeklyDigest
  */
@@ -41,6 +42,26 @@ const SAMPLE_RENDERERS: Record<string, () => string> = {
       password: "T3mp-Passw0rd!",
       roleNames: ["Moderator"],
       loginLink: "http://localhost:5173/auth/login",
+    }),
+
+  accountSuspended: () =>
+    EmailTemplates.accountStatusChanged({
+      fullName: "Priya Sharma",
+      status: "Suspended",
+      supportEmail: "support@jobsforwomen.info",
+    }),
+
+  accountBlocked: () =>
+    EmailTemplates.accountStatusChanged({
+      fullName: "Priya Sharma",
+      status: "Blocked",
+      supportEmail: "support@jobsforwomen.info",
+    }),
+
+  accountDeleted: () =>
+    EmailTemplates.accountDeleted({
+      fullName: "Priya Sharma",
+      supportEmail: "support@jobsforwomen.info",
     }),
 
   companyVerification: () =>

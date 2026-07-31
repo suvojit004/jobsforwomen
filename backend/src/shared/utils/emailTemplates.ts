@@ -15,6 +15,21 @@ export interface InvitationParams {
   loginLink: string
 }
 
+// Admin Management can grant any of the four admin-tier roles (Admin, Super
+// Admin, Moderator, Support Executive) when creating an account. When exactly
+// one role is assigned, the email should name it specifically ("Your
+// Moderator Account Is Ready") rather than always saying "Administrator" --
+// previously the subject line, heading, and preheader all hardcoded
+// "Administrator" regardless of which role(s) were actually granted, so a
+// Moderator or Support Executive account received an email calling it an
+// Administrator account. Multiple simultaneous roles fall back to the
+// generic label since there's no single accurate word for "Moderator +
+// Support Executive" -- the email body already lists every granted role by
+// name in that case.
+export function adminRoleLabel(roleNames: string[]): string {
+  return roleNames.length === 1 ? roleNames[0] : "Administrator"
+}
+
 export interface AdminAccountCreatedParams {
   fullName: string
   email: string
@@ -26,6 +41,27 @@ export interface AdminAccountCreatedParams {
   password: string
   roleNames: string[]
   loginLink: string
+}
+
+// Sent to a candidate/recruiter (not an admin-tier account -- that has its
+// own separate AdminAccountStatusChanged in-app notification, no email) when
+// an admin moves their status to Suspended or Blocked via admin.service.ts's
+// updateUserStatus. Both statuses lock the account out identically (see
+// auth.service.ts's login()), but the wording stays honest about which one
+// actually happened rather than blurring them into one generic message.
+export interface AccountStatusChangedParams {
+  fullName: string
+  status: "Suspended" | "Blocked"
+  supportEmail: string
+}
+
+// Sent to a candidate/recruiter whose account an admin permanently deleted
+// via admin.service.ts's deleteUser. Fired after the row is already gone --
+// the email is built from the User record captured just before deletion, not
+// a live lookup.
+export interface AccountDeletedParams {
+  fullName: string
+  supportEmail: string
 }
 
 export interface VerificationParams {
@@ -234,13 +270,14 @@ export const EmailTemplates = {
   // so it ships the recipient's login credentials plus a straight-to-login
   // button, and a password-change nudge since the password was chosen by
   // someone else.
-  adminAccountCreated: (params: AdminAccountCreatedParams): string =>
-    renderShell({
-      preheader: `Your JobsForWomen administrator account is ready.`,
-      heading: "Your Administrator Account Is Ready",
+  adminAccountCreated: (params: AdminAccountCreatedParams): string => {
+    const roleLabel = adminRoleLabel(params.roleNames)
+    return renderShell({
+      preheader: `Your JobsForWomen ${roleLabel} account is ready.`,
+      heading: `Your ${roleLabel} Account Is Ready`,
       bodyHtml: `
         <p>Hi ${params.fullName},</p>
-        <p>An administrator account has been created for you on JobsForWomen with the following role${
+        <p>A ${roleLabel} account has been created for you on JobsForWomen with the following role${
           params.roleNames.length > 1 ? "s" : ""
         }: <strong>${params.roleNames.join(", ")}</strong>.</p>
         <table role="presentation" cellpadding="0" cellspacing="0" style="margin:16px 0; width:100%; background-color:#F8FAFC; border:1px solid #E2E8F0; border-radius:8px;">
@@ -258,7 +295,8 @@ export const EmailTemplates = {
           For security, sign in and change this password as soon as possible. If you weren't expecting this account, contact your platform administrator.
         </p>
       `,
-    }),
+    })
+  },
 
   // Scenarios 2/7, 3/7, 4/7: Company Registration Approved / Rejected /
   // More Information Required. Kept as a single exported function
@@ -479,6 +517,35 @@ export const EmailTemplates = {
         <ul style="padding-left:20px; margin:12px 0;">
           ${params.jobs.map(j => `<li style="margin-bottom:6px;"><strong>${j.title}</strong> at ${j.companyName} (${j.location})</li>`).join("")}
         </ul>
+      `,
+    }),
+
+  accountStatusChanged: (params: AccountStatusChangedParams): string => {
+    const verb = params.status === "Blocked" ? "blocked" : "suspended"
+    return renderShell({
+      preheader: `Your JobsForWomen account has been ${verb}.`,
+      heading: `Your Account Has Been ${params.status}`,
+      bodyHtml: `
+        <p>Hi ${params.fullName},</p>
+        <p>Your JobsForWomen account has been <strong>${verb}</strong> by a platform administrator. While this is in effect, you won't be able to sign in or use the platform.</p>
+        <p style="margin:16px 0;">${statusBadge(params.status)}</p>
+        <div style="background-color:#FEF2F2; border:1px solid #FECACA; border-radius:8px; padding:12px 16px; margin:16px 0;">
+          <p style="margin:0; color:#991B1B;">For more details or to appeal this decision, please contact our support team at <a href="mailto:${params.supportEmail}" style="color:#991B1B; font-weight:700;">${params.supportEmail}</a>.</p>
+        </div>
+      `,
+    })
+  },
+
+  accountDeleted: (params: AccountDeletedParams): string =>
+    renderShell({
+      preheader: "Your JobsForWomen account has been deleted.",
+      heading: "Your Account Has Been Deleted",
+      bodyHtml: `
+        <p>Hi ${params.fullName},</p>
+        <p>Your JobsForWomen account and associated data have been permanently deleted by a platform administrator. This action cannot be undone, and you will need to register again if you'd like to use the platform in the future.</p>
+        <div style="background-color:#F8FAFC; border:1px solid #E2E8F0; border-radius:8px; padding:12px 16px; margin:16px 0;">
+          <p style="margin:0; color:#475569;">If you believe this was done in error, please contact our support team at <a href="mailto:${params.supportEmail}" style="color:${BRAND_PURPLE}; font-weight:700;">${params.supportEmail}</a>.</p>
+        </div>
       `,
     }),
 }

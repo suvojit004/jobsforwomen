@@ -727,7 +727,14 @@ export class AdminService {
     const admin = await prisma.user.findUnique({ where: { id: adminId } })
     const target = await prisma.user.findUnique({
       where: { id: targetUserId },
-      include: { roles: { include: { role: true } } },
+      // candidateProfile/recruiterProfile added so a suspension/block email
+      // (below) can address the recipient by name -- previously only `roles`
+      // was fetched here since nothing past this point needed a display name.
+      include: {
+        roles: { include: { role: true } },
+        candidateProfile: true,
+        recruiterProfile: true,
+      },
     })
 
     if (!target) {
@@ -737,6 +744,8 @@ export class AdminService {
     const targetRoleNames: string[] = (target.roles || []).map((r: any) => r.role?.name).filter(Boolean)
     const ADMIN_TIER = ["Admin", "Super Admin", "Moderator", "Support Executive"]
     const targetIsAdminTier = targetRoleNames.some((r) => ADMIN_TIER.includes(r))
+    const targetFullName =
+      target.candidateProfile?.fullName || target.recruiterProfile?.fullName || target.email.split("@")[0]
 
     // Admin Management spec: only a Super Admin may suspend/activate another
     // administrator account -- a plain Admin/Moderator suspending a peer (or
@@ -809,6 +818,19 @@ export class AdminService {
         userId: targetUserId,
         email: target.email,
         status,
+        operatorEmail: admin?.email,
+        context,
+      })
+    } else if (status === UserStatus.Suspended || status === UserStatus.Blocked) {
+      // Ordinary candidate/recruiter counterpart -- previously this branch
+      // didn't exist at all, so a suspended/blocked candidate or recruiter
+      // got no email and no in-app notification telling them why they
+      // suddenly couldn't log in anymore.
+      EventBus.publish("UserAccountStatusChanged", {
+        userId: targetUserId,
+        email: target.email,
+        fullName: targetFullName,
+        status: status === UserStatus.Blocked ? "Blocked" : "Suspended",
         operatorEmail: admin?.email,
         context,
       })
@@ -967,6 +989,25 @@ export class AdminService {
         jobsTransferredTo: transferTarget?.id || undefined,
       },
     })
+
+    // Candidate/recruiter counterpart of the email above -- previously this
+    // method sent nothing at all on deletion, admin-tier or otherwise; the
+    // account just vanished with only the audit entry above as any record it
+    // ever existed. Scoped to non-admin-tier targets to match exactly what
+    // was asked for; an admin-tier equivalent would be a separate, deliberate
+    // addition since deleting a fellow admin account carries different
+    // implications than moderating an ordinary user.
+    if (!targetRoleNames.some((r) => ADMIN_TIER.includes(r))) {
+      const targetFullName =
+        target.candidateProfile?.fullName || target.recruiterProfile?.fullName || target.email.split("@")[0]
+      EventBus.publish("UserAccountDeleted", {
+        userId: targetUserId,
+        email: target.email,
+        fullName: targetFullName,
+        operatorEmail: admin?.email,
+        context,
+      })
+    }
 
     return { success: true }
   }

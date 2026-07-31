@@ -39,3 +39,11 @@ prisma/generated/
 
 # Cache
 .cache/
+
+# Private keys / certificates -- never commit these
+*.pem
+
+# One-off deliverables (docker deploy guide zip/pdf) -- not source, not
+# meant to be versioned; the files themselves stay on disk for the person
+# who asked for them, they just don't need git history.
+deploy-kit-handoff/

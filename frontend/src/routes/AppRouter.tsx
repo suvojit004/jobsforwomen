@@ -30,10 +30,16 @@ export function DashboardRedirect() {
     return <Navigate to="/auth/login" replace />
   }
 
-  const role = user.roles[0]?.toLowerCase()
-  if (role === "admin" || role === "super admin") {
+  // Checks against the user's full role list, not just roles[0] -- an admin
+  // account can hold multiple roles, and relying on array order would send
+  // some legitimately admin-tier users to the wrong dashboard entirely.
+  const roles = (user.roles || []).map((r) => r.toLowerCase())
+  const isAdminTier = roles.some((r) =>
+    ["admin", "super admin", "moderator", "support executive"].includes(r)
+  )
+  if (isAdminTier) {
     return <Navigate to="/admin/dashboard" replace />
-  } else if (role === "recruiter") {
+  } else if (roles.includes("recruiter")) {
     return <Navigate to="/recruiter/dashboard" replace />
   } else {
     return <Navigate to="/candidate/dashboard" replace />
@@ -88,11 +94,16 @@ export function AppRouter() {
         <Route path="*" element={<RecruiterRoutes />} />
       </Route>
 
-      {/* Admin Module Routes (Protected) */}
+      {/* Admin Module Routes (Protected) -- all four admin-tier roles belong
+          here (must match admin.routes.ts's ADMIN_TIER_ROLES on the backend).
+          Moderator and Support Executive were previously missing from this
+          list, so those accounts could authenticate fine but got bounced to
+          /unauthorized the moment React Router tried to render anything
+          under /admin/*, even though the backend already permitted them. */}
       <Route
         path="/admin/*"
         element={
-          <ProtectedRoute allowedRoles={["Admin", "Super Admin"]}>
+          <ProtectedRoute allowedRoles={["Admin", "Super Admin", "Moderator", "Support Executive"]}>
             <AdminLayout />
           </ProtectedRoute>
         }
