@@ -25,7 +25,7 @@ router.get("/jfw/:type/:filename", (req, res) => {
 
   if (!PUBLIC_FOLDER_TYPES.has(type)) {
     const { exp, sig } = req.query
-    if (!exp || !sig || !verifyFileSignature(req.path, exp as string, sig as string)) {
+    if (!exp || !sig || !verifyFileSignature(req.baseUrl + req.path, exp as string, sig as string)) {
       return res.status(403).json({
         success: false,
         message: "This link has expired or is invalid. Reload the page to get a fresh link.",
