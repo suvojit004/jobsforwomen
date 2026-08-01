@@ -260,6 +260,18 @@ export function initEmailListener() {
     })
   })
 
+  // 6c-2. Candidate/recruiter account reactivated (Suspended/Blocked ->
+  // Active) by an admin. Previously reactivation fired no email at all --
+  // only suspend/block did -- so a restored account had no way to know they
+  // could log back in again except by trying.
+  EventBus.subscribe("UserAccountReactivated", async (payload: any) => {
+    logger.info(`[EmailListener] Enqueueing Account Reactivated email to: ${payload.email}`)
+    await addJob("email", "sendAccountReactivated", {
+      to: payload.email,
+      fullName: payload.fullName,
+    })
+  })
+
   // 6d. Candidate/recruiter account permanently deleted by an admin.
   // admin.service.ts's deleteUser previously published only an audit log
   // entry -- the account owner never learned their account was gone.

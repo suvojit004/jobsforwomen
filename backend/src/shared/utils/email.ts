@@ -287,6 +287,17 @@ export class EmailService {
     return this.sendMail(to, `Your JobsForWomen Account Has Been ${status}`, html)
   }
 
+  // Candidate/recruiter account reactivation (Suspended/Blocked -> Active)
+  // -- admin.service.ts's updateUserStatus previously fired no email on
+  // reactivation at all, only on suspend/block, so a restored account had no
+  // way to know they could log back in again except by trying.
+  static async sendAccountReactivatedEmail(to: string, fullName: string): Promise<boolean> {
+    const baseUrl = frontendBaseUrl()
+    const supportEmail = env.SUPPORT_EMAIL || env.SES_FROM
+    const html = EmailTemplates.accountReactivated({ fullName, loginLink: `${baseUrl}/auth/login`, supportEmail })
+    return this.sendMail(to, "Your JobsForWomen Account Has Been Reactivated", html)
+  }
+
   // Candidate/recruiter account deletion -- admin.service.ts's deleteUser
   // previously sent no email at all; the account just vanished with only an
   // audit log entry as a record it ever existed.

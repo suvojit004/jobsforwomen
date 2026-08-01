@@ -55,6 +55,17 @@ export interface AccountStatusChangedParams {
   supportEmail: string
 }
 
+// Sent to a candidate/recruiter (same population as AccountStatusChanged
+// above) when an admin restores their account to Active from Suspended or
+// Blocked via admin.service.ts's updateUserStatus. Previously reactivation
+// fired no email at all -- the person had no way to know they could log
+// back in again except by trying.
+export interface AccountReactivatedParams {
+  fullName: string
+  loginLink: string
+  supportEmail: string
+}
+
 // Sent to a candidate/recruiter whose account an admin permanently deleted
 // via admin.service.ts's deleteUser. Fired after the row is already gone --
 // the email is built from the User record captured just before deletion, not
@@ -158,6 +169,7 @@ function statusBadge(status: string): string {
   const normalized = status.toLowerCase()
   const styles: Record<string, { bg: string; fg: string; label: string }> = {
     approved: { bg: "#D1FAE5", fg: "#065F46", label: "Approved" },
+    active: { bg: "#D1FAE5", fg: "#065F46", label: "Active" },
     rejected: { bg: "#FCE7F3", fg: "#9D174D", label: "Rejected" },
     info_requested: { bg: "#E0E7FF", fg: "#3730A3", label: "More Information Required" },
     pending: { bg: "#DBEAFE", fg: "#1E40AF", label: "Pending Review" },
@@ -535,6 +547,21 @@ export const EmailTemplates = {
       `,
     })
   },
+
+  accountReactivated: (params: AccountReactivatedParams): string =>
+    renderShell({
+      preheader: "Your JobsForWomen account has been reactivated.",
+      heading: "Your Account Is Active Again",
+      bodyHtml: `
+        <p>Hi ${params.fullName},</p>
+        <p>Good news -- your JobsForWomen account has been <strong>reactivated</strong> by a platform administrator. You can sign back in and use the platform normally.</p>
+        <p style="margin:16px 0;">${statusBadge("Active")}</p>
+        ${ctaButton(params.loginLink, "Log In Now")}
+        <div style="background-color:#F8FAFC; border:1px solid #E2E8F0; border-radius:8px; padding:12px 16px; margin:16px 0;">
+          <p style="margin:0; color:#475569;">Questions about what happened? Contact our support team at <a href="mailto:${params.supportEmail}" style="color:${BRAND_PURPLE}; font-weight:700;">${params.supportEmail}</a>.</p>
+        </div>
+      `,
+    }),
 
   accountDeleted: (params: AccountDeletedParams): string =>
     renderShell({

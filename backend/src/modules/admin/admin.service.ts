@@ -832,6 +832,18 @@ export class AdminService {
         operatorEmail: admin?.email,
         context,
       })
+    } else if (status === UserStatus.Active && (target.status === UserStatus.Suspended || target.status === UserStatus.Blocked)) {
+      // Reactivation -- the mirror image of the branch above. Only fires on
+      // an actual Suspended/Blocked -> Active transition, not e.g. a
+      // Rejected -> Active move (that's a different flow -- recruiter
+      // approval -- with its own email already).
+      EventBus.publish("UserAccountReactivated", {
+        userId: targetUserId,
+        email: target.email,
+        fullName: targetFullName,
+        operatorEmail: admin?.email,
+        context,
+      })
     }
 
     return updatedUser

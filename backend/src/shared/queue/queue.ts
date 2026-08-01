@@ -194,6 +194,7 @@ const SECURITY_CRITICAL_EMAIL_JOBS = new Set([
   // that something happened to their account at all.
   "sendAccountStatusChanged",
   "sendAccountDeleted",
+  "sendAccountReactivated",
 ])
 
 export async function addJob(queueName: string, jobName: string, data: any) {
@@ -271,6 +272,8 @@ async function handleEmailJob(jobName: string, data: any) {
     await EmailService.sendAccountStatusChangedEmail(to, fullName, status)
   } else if (jobName === "sendAccountDeleted") {
     await EmailService.sendAccountDeletedEmail(to, fullName)
+  } else if (jobName === "sendAccountReactivated") {
+    await EmailService.sendAccountReactivatedEmail(to, fullName)
   }
 }
 
