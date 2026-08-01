@@ -6,14 +6,12 @@ import { CompanyStatus, JobStatus, ApplicationStatus, UserStatus, JobVisibility,
 import crypto from "crypto"
 import redis from "../../shared/utils/redis"
 import { verifyEmailTransport } from "../../shared/utils/email"
-import env from "../../shared/config/env"
 import { verifyStorageConnection, runOrphanAssetCleanup, deleteFile } from "../../shared/utils/fileStorage"
 import { normalizeDocuments } from "../../shared/utils/documents"
 import { RECRUITER_SUMMARY_SELECT, shapeRecruiterSummary } from "../../shared/utils/recruiterSummary"
 import { io as socketIo } from "../../shared/socket/socket"
-import { createAuditLog } from "../../shared/utils/audit"
 import { invalidateFeatureFlagCache } from "../../shared/utils/featureFlags"
-import { queueMetrics, getDeadLetterQueueStats, addJob } from "../../shared/queue/queue"
+import { queueMetrics, getDeadLetterQueueStats } from "../../shared/queue/queue"
 import { socketMetrics } from "../../shared/socket/socket"
 import { storageMetrics } from "../../shared/utils/fileStorage"
 import { emailMetrics } from "../../shared/utils/email"
@@ -2209,68 +2207,12 @@ export class AdminService {
     })
   }
 
-  // ==========================================
-  // SUPPORT TICKET SUBMISSION
-  // ==========================================
-  // Sends a real email to the support inbox via the existing SES-backed
-  // the email queue, and logs a real audit entry. Previously the frontend's
-  // "Contact Support" form was a pure setTimeout that always claimed
-  // "Your issue ticket has been filed successfully!" with no backend call
-  // at all -- nothing was ever sent or recorded anywhere.
-  async submitSupportTicket(
-    adminId: string,
-    subject: string,
-    category: string,
-    message: string,
-    context?: ServiceContext
-  ) {
-    const admin = await prisma.user.findUnique({
-      where: { id: adminId },
-      include: { adminProfile: true },
-    })
-    if (!admin) {
-      throw new Error("Admin user not found")
-    }
-
-    const supportInbox = env.SUPPORT_EMAIL || env.SES_FROM
-    const fromName = admin.adminProfile?.fullName || admin.email
-    const html = `
-      <h2>New Admin Support Ticket</h2>
-      <p><strong>From:</strong> ${fromName} (${admin.email})</p>
-      <p><strong>Category:</strong> ${category}</p>
-      <p><strong>Subject:</strong> ${subject}</p>
-      <p><strong>Message:</strong></p>
-      <p>${message.replace(/\n/g, "<br/>")}</p>
-    `
-    // Queued rather than sent inline: a direct EmailService.sendMail() here
-    // would bypass the BullMQ email worker's SES rate limiter (1 send/sec) and
-    // race the worker for the send budget, and would get no retry or
-    // dead-letter handling. Enqueuing keeps every outbound email on one
-    // throttled path.
-    await addJob("email", "sendRaw", {
-      to: supportInbox,
-      subject: `[Support Ticket] ${category}: ${subject}`,
-      html,
-    })
-
-    await createAuditLog({
-      operatorId: adminId,
-      operatorEmail: admin.email,
-      category: "SUPPORT",
-      action: "SUPPORT_TICKET_SUBMITTED",
-      entity: "SupportTicket",
-      newValue: { subject, category, queued: true },
-      ipAddress: context?.ipAddress,
-      browser: context?.browser,
-      device: context?.device,
-    })
-
-    // The job is queued, not yet delivered -- the worker sends it within the
-    // SES rate limit and retries on transient failure. Reporting "delivered"
-    // here would be a lie; the previous inline call could not report failure
-    // either, since sendMail throws rather than returning false.
-    return { queued: true }
-  }
+  // NOTE: "Report Platform Issue" ticket submission moved to its own module
+  // (see support.service.ts / /api/v1/support-tickets) so Candidate and
+  // Recruiter portals can file tickets too, not just admin-tier users. The
+  // old admin-only, DB-less, email-fire-and-forget version that used to live
+  // here has been removed -- every submitted ticket is now a real,
+  // queryable SupportTicket row.
 }
 
 export default AdminService

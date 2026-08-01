@@ -187,10 +187,9 @@ export const AdminApi = {
     return res?.data
   },
 
-  async submitSupportTicket(subject: string, category: string, message: string) {
-    const res = await apiClient.post("/api/v1/admins/support-ticket", { subject, category, message })
-    return res?.data
-  },
+  // NOTE: ticket submission moved to the shared SupportTicketsApi
+  // (@/api/supportTickets), which every portal uses now -- see
+  // support.routes.ts on the backend.
 
   // ==========================================
   // Super Admin: Admin Management module

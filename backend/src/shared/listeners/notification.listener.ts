@@ -822,6 +822,118 @@ export function initNotificationListener() {
     }
   })
 
+  // 18. Support Ticket notifications ("Report Platform Issue" -- reachable
+  // from Candidate/Recruiter/Admin-tier portals alike, see support.service.ts).
+  // New tickets fan out to every active Support Executive (nobody is
+  // auto-assigned at creation time -- see support.service.ts's "auto-claim on
+  // first status change" comment); Admin/Super Admin/Moderator get the same
+  // realtime signal so they can watch the queue too, matching their
+  // read-only "see the progress" requirement.
+  EventBus.subscribe("SupportTicketCreated", async (payload: any) => {
+    try {
+      const recipients = await prisma.user.findMany({
+        where: {
+          status: "Active",
+          roles: { some: { role: { name: { in: ["Support Executive", "Admin", "Super Admin", "Moderator"] } } } },
+        },
+        select: { id: true },
+      })
+
+      await Promise.all(
+        recipients.map((r) =>
+          createAndEmitNotification({
+            recipientId: r.id,
+            title: "New Support Ticket Filed",
+            message: `${payload.submitterName} (${payload.submitterRole}) filed a ticket: "${payload.subject}".`,
+            category: "Support",
+            actionUrl: "/admin/support-tickets",
+            dedupeKey: `support-ticket-created:${payload.ticketId}:${r.id}`,
+          })
+        )
+      )
+    } catch (err: any) {
+      logger.error(`[NotificationListener] SupportTicketCreated trigger failed: ${err.message}`)
+    }
+  })
+
+  // Status changes (including resolution) notify the original submitter --
+  // closes the loop so a Candidate/Recruiter/Admin who filed a ticket
+  // actually finds out what happened to it, instead of having to keep
+  // re-checking "My Tickets".
+  EventBus.subscribe("SupportTicketStatusChanged", async (payload: any) => {
+    try {
+      const titleByStatus: Record<string, string> = {
+        Open: "Your Ticket Was Reopened",
+        InProgress: "Your Ticket Is Being Worked On",
+        Resolved: "Your Ticket Was Resolved",
+      }
+      const messageByStatus: Record<string, string> = {
+        Open: `Your ticket "${payload.subject}" is open again.`,
+        InProgress: `Support has started working on your ticket "${payload.subject}".`,
+        Resolved: `Your ticket "${payload.subject}" has been resolved.${payload.resolutionNotes ? ` Note: ${payload.resolutionNotes}` : ""}`,
+      }
+
+      await createAndEmitNotification({
+        recipientId: payload.submitterId,
+        title: titleByStatus[payload.status] || "Your Ticket Was Updated",
+        message: messageByStatus[payload.status] || `Your ticket "${payload.subject}" status changed to ${payload.status}.`,
+        category: "Support",
+        actionUrl: submitterPortalHelpUrl(payload.submitterRole),
+      })
+    } catch (err: any) {
+      logger.error(`[NotificationListener] SupportTicketStatusChanged trigger failed: ${err.message}`)
+    }
+  })
+
+  // A reply on either side notifies whoever didn't just post: a submitter's
+  // reply notifies the assignee (or, if still unassigned, every active
+  // Support Executive/admin-tier user -- same fan-out as ticket creation); a
+  // staff reply notifies the submitter.
+  EventBus.subscribe("SupportTicketCommentAdded", async (payload: any) => {
+    try {
+      if (payload.isFromSubmitter) {
+        if (payload.assignedToId) {
+          await createAndEmitNotification({
+            recipientId: payload.assignedToId,
+            title: "New Reply on a Support Ticket",
+            message: `${payload.authorName} replied on "${payload.subject}".`,
+            category: "Support",
+            actionUrl: "/admin/support-tickets",
+          })
+        } else {
+          const recipients = await prisma.user.findMany({
+            where: {
+              status: "Active",
+              roles: { some: { role: { name: { in: ["Support Executive", "Admin", "Super Admin", "Moderator"] } } } },
+            },
+            select: { id: true },
+          })
+          await Promise.all(
+            recipients.map((r) =>
+              createAndEmitNotification({
+                recipientId: r.id,
+                title: "New Reply on a Support Ticket",
+                message: `${payload.authorName} replied on "${payload.subject}".`,
+                category: "Support",
+                actionUrl: "/admin/support-tickets",
+              })
+            )
+          )
+        }
+      } else {
+        await createAndEmitNotification({
+          recipientId: payload.submitterId,
+          title: "New Reply on Your Ticket",
+          message: `${payload.authorName} replied on your ticket "${payload.subject}".`,
+          category: "Support",
+          actionUrl: submitterPortalHelpUrl(payload.submitterRole),
+        })
+      }
+    } catch (err: any) {
+      logger.error(`[NotificationListener] SupportTicketCommentAdded trigger failed: ${err.message}`)
+    }
+  })
+
   EventBus.subscribe("AdminAccountStatusChanged", async (payload: any) => {
     try {
       const isActive = payload.status === "Active"
@@ -838,6 +950,18 @@ export function initNotificationListener() {
       logger.error(`[NotificationListener] AdminAccountStatusChanged trigger failed: ${err.message}`)
     }
   })
+}
+
+// The three portals don't share a route tree, so a support-ticket deep link
+// back to the submitter has to be picked per submitter role (snapshotted on
+// the ticket at creation time -- see support.service.ts). Shared by both
+// SupportTicketStatusChanged and SupportTicketCommentAdded below.
+function submitterPortalHelpUrl(submitterRole?: string): string {
+  const actionUrlByRole: Record<string, string> = {
+    Candidate: "/candidate/help",
+    Recruiter: "/recruiter/help",
+  }
+  return actionUrlByRole[submitterRole || ""] || "/admin/help-support"
 }
 
 // Case-insensitive, whitespace-trimmed substring containment. This is a

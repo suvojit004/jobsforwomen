@@ -11,6 +11,10 @@ import {
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { DashboardCard } from "@/components/shared/DashboardCard"
+import { ReportIssueForm } from "@/features/shared/support/ReportIssueForm"
+import { MyTicketsList } from "@/features/shared/support/MyTicketsList"
+
+const TICKET_CATEGORIES = ["Technical Issue", "Account Issue", "Billing / Perks", "Other Query"]
 
 interface FAQItem {
   question: string
@@ -21,6 +25,7 @@ interface FAQItem {
 export function Help() {
   const [search, setSearch] = useState("")
   const [openIdx, setOpenIdx] = useState<number | null>(0)
+  const [ticketsRefreshKey, setTicketsRefreshKey] = useState(0)
 
   const faqs: FAQItem[] = [
     {
@@ -165,6 +170,15 @@ export function Help() {
           )}
         </div>
       </DashboardCard>
+
+      {/* Report an Issue */}
+      <ReportIssueForm
+        categories={TICKET_CATEGORIES}
+        title="Report Platform Issue"
+        onSubmitted={() => setTicketsRefreshKey((k) => k + 1)}
+      />
+
+      <MyTicketsList refreshKey={ticketsRefreshKey} />
 
       {/* Support contact info */}
       <DashboardCard className="p-5 space-y-4">

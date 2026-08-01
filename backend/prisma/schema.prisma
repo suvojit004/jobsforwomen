@@ -69,6 +69,15 @@ enum ApplicationStatus {
   Hired
 }
 
+// "Report Platform Issue" ticket lifecycle. Deliberately just three states --
+// this is a small internal helpdesk queue, not a full ITSM workflow (no
+// Reopened/Escalated/Pending-on-Customer states requested).
+enum TicketStatus {
+  Open
+  InProgress
+  Resolved
+}
+
 model User {
   id               String     @id @default(uuid())
   email            String     @unique
@@ -96,6 +105,12 @@ model User {
 
   // Invitations
   createdInvitations Invitation[] @relation("Inviter")
+
+  // Support tickets (Report Platform Issue -- Candidate/Recruiter/Admin-tier
+  // submitters, Support Executive assignees)
+  submittedTickets SupportTicket[]        @relation("TicketSubmitter")
+  assignedTickets  SupportTicket[]        @relation("TicketAssignee")
+  ticketComments   SupportTicketComment[] @relation("TicketCommentAuthor")
 }
 
 model OAuthAccount {
@@ -647,6 +662,65 @@ model JobReport {
   reporter   User     @relation(fields: [reporterId], references: [id], onDelete: Cascade)
   reason     String
   createdAt  DateTime @default(now())
+}
+
+// "Report Platform Issue" tickets -- submittable by Candidate, Recruiter, and
+// Admin-tier users alike (previously admin-only and email-only, with no DB
+// record at all; see admin.service.ts's old submitSupportTicket). Every
+// ticket is visible to the whole admin tier (Admin/Super Admin/Moderator
+// read-only progress view; Support Executive owns the queue and can update
+// status/resolve).
+model SupportTicket {
+  id       String       @id @default(uuid())
+  subject  String
+  category String
+  message  String
+  status   TicketStatus @default(Open)
+
+  submittedById String
+  submittedBy   User   @relation("TicketSubmitter", fields: [submittedById], references: [id], onDelete: Cascade)
+  // Snapshot of the submitter's primary role at submission time (Candidate /
+  // Recruiter / Admin / Super Admin / Moderator / Support Executive) -- kept
+  // even if the user's roles later change, so the queue can still show "who
+  // filed this and as what" accurately.
+  submitterRole String
+
+  // Nullable: newly created tickets start unassigned; the notification
+  // listener fans out to every active Support Executive rather than picking
+  // one, so assignment happens when a Support Executive actually opens/claims
+  // the ticket (see support.service.ts).
+  assignedToId String?
+  assignedTo   User?   @relation("TicketAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
+
+  resolutionNotes String?
+  resolvedAt      DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  comments SupportTicketComment[]
+
+  @@index([status])
+  @@index([submittedById])
+  @@index([assignedToId])
+}
+
+// Threaded replies on a ticket -- lets the submitter and admin-tier staff
+// go back and forth without abusing status transitions (previously the only
+// way to add information after filing was resolutionNotes on a status
+// change, which meant "I need more details" had no way to be expressed
+// without prematurely resolving/reopening the ticket).
+model SupportTicketComment {
+  id       String        @id @default(uuid())
+  ticketId String
+  ticket   SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  authorId String
+  author   User          @relation("TicketCommentAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+  message  String
+
+  createdAt DateTime @default(now())
+
+  @@index([ticketId])
 }
 
 model JobStatusHistory {

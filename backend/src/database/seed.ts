@@ -41,6 +41,7 @@ async function main() {
     { name: "manage:features" },
     { name: "manage:roles" },
     { name: "manage:permissions" },
+    { name: "manage:support-tickets" },
   ]
   console.log("Seeding Permissions...")
   const permissionInstances: Record<string, any> = {}
@@ -61,13 +62,21 @@ async function main() {
     "Moderator": ["read:job", "approve:job", "reject:job", "manage:companies"],
     "Admin": [
       "create:job", "read:job", "update:job", "delete:job", "approve:job", "reject:job",
-      "manage:users", "manage:companies", "manage:reports", "manage:notifications", "manage:features"
+      "manage:users", "manage:companies", "manage:reports", "manage:notifications", "manage:features",
+      "manage:support-tickets"
     ],
     "Super Admin": [
       "create:job", "read:job", "update:job", "delete:job", "approve:job", "reject:job",
       "manage:users", "manage:companies", "manage:reports", "manage:notifications", "manage:features",
-      "manage:roles", "manage:permissions"
+      "manage:roles", "manage:permissions", "manage:support-tickets"
     ],
+    // Previously entirely absent from this matrix -- Support Executive had
+    // zero permissions in the RBAC table even though route-level requireRole
+    // gates (admin.routes.ts, support.routes.ts) already let it reach every
+    // admin-tier endpoint. That's a real gap if this codebase ever tightens
+    // any of those routes from requireRole to requirePermission, so give it
+    // the one permission that actually describes its job.
+    "Support Executive": ["read:job", "manage:support-tickets"],
   }
 
   for (const [roleName, perms] of Object.entries(rbacMappings)) {

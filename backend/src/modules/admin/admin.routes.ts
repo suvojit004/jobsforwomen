@@ -35,9 +35,6 @@ router.get("/search", controller.globalSearch)
 router.get("/reports", controller.getReports)
 router.get("/audits", controller.getAuditLogs)
 
-// Support ticket submission (Admin Help & Support page)
-router.post("/support-ticket", controller.submitSupportTicket)
-
 // Recruiter / Company Verification (Admin, Super Admin, Moderator)
 router.get("/companies", controller.listCompanies)
 router.post("/companies/:id/verify", controller.verifyCompany)

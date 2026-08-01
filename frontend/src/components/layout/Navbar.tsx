@@ -44,16 +44,33 @@ export function Navbar({ onMenuClick }: { onMenuClick: () => void }) {
     navigate("/", { replace: true })
   }
 
+  // Single source of truth for "which portal is this user in" -- used by
+  // both the bell and the Settings menu item below. Previously each one
+  // reimplemented this check separately and neither one included Moderator/
+  // Support Executive, so clicking Settings (which was additionally
+  // hardcoded to "/candidate/profile" regardless of portal) sent every
+  // non-Candidate role into ProtectedRoute's role check for /candidate/*,
+  // which redirects to /unauthorized -- the "403 Access Denied" the recruiter/
+  // admin/moderator/support-executive portals were all seeing.
+  const getPortalBase = () => {
+    if (!user) return "/candidate"
+    const roles = user.roles || []
+    if (roles.some((r) => ["Super Admin", "Admin", "Moderator", "Support Executive"].includes(r))) {
+      return "/admin"
+    }
+    if (roles.includes("Recruiter")) {
+      return "/recruiter"
+    }
+    return "/candidate"
+  }
+
   const handleBellClick = () => {
     if (!user) return
-    const roles = user.roles || []
-    if (roles.includes("Super Admin") || roles.includes("Admin")) {
-      navigate("/admin/notifications")
-    } else if (roles.includes("Recruiter")) {
-      navigate("/recruiter/notifications")
-    } else {
-      navigate("/candidate/notifications")
-    }
+    navigate(`${getPortalBase()}/notifications`)
+  }
+
+  const handleSettingsClick = () => {
+    navigate(`${getPortalBase()}/settings`)
   }
 
   // Get initials for profile fallback
@@ -159,7 +176,7 @@ export function Navbar({ onMenuClick }: { onMenuClick: () => void }) {
             <DropdownMenuContent align="end" className="w-56">
               <DropdownMenuLabel>My Account</DropdownMenuLabel>
               <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => navigate("/candidate/profile")}>
+              <DropdownMenuItem onClick={handleSettingsClick}>
                 <Settings className="size-4" />
                 Settings
               </DropdownMenuItem>

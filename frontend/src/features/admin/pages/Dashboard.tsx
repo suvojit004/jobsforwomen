@@ -24,6 +24,7 @@ import { DashboardCard } from "@/components/shared/DashboardCard"
 import { GenericDashboardSkeleton } from "@/components/shared/skeletons/PageSkeletons"
 import { cn } from "@/lib/utils"
 import { AdminApi } from "../services/adminApi"
+import { useAuth } from "@/hooks/useAuth"
 
 const APPLICATIONS_COLORS = ["#6B2C91", "#EC4899", "#3B82F6", "#10B981"]
 
@@ -38,6 +39,8 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
 
 export function Dashboard() {
   const navigate = useNavigate()
+  const { user } = useAuth()
+  const greetingName = user?.fullName || user?.email?.split("@")[0] || "Admin"
   const [companyTab, setCompanyTab] = useState<"pending" | "approved" | "rejected">("pending")
   const [jobTab, setJobTab] = useState<"all" | "reported" | "removed">("all")
 
@@ -237,7 +240,7 @@ export function Dashboard() {
             Dashboard Overview
           </h1>
           <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 mt-0.5">
-            Welcome back, Admin! Here's what's happening on the platform.
+            Welcome back, {greetingName}! Here's what's happening on the platform.
           </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">

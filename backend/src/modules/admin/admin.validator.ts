@@ -88,13 +88,6 @@ export const roleSchema = z.object({
 
 export const updateRoleSchema = roleSchema.partial().omit({ name: true })
 
-// Admin "Contact Support" ticket submission
-export const supportTicketSchema = z.object({
-  subject: z.string().min(1, "Subject is required"),
-  category: z.string().min(1, "Category is required"),
-  message: z.string().min(1, "Message is required"),
-})
-
 // Activity Logs query params. Validates/coerces the query so each filter
 // change (category tab, search box) is a real, separately-paginated Prisma
 // query rather than filtering a single fixed page client-side.

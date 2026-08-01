@@ -3,15 +3,15 @@ import {
   CircleHelp,
   BookOpen,
   Mail,
-  Send,
-  MessageSquare,
   ChevronDown,
   ChevronUp,
 } from "lucide-react"
 import { useNavigate } from "react-router-dom"
 import { DashboardCard } from "@/components/shared/DashboardCard"
-import { Button } from "@/components/ui/button"
-import { AdminApi } from "../services/adminApi"
+import { ReportIssueForm } from "@/features/shared/support/ReportIssueForm"
+import { MyTicketsList } from "@/features/shared/support/MyTicketsList"
+
+const TICKET_CATEGORIES = ["Technical Issue", "Perk Dispute", "Moderation Appeal", "Other Query"]
 
 interface FaqItem {
   q: string
@@ -21,14 +21,7 @@ interface FaqItem {
 export function HelpSupport() {
   const navigate = useNavigate()
   const [openFaq, setOpenFaq] = useState<number | null>(0)
-  const [submitting, setSubmitting] = useState(false)
-  const [submitError, setSubmitError] = useState("")
-  const [submitSuccess, setSubmitSuccess] = useState(false)
-  const [formData, setFormData] = useState({
-    subject: "",
-    category: "Technical Issue",
-    message: "",
-  })
+  const [ticketsRefreshKey, setTicketsRefreshKey] = useState(0)
 
   const faqs: FaqItem[] = [
     {
@@ -53,42 +46,29 @@ export function HelpSupport() {
     setOpenFaq(openFaq === idx ? null : idx)
   }
 
-  const handleFormSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setSubmitError("")
-    if (!formData.subject.trim() || !formData.message.trim()) {
-      setSubmitError("Please fill out all fields.")
-      return
-    }
-
-    setSubmitting(true)
-    try {
-      // Real call: backend sends this to the support inbox via SMTP and logs
-      // an audit entry. Previously this was a pure setTimeout that always
-      // claimed the ticket was "filed successfully" -- nothing was ever sent
-      // or recorded anywhere.
-      await AdminApi.submitSupportTicket(formData.subject, formData.category, formData.message)
-      setSubmitSuccess(true)
-      setFormData({ subject: "", category: "Technical Issue", message: "" })
-      setTimeout(() => setSubmitSuccess(false), 4000)
-    } catch (err: any) {
-      setSubmitError(err?.message || "Failed to file ticket. Please try again or email support directly.")
-    } finally {
-      setSubmitting(false)
-    }
-  }
-
   return (
     <div className="space-y-6 select-none animate-fadeIn">
       {/* Header Banner */}
-      <div>
-        <h1 className="text-2xl font-black tracking-normal text-slate-950 dark:text-white flex items-center gap-2">
-          <CircleHelp className="size-6 text-[#6B2C91] dark:text-pink-300" />
-          Help & Support Desk
-        </h1>
-        <p className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">
-          Find operational FAQs, explore compliance manuals, or file troubleshooting tickets.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-black tracking-normal text-slate-950 dark:text-white flex items-center gap-2">
+            <CircleHelp className="size-6 text-[#6B2C91] dark:text-pink-300" />
+            Help & Support Desk
+          </h1>
+          <p className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">
+            Find operational FAQs, explore compliance manuals, or file troubleshooting tickets.
+          </p>
+        </div>
+        <a
+          href="/admin/support-tickets"
+          onClick={(e) => {
+            e.preventDefault()
+            navigate("/admin/support-tickets")
+          }}
+          className="text-xs font-black text-[#6B2C91] dark:text-pink-300 hover:underline shrink-0"
+        >
+          View Support Ticket Queue &rarr;
+        </a>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">
@@ -133,10 +113,10 @@ export function HelpSupport() {
             </h3>
             <div className="grid gap-4 sm:grid-cols-2">
               <a
-                href="/admin/feature-configs"
+                href="/admin/roles-permissions"
                 onClick={(e) => {
                   e.preventDefault()
-                  navigate("/admin/feature-configs")
+                  navigate("/admin/roles-permissions")
                 }}
                 className="p-4 rounded-xl border border-slate-100 dark:border-slate-850 hover:border-[#6B2C91]/30 dark:hover:border-pink-300/30 transition-all flex items-start gap-3 bg-slate-50/20 dark:bg-slate-950/5 group"
               >
@@ -175,67 +155,13 @@ export function HelpSupport() {
 
         {/* Report an Issue & Support Contacts */}
         <div className="space-y-6">
-          {/* Issue Submission Form */}
-          <DashboardCard className="p-5">
-            <h3 className="text-xs font-black text-slate-900 uppercase tracking-widest dark:text-white border-b border-slate-100 pb-3 dark:border-slate-800">
-              Report Platform Issue
-            </h3>
-            {submitSuccess && (
-              <div className="mt-3 p-2.5 bg-emerald-50 text-emerald-800 rounded-lg text-[11px] font-bold dark:bg-emerald-950/35 dark:text-emerald-300">
-                Your issue ticket has been filed successfully! Support will update you soon.
-              </div>
-            )}
-            {submitError && (
-              <div className="mt-3 p-2.5 bg-red-50 text-red-800 rounded-lg text-[11px] font-bold dark:bg-red-950/35 dark:text-red-300">
-                {submitError}
-              </div>
-            )}
-            <form onSubmit={handleFormSubmit} className="space-y-3.5 mt-4 text-xs font-semibold">
-              <div className="space-y-1">
-                <label className="text-[10px] font-black uppercase text-slate-400">Category</label>
-                <select
-                  value={formData.category}
-                  onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                  className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-xs focus:outline-none dark:border-slate-800 dark:bg-slate-950 dark:text-white font-bold"
-                >
-                  <option value="Technical Issue">Technical Issue</option>
-                  <option value="Perk Dispute">Perk Dispute</option>
-                  <option value="Moderation Appeal">Moderation Appeal</option>
-                  <option value="Other Query">Other Query</option>
-                </select>
-              </div>
+          <ReportIssueForm
+            categories={TICKET_CATEGORIES}
+            title="Report Platform Issue"
+            onSubmitted={() => setTicketsRefreshKey((k) => k + 1)}
+          />
 
-              <div className="space-y-1">
-                <label className="text-[10px] font-black uppercase text-slate-400">Subject</label>
-                <input
-                  type="text"
-                  placeholder="Summarize the problem..."
-                  value={formData.subject}
-                  onChange={(e) => setFormData({ ...formData, subject: e.target.value })}
-                  className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-[#6B2C91]/30 dark:border-slate-800 dark:bg-slate-950 dark:text-white font-bold"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-[10px] font-black uppercase text-slate-400">Detailed Message</label>
-                <textarea
-                  placeholder="Describe your issue in detail..."
-                  value={formData.message}
-                  onChange={(e) => setFormData({ ...formData, message: e.target.value })}
-                  className="w-full h-24 rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-[#6B2C91]/30 dark:border-slate-800 dark:bg-slate-950 dark:text-white font-bold resize-none"
-                />
-              </div>
-
-              <Button
-                type="submit"
-                disabled={submitting}
-                className="w-full h-9 bg-[#6B2C91] hover:bg-[#5a237b] text-white dark:bg-pink-650 dark:hover:bg-pink-700 text-xs font-black flex items-center justify-center gap-1.5 mt-2"
-              >
-                <Send className="size-3.5" />
-                {submitting ? "Filing Ticket..." : "File Ticket"}
-              </Button>
-            </form>
-          </DashboardCard>
+          <MyTicketsList refreshKey={ticketsRefreshKey} />
 
           {/* Core Support Contacts */}
           <DashboardCard className="p-5 space-y-4">
@@ -250,14 +176,6 @@ export function HelpSupport() {
                   <a href="mailto:ops-support@jobsforwomen.info" className="text-slate-850 dark:text-white hover:underline">
                     ops-support@jobsforwomen.info
                   </a>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2.5">
-                <MessageSquare className="size-4 text-[#6B2C91] dark:text-pink-300 shrink-0" />
-                <div>
-                  <p className="text-[9px] font-black uppercase text-slate-400">Direct Slack channel</p>
-                  <span className="text-slate-850 dark:text-white">#jfw-platform-ops</span>
                 </div>
               </div>
             </div>

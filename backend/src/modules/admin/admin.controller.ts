@@ -13,7 +13,6 @@ import {
   updateFeatureFlagSchema,
   roleSchema,
   updateRoleSchema,
-  supportTicketSchema,
   auditLogsQuerySchema,
   reviewPerkRequestSchema,
   createAdminSchema,
@@ -310,18 +309,6 @@ export class AdminController {
       const context = this.getContext(req)
       await this.service.deleteFeatureFlag(adminId, req.params.id as string, context)
       return sendSuccess(res, null, "Feature flag deleted successfully.")
-    } catch (err: any) {
-      next(err)
-    }
-  }
-
-  submitSupportTicket = async (req: Request, res: Response, next: any) => {
-    try {
-      const adminId = req.user?.userId || ""
-      const validated = supportTicketSchema.parse(req.body)
-      const context = this.getContext(req)
-      await this.service.submitSupportTicket(adminId, validated.subject, validated.category, validated.message, context)
-      return sendSuccess(res, null, "Your issue ticket has been filed successfully. Support will update you soon.")
     } catch (err: any) {
       next(err)
     }

@@ -137,6 +137,12 @@ app.use("/api/v1/recruiters", recruiterRouter)
 import adminRouter from "./modules/admin/admin.routes"
 app.use("/api/v1/admins", adminRouter)
 
+// Support Ticket Routes mount ("Report Platform Issue" -- reachable by
+// Candidate/Recruiter/Admin-tier alike, unlike the admin-only adminRouter
+// above)
+import supportRouter from "./modules/support/support.routes"
+app.use("/api/v1/support-tickets", supportRouter)
+
 // Company Verification Routes mount (public, token-authenticated -- Part 3
 // of the recruiter onboarding/approval spec). Deliberately not behind
 // authenticateToken: see company-verification.routes.ts.

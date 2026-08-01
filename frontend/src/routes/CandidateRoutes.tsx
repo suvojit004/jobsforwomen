@@ -11,6 +11,7 @@ const Applications = lazy(() => import("@/features/candidate/pages/Applications"
 const Notifications = lazy(() => import("@/features/candidate/pages/Notifications").then(m => ({ default: m.Notifications })))
 const Messages = lazy(() => import("@/features/candidate/pages/Messages").then(m => ({ default: m.Messages })))
 const Settings = lazy(() => import("@/features/candidate/pages/Settings").then(m => ({ default: m.Settings })))
+const Help = lazy(() => import("@/features/candidate/pages/Help").then(m => ({ default: m.Help })))
 
 export function CandidateRoutes() {
   return (
@@ -26,6 +27,7 @@ export function CandidateRoutes() {
         <Route path="notifications" element={<Notifications />} />
         <Route path="messages" element={<Messages />} />
         <Route path="settings" element={<Settings />} />
+        <Route path="help" element={<Help />} />
         <Route path="*" element={<Navigate to="/candidate/dashboard" replace />} />
       </Routes>
     </Suspense>

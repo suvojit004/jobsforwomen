@@ -28,6 +28,7 @@ import {
   Activity,
   Award,
   ShieldCheck,
+  LifeBuoy,
 } from "lucide-react"
 
 const adminMenuItems = [
@@ -46,6 +47,7 @@ const adminMenuItems = [
   { label: "Roles & Permissions", icon: Shield, href: "/admin/roles-permissions" },
   { label: "Admin Management", icon: ShieldCheck, href: "/admin/admin-management", superAdminOnly: true },
   { label: "System Health", icon: Activity, href: "/admin/system-health" },
+  { label: "Support Tickets", icon: LifeBuoy, href: "/admin/support-tickets" },
   { label: "Help & Support", icon: CircleHelp, href: "/admin/help-support" },
   { label: "Logout", icon: LogOut, href: "/admin/logout" },
 ]
