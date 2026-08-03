@@ -65,9 +65,9 @@ export function Sidebar({
       initial={{ x: -12, opacity: 0 }}
       animate={{ x: 0, opacity: 1 }}
       transition={{ duration: 0.18, ease: "easeOut" }}
-      className="flex h-full flex-col border-r border-slate-200/80 bg-white px-3 py-5 dark:border-slate-800 dark:bg-slate-950"
+      className="flex h-full flex-col overflow-hidden border-r border-slate-200/80 bg-white px-3 py-5 dark:border-slate-800 dark:bg-slate-950"
     >
-      <div className="mb-8 flex items-center xl:pl-1">
+      <div className="mb-8 flex shrink-0 items-center xl:pl-1">
         <div className="lg:hidden xl:block">
           <Logo />
         </div>
@@ -76,7 +76,18 @@ export function Sidebar({
         </div>
       </div>
 
-      <nav className="flex flex-1 flex-col gap-1.5" aria-label="Navigation">
+      {/* min-h-0 is required for a flex-1 child to actually shrink below its
+          content size and scroll internally -- without it this list just
+          keeps growing the whole sidebar past the viewport (as more nav
+          items get added over time, e.g. Support Tickets/Candidate Details),
+          pushing the banner below and the Logout link off-screen entirely
+          with no way to reach it. overflow-y-auto + scrollbar-thin makes
+          this region -- and only this region -- scroll, while the logo
+          header above and the promo banner below stay pinned in place. */}
+      <nav
+        className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto overflow-x-hidden pr-1 scrollbar-thin"
+        aria-label="Navigation"
+      >
         {items.map((item) => (
           <NavLink
             key={item.label}
@@ -102,7 +113,7 @@ export function Sidebar({
       </nav>
 
       {bannerTitle && (
-        <div className="mt-6 rounded-2xl bg-gradient-to-br from-violet-50 to-pink-50/50 p-4 ring-1 ring-violet-100 dark:from-slate-900 dark:to-slate-900/60 dark:ring-slate-800 lg:hidden xl:block">
+        <div className="mt-6 shrink-0 rounded-2xl bg-gradient-to-br from-violet-50 to-pink-50/50 p-4 ring-1 ring-violet-100 dark:from-slate-900 dark:to-slate-900/60 dark:ring-slate-800 lg:hidden xl:block">
           {bannerTitle === "Empowering Women" ? (
             <div className="space-y-2">
               <p className="text-xs font-black text-[#6B2C91] dark:text-pink-300">

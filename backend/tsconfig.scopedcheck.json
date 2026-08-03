@@ -1,0 +1,8 @@
+{
+  "extends": "./tsconfig.json",
+  "include": [
+    "src/shared/listeners/notification.listener.ts",
+    "src/shared/queue/queue.ts",
+    "src/shared/queue/scheduler.ts"
+  ]
+}

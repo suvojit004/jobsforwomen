@@ -308,15 +308,23 @@ async function handleCleanupJob(jobName: string, data: any) {
     }
     logger.info(`[SchedulerWorker] Closed ${closedCount} expired jobs.`)
   } else if (jobName === "notificationCleanup") {
-    const thirtyDaysAgo = new Date()
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
-    await prisma.notification.deleteMany({
+    // Every notification created via createAndEmitNotification (see
+    // notification.listener.ts) now gets a 48h expiresAt stamped on it at
+    // creation time -- this just sweeps anything past that mark, read or
+    // not. The `createdAt` fallback branch catches any row from before this
+    // policy existed (expiresAt still null) so nothing is grandfathered in
+    // and left to accumulate forever.
+    const now = new Date()
+    const fortyEightHoursAgo = new Date(now.getTime() - 48 * 60 * 60 * 1000)
+    const { count } = await prisma.notification.deleteMany({
       where: {
-        createdAt: { lte: thirtyDaysAgo },
-        read: true,
+        OR: [
+          { expiresAt: { lte: now } },
+          { expiresAt: null, createdAt: { lte: fortyEightHoursAgo } },
+        ],
       },
     })
-    logger.info("[SchedulerWorker] Cleaned read notifications older than 30 days.")
+    logger.info(`[SchedulerWorker] Cleaned ${count} expired notification(s) (48h TTL).`)
   } else if (jobName === "compileDailyDigests") {
     // Query approved jobs posted in last 24h
     const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000)

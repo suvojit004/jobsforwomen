@@ -245,3 +245,37 @@ code {
     @apply font-sans;
     }
 }
+
+/* Thin, unobtrusive scrollbar for internally-scrolling panels (sidebar nav,
+   chat windows, ticket comment threads, etc). There's no tailwind-scrollbar
+   plugin installed, so `scrollbar-thin` was previously a no-op class in a
+   couple of places -- this makes it a real utility, styled for both light
+   and dark mode, Chromium/WebKit (::-webkit-scrollbar) and Firefox
+   (scrollbar-width/scrollbar-color). */
+.scrollbar-thin {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(107, 44, 145, 0.25) transparent;
+}
+.scrollbar-thin::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.scrollbar-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background-color: rgba(107, 44, 145, 0.25);
+  border-radius: 999px;
+}
+.scrollbar-thin::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(107, 44, 145, 0.45);
+}
+.dark .scrollbar-thin {
+  scrollbar-color: rgba(244, 114, 182, 0.25) transparent;
+}
+.dark .scrollbar-thin::-webkit-scrollbar-thumb {
+  background-color: rgba(244, 114, 182, 0.25);
+}
+.dark .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(244, 114, 182, 0.45);
+}

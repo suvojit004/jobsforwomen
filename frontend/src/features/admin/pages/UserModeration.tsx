@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react"
 import { toast } from "sonner"
+import { useNavigate } from "react-router-dom"
 import {
   Search,
   UserCheck,
@@ -11,6 +12,8 @@ import {
   X,
   Archive,
   ArrowRightLeft,
+  Eye,
+  Mail,
 } from "lucide-react"
 import { DataTable } from "@/components/shared/DataTable"
 import type { ColumnDef } from "@/components/shared/DataTable"
@@ -20,7 +23,7 @@ import { DashboardCard } from "@/components/shared/DashboardCard"
 import { AdminApi } from "../services/adminApi"
 import { useAuth } from "@/hooks/useAuth"
 
-type TabType = "candidates" | "recruiters" | "admins"
+type TabType = "candidates" | "recruiters" | "admins" | "companies"
 
 interface CandidateUser {
   id: string
@@ -61,6 +64,19 @@ interface AdminUser {
   status: string
 }
 
+// Same shape CompanyApprovals.tsx already builds from AdminApi.getCompanies()
+// -- reused here rather than a separate endpoint, since this tab is just a
+// read-only directory that deep-links into the existing Company Details page.
+interface CompanyRow {
+  id: string
+  name: string
+  website: string
+  industry: string
+  recruiterName: string
+  recruiterEmail: string
+  status: string
+}
+
 interface ProfileWithCareerBreak {
   candidateProfile?: {
     careerBreak?: {
@@ -70,6 +86,7 @@ interface ProfileWithCareerBreak {
 }
 
 export function UserModeration() {
+  const navigate = useNavigate()
   const { user: currentUser } = useAuth()
   // Only Admin/Super Admin can delete users (the backend enforces this too,
   // via requireRole(USER_MGMT_ROLES) on DELETE /admins/users/:id -- this is
@@ -80,6 +97,7 @@ export function UserModeration() {
   const [candidates, setCandidates] = useState<CandidateUser[]>([])
   const [recruiters, setRecruiters] = useState<RecruiterUser[]>([])
   const [admins, setAdmins] = useState<AdminUser[]>([])
+  const [companies, setCompanies] = useState<CompanyRow[]>([])
   const [searchQuery, setSearchQuery] = useState("")
   const [loading, setLoading] = useState(true)
   const [deletingId, setDeletingId] = useState<string | null>(null)
@@ -102,10 +120,11 @@ export function UserModeration() {
   const loadUsers = async () => {
     try {
       setLoading(true)
-      const [candidatesList, recruitersList, adminsList] = await Promise.all([
+      const [candidatesList, recruitersList, adminsList, companiesList] = await Promise.all([
         AdminApi.getUsers("candidate"),
         AdminApi.getUsers("recruiter"),
         AdminApi.getUsers("admin"),
+        AdminApi.getCompanies(),
       ])
 
       setCandidates((candidatesList || []).map((u: any) => ({
@@ -138,6 +157,19 @@ export function UserModeration() {
           role: roleNames.join(", ") || "Admin",
           roles: roleNames,
           status: u.status === "Active" ? "Active" : "Inactive"
+        }
+      }))
+
+      setCompanies((companiesList || []).map((c: any) => {
+        const recruiter = (c.recruiters || [])[0]
+        return {
+          id: c.id,
+          name: c.name,
+          website: c.website || "Not specified",
+          industry: c.industry?.name || "Not specified",
+          recruiterName: recruiter?.fullName || recruiter?.user?.email?.split("@")[0] || "Not specified",
+          recruiterEmail: recruiter?.user?.email || "Not specified",
+          status: c.status,
         }
       }))
     } catch (err: any) {
@@ -266,13 +298,29 @@ export function UserModeration() {
       a.role.toLowerCase().includes(searchQuery.toLowerCase())
   )
 
+  const filteredCompanies = companies.filter(
+    (c) =>
+      c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      c.industry.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      c.recruiterName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      c.recruiterEmail.toLowerCase().includes(searchQuery.toLowerCase())
+  )
+
+  const goToCandidateDetails = (candidateId: string) => navigate(`/admin/candidate-details?candidateId=${candidateId}`)
+
   // DataTable column definitions
   const candidateColumns: ColumnDef<CandidateUser>[] = [
     {
       header: "Candidate Info",
       cell: (row) => (
         <div className="space-y-0.5">
-          <p className="font-bold text-slate-900 dark:text-white">{row.name}</p>
+          <button
+            type="button"
+            onClick={() => goToCandidateDetails(row.id)}
+            className="font-bold text-slate-900 dark:text-white hover:text-[#6B2C91] dark:hover:text-pink-300 hover:underline text-left"
+          >
+            {row.name}
+          </button>
           <p className="text-[10px] text-slate-400 dark:text-slate-500 font-semibold">{row.email}</p>
         </div>
       ),
@@ -562,10 +610,95 @@ export function UserModeration() {
     },
   ]
 
+  // Company status badge colors -- same mapping CompanyApprovals.tsx uses,
+  // kept local here since this tab is a lightweight read-only directory, not
+  // a moderation queue (no action buttons beyond "View Details").
+  const COMPANY_STATUS_STYLES: Record<string, { style: string; label: string }> = {
+    approved: { style: "bg-emerald-100/60 text-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-350", label: "Approved" },
+    pending: { style: "bg-blue-100/60 text-blue-800 dark:bg-blue-950/30 dark:text-blue-350", label: "Pending Verification" },
+    submitted: { style: "bg-blue-100/60 text-blue-800 dark:bg-blue-950/30 dark:text-blue-350", label: "Submitted for Review" },
+    pending_verification: { style: "bg-blue-100/60 text-blue-800 dark:bg-blue-950/30 dark:text-blue-350", label: "Pending Verification" },
+    under_review: { style: "bg-blue-100/60 text-blue-800 dark:bg-blue-950/30 dark:text-blue-350", label: "Under Review" },
+    draft: { style: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400", label: "Draft (Not Submitted)" },
+    info_requested: { style: "bg-indigo-100/60 text-indigo-800 dark:bg-indigo-950/30 dark:text-indigo-300", label: "More Info Requested" },
+    rejected: { style: "bg-pink-100/60 text-pink-850 dark:bg-pink-955/35 dark:text-pink-300", label: "Rejected" },
+  }
+
+  const goToCompanyDetails = (companyId: string) => navigate(`/admin/company-details?companyId=${companyId}`)
+
+  const companyColumns: ColumnDef<CompanyRow>[] = [
+    {
+      header: "Company Info",
+      cell: (row) => (
+        <div className="space-y-0.5">
+          <button
+            type="button"
+            onClick={() => goToCompanyDetails(row.id)}
+            className="font-bold text-slate-900 dark:text-white hover:text-[#6B2C91] dark:hover:text-pink-300 hover:underline text-left"
+          >
+            {row.name}
+          </button>
+          <p className="text-[10px] text-slate-400 dark:text-slate-500 font-semibold">{row.website}</p>
+        </div>
+      ),
+    },
+    {
+      header: "Recruiter Contact",
+      cell: (row) => (
+        <div className="space-y-0.5">
+          <p className="text-xs font-bold text-slate-900 dark:text-white">{row.recruiterName}</p>
+          <a
+            href={`mailto:${row.recruiterEmail}`}
+            className="text-[10px] font-semibold text-slate-450 dark:text-slate-500 hover:underline flex items-center gap-0.5"
+          >
+            <Mail className="size-2.5" />
+            {row.recruiterEmail}
+          </a>
+        </div>
+      ),
+    },
+    {
+      header: "Industry",
+      accessorKey: "industry",
+    },
+    {
+      header: "Status",
+      cell: (row) => {
+        const meta = COMPANY_STATUS_STYLES[row.status] || {
+          style: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400",
+          label: row.status,
+        }
+        return (
+          <span className={`inline-flex items-center text-[10px] font-black px-2 py-0.5 rounded-full ${meta.style}`}>
+            {meta.label}
+          </span>
+        )
+      },
+    },
+    {
+      header: "Actions",
+      className: "text-right",
+      cell: (row) => (
+        <div className="flex justify-end">
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 text-[10px] font-bold border-slate-200 dark:border-slate-800"
+            onClick={() => goToCompanyDetails(row.id)}
+          >
+            <Eye className="size-3 mr-0.5" />
+            View Details
+          </Button>
+        </div>
+      ),
+    },
+  ]
+
   const tabsConfig = [
     { key: "candidates", label: "Candidates", count: candidates.length },
     { key: "recruiters", label: "Recruiters", count: recruiters.length },
     { key: "admins", label: "Administrators", count: admins.length },
+    { key: "companies", label: "Companies", count: companies.length },
   ]
 
   return (
@@ -650,6 +783,14 @@ export function UserModeration() {
                 columns={adminColumns}
                 data={filteredAdmins}
                 emptyMessage="No matching administrators found."
+              />
+            )}
+            {activeTab === "companies" && (
+              <DataTable
+                columns={companyColumns}
+                data={filteredCompanies}
+                onRowClick={(row) => goToCompanyDetails(row.id)}
+                emptyMessage="No matching companies found."
               />
             )}
           </div>

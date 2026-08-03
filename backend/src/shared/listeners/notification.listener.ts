@@ -3,6 +3,14 @@ import prisma from "../database/db"
 import { logger } from "../utils/logger"
 import { sendRealTimeNotification } from "../socket/socket"
 
+// Every notification auto-deletes 48 hours after it's created (see
+// queue.ts's "notificationCleanup" cron job, which runs hourly and sweeps
+// anything past its expiresAt). This is a single choke point -- every
+// EventBus-driven notification in the app goes through this one function --
+// so setting the default here guarantees the 48h policy applies uniformly
+// without every call site needing to remember to set it.
+const NOTIFICATION_TTL_MS = 48 * 60 * 60 * 1000
+
 async function createAndEmitNotification(data: {
   recipientId: string
   title: string
@@ -15,10 +23,15 @@ async function createAndEmitNotification(data: {
   // double-clicked admin action), this silently returns the existing row
   // instead of creating and re-emitting a duplicate.
   dedupeKey?: string
+  // Callers can still override this (none currently do) -- defaults to the
+  // standard 48h TTL above when omitted.
+  expiresAt?: Date
 }) {
   let notification
   try {
-    notification = await prisma.notification.create({ data })
+    notification = await prisma.notification.create({
+      data: { ...data, expiresAt: data.expiresAt ?? new Date(Date.now() + NOTIFICATION_TTL_MS) },
+    })
   } catch (err: any) {
     if (data.dedupeKey && err?.code === "P2002") {
       logger.debug(`[NotificationListener] Duplicate suppressed for dedupeKey: ${data.dedupeKey}`)
