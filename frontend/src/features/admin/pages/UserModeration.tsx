@@ -307,6 +307,7 @@ export function UserModeration() {
   )
 
   const goToCandidateDetails = (candidateId: string) => navigate(`/admin/candidate-details?candidateId=${candidateId}`)
+  const goToCompanyDetails = (companyId: string) => navigate(`/admin/company-details?companyId=${companyId}`)
 
   // DataTable column definitions
   const candidateColumns: ColumnDef<CandidateUser>[] = [
@@ -422,7 +423,17 @@ export function UserModeration() {
       header: "Recruiter Info",
       cell: (row) => (
         <div className="space-y-0.5">
-          <p className="font-bold text-slate-900 dark:text-white">{row.name}</p>
+          {row.companyId ? (
+            <button
+              type="button"
+              onClick={() => goToCompanyDetails(row.companyId as string)}
+              className="font-bold text-slate-900 dark:text-white hover:text-[#6B2C91] dark:hover:text-pink-300 hover:underline text-left"
+            >
+              {row.name}
+            </button>
+          ) : (
+            <p className="font-bold text-slate-900 dark:text-white">{row.name}</p>
+          )}
           <p className="text-[10px] text-slate-400 dark:text-slate-500 font-semibold">{row.email}</p>
         </div>
       ),
@@ -623,8 +634,6 @@ export function UserModeration() {
     info_requested: { style: "bg-indigo-100/60 text-indigo-800 dark:bg-indigo-950/30 dark:text-indigo-300", label: "More Info Requested" },
     rejected: { style: "bg-pink-100/60 text-pink-850 dark:bg-pink-955/35 dark:text-pink-300", label: "Rejected" },
   }
-
-  const goToCompanyDetails = (companyId: string) => navigate(`/admin/company-details?companyId=${companyId}`)
 
   const companyColumns: ColumnDef<CompanyRow>[] = [
     {
