@@ -69,10 +69,10 @@ interface AdminJob {
 }
 
 export function CompanyDetails() {
-  // Deep-linked from the "View Details" action on the Company Registration
-  // Requests table (CompanyApprovals.tsx), which navigates here with
-  // ?companyId=<id> so the admin lands directly on the right company instead
-  // of having to find it again in the dropdown below.
+  // Deep-linked only -- reached via ?companyId=<id> from the "View Details"
+  // action on Company Registration Requests (CompanyApprovals.tsx) or the
+  // Companies tab on User Account Moderation. There's no standalone nav
+  // entry or company picker on this page anymore; it always needs an id.
   const [searchParams] = useSearchParams()
   const [companies, setCompanies] = useState<AdminCompany[]>([])
   const [selectedCompanyId, setSelectedCompanyId] = useState("")
@@ -166,29 +166,13 @@ export function CompanyDetails() {
   return (
     <div className="space-y-6 select-none animate-fadeIn">
       {/* Header Banner */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-slate-100 pb-4 dark:border-slate-850">
-        <div>
-          <h1 className="text-2xl font-black tracking-normal text-slate-950 dark:text-white">
-            Corporate Partners Directory
-          </h1>
-          <p className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">
-            Inspect corporate profiles, check recruiter details, and review workplace equality benefits checklists.
-          </p>
-        </div>
-        <div className="shrink-0 flex items-center gap-2">
-          <span className="text-xs font-bold text-slate-500 dark:text-slate-400">Select Company:</span>
-          <select
-            value={selectedCompanyId}
-            onChange={(e) => setSelectedCompanyId(e.target.value)}
-            className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold focus:outline-none dark:border-slate-800 dark:bg-slate-900 dark:text-white"
-          >
-            {companies.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
-        </div>
+      <div className="border-b border-slate-100 pb-4 dark:border-slate-850">
+        <h1 className="text-2xl font-black tracking-normal text-slate-950 dark:text-white">
+          Corporate Partners Directory
+        </h1>
+        <p className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">
+          Inspect corporate profiles, check recruiter details, and review workplace equality benefits checklists.
+        </p>
       </div>
 
       {loading || !selectedCompany ? (

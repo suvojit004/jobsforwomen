@@ -13,7 +13,6 @@ import {
 import {
   Home,
   Users,
-  BriefcaseBusiness,
   Building,
   FileText,
   LineChart,
@@ -36,8 +35,6 @@ const adminMenuItems = [
   { label: "Company Registration Requests", icon: Building, href: "/admin/company-approvals" },
   { label: "Company Perk Requests", icon: Award, href: "/admin/company-perk-requests" },
   { label: "Candidate Management", icon: UserCheck, href: "/admin/candidate-management" },
-  { label: "Company Details", icon: BriefcaseBusiness, href: "/admin/company-details" },
-  { label: "Candidate Details", icon: UserCheck, href: "/admin/candidate-details" },
   { label: "Job Moderation", icon: ShieldAlert, href: "/admin/job-moderation" },
   { label: "Users", icon: Users, href: "/admin/users" },
   { label: "Reports & Analytics", icon: LineChart, href: "/admin/reports-analytics" },

@@ -67,9 +67,10 @@ interface AdminCandidate {
 // sendSuccess() before it reaches the frontend, so it's directly viewable/
 // downloadable with no extra signing step needed on this page.
 export function CandidateDetails() {
-  // Deep-linked from the Candidates tab on User Account Moderation
-  // (UserModeration.tsx), which navigates here with ?candidateId=<id>, same
-  // pattern as CompanyDetails.tsx's ?companyId=.
+  // Deep-linked only -- reached via ?candidateId=<id> from the Candidates
+  // tab on User Account Moderation (UserModeration.tsx), same pattern as
+  // CompanyDetails.tsx's ?companyId=. There's no standalone nav entry or
+  // candidate picker on this page anymore; it always needs an id.
   const [searchParams] = useSearchParams()
   const [candidates, setCandidates] = useState<AdminCandidate[]>([])
   const [selectedCandidateId, setSelectedCandidateId] = useState("")
@@ -132,29 +133,13 @@ export function CandidateDetails() {
   return (
     <div className="space-y-6 select-none animate-fadeIn">
       {/* Header Banner */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-slate-100 pb-4 dark:border-slate-850">
-        <div>
-          <h1 className="text-2xl font-black tracking-normal text-slate-950 dark:text-white">
-            Candidate Profile Directory
-          </h1>
-          <p className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">
-            Inspect a candidate's full profile, career history, and uploaded resume.
-          </p>
-        </div>
-        <div className="shrink-0 flex items-center gap-2">
-          <span className="text-xs font-bold text-slate-500 dark:text-slate-400">Select Candidate:</span>
-          <select
-            value={selectedCandidateId}
-            onChange={(e) => setSelectedCandidateId(e.target.value)}
-            className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold focus:outline-none dark:border-slate-800 dark:bg-slate-900 dark:text-white"
-          >
-            {candidates.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.fullName}
-              </option>
-            ))}
-          </select>
-        </div>
+      <div className="border-b border-slate-100 pb-4 dark:border-slate-850">
+        <h1 className="text-2xl font-black tracking-normal text-slate-950 dark:text-white">
+          Candidate Profile Directory
+        </h1>
+        <p className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">
+          Inspect a candidate's full profile, career history, and uploaded resume.
+        </p>
       </div>
 
       {loading || !selectedCandidate ? (
