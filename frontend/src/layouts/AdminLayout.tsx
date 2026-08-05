@@ -19,7 +19,6 @@ import {
   ShieldAlert,
   Settings,
   LogOut,
-  UserCheck,
   Bell,
   CircleHelp,
   Sparkles,
@@ -34,7 +33,6 @@ const adminMenuItems = [
   { label: "Dashboard", icon: Home, href: "/admin/dashboard" },
   { label: "Company Registration Requests", icon: Building, href: "/admin/company-approvals" },
   { label: "Company Perk Requests", icon: Award, href: "/admin/company-perk-requests" },
-  { label: "Candidate Management", icon: UserCheck, href: "/admin/candidate-management" },
   { label: "Job Moderation", icon: ShieldAlert, href: "/admin/job-moderation" },
   { label: "Users", icon: Users, href: "/admin/users" },
   { label: "Reports & Analytics", icon: LineChart, href: "/admin/reports-analytics" },
@@ -83,8 +81,13 @@ function AdminLayoutInner() {
             menuItems={menuItems}
             bannerTitle="Empowering Women"
             bannerSubtitle="Building a better future program."
-            bannerButtonText="System Health"
-            bannerButtonHref="/admin/health"
+            // No bannerButtonHref -- Sidebar only renders the CTA button
+            // when this is truthy, so passing "" keeps the banner
+            // title/illustration but drops the button, which duplicated
+            // the "System Health" nav item already in the list above (and
+            // pointed at a different path, /admin/health vs. the nav
+            // item's /admin/system-health).
+            bannerButtonHref=""
           />
         </aside>
 
@@ -105,8 +108,7 @@ function AdminLayoutInner() {
               menuItems={menuItems}
               bannerTitle="Empowering Women"
               bannerSubtitle="Building a better future program."
-              bannerButtonText="System Health"
-              bannerButtonHref="/admin/health"
+              bannerButtonHref=""
             />
           </SheetContent>
         </Sheet>
