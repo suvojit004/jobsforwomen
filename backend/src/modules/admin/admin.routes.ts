@@ -50,9 +50,21 @@ router.get(
 )
 router.get("/audits", controller.getAuditLogs)
 
+// Admin, Super Admin only -- declared here (rather than down by the User
+// Management section below, where it originally lived) since
+// suspend/unsuspend/delete on companies now need it too.
+const USER_MGMT_ROLES = ["Admin", "Super Admin"]
+
 // Recruiter / Company Verification (Admin, Super Admin, Moderator)
 router.get("/companies", controller.listCompanies)
 router.post("/companies/:id/verify", controller.verifyCompany)
+// Suspend/delete are real moderation actions against a company's recruiters
+// and job visibility, not just a verification-status change -- same
+// Admin/Super-Admin-only bar as suspending/deleting an individual user
+// account below.
+router.post("/companies/:id/suspend", requireRole(USER_MGMT_ROLES), controller.suspendCompany)
+router.post("/companies/:id/unsuspend", requireRole(USER_MGMT_ROLES), controller.unsuspendCompany)
+router.delete("/companies/:id", requireRole(USER_MGMT_ROLES), controller.deleteCompany)
 
 // Company Perk Requests (Parts 6/7/12 -- deliberately a separate module from
 // Company Registration Requests above; never mixed into the same queue)
@@ -66,7 +78,6 @@ router.post("/jobs/:id/moderate", controller.moderateJob)
 // User Management (Admin, Super Admin only -- Moderator/Support Executive
 // can view/moderate content but must not be able to suspend/ban accounts
 // or trigger administrative actions like forced password resets)
-const USER_MGMT_ROLES = ["Admin", "Super Admin"]
 router.get("/users", controller.listUsers)
 router.put("/users/:id/status", requireRole(USER_MGMT_ROLES), controller.updateUserStatus)
 router.delete("/users/:id", requireRole(USER_MGMT_ROLES), controller.deleteUser)

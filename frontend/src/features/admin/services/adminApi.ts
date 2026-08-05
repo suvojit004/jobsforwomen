@@ -56,6 +56,21 @@ export const AdminApi = {
     return res?.data
   },
 
+  async suspendCompany(companyId: string) {
+    const res = await apiClient.post(`/api/v1/admins/companies/${companyId}/suspend`, {})
+    return res?.data
+  },
+
+  async unsuspendCompany(companyId: string) {
+    const res = await apiClient.post(`/api/v1/admins/companies/${companyId}/unsuspend`, {})
+    return res?.data
+  },
+
+  async deleteCompany(companyId: string) {
+    const res = await apiClient.delete(`/api/v1/admins/companies/${companyId}`)
+    return res?.data
+  },
+
   // Company Perk Requests -- deliberately a separate endpoint
   // family from getCompanies/verifyCompany above.
   async getPerkRequests() {

@@ -7,6 +7,7 @@ import {
   UserX,
   ShieldCheck,
   ShieldAlert,
+  ShieldOff,
   GraduationCap,
   Trash2,
   X,
@@ -83,6 +84,9 @@ export function UserModeration() {
   // via requireRole(USER_MGMT_ROLES) on DELETE /admins/users/:id -- this is
   // just so a Moderator/Support Executive viewing this same page, who could
   // previously see it, doesn't see a Delete button that would just 403).
+  // Also gates the Companies tab's Suspend/Delete actions -- same
+  // USER_MGMT_ROLES bar on the backend (see admin.routes.ts's
+  // /companies/:id/suspend|unsuspend|delete).
   const canDeleteUsers = !!currentUser?.roles?.some((r) => r === "Admin" || r === "Super Admin")
   const [activeTab, setActiveTab] = useState<TabType>("candidates")
   const [candidates, setCandidates] = useState<CandidateUser[]>([])
@@ -98,6 +102,7 @@ export function UserModeration() {
   const [filterMode, setFilterMode] = useState<"all" | "hasResume" | "noResume" | "blocked">("all")
   const [loading, setLoading] = useState(true)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [companyActionId, setCompanyActionId] = useState<string | null>(null)
 
   // Job-ownership conflict modal -- shown when a recruiter delete is
   // rejected (409) because they still own job postings. See
@@ -257,6 +262,59 @@ export function UserModeration() {
       toast.error(err?.message || "Failed to delete user account.")
     } finally {
       setResolving(false)
+    }
+  }
+
+  // Suspend cascades to every recruiter under the company (Active ->
+  // Suspended) and hides its approved job postings from candidates;
+  // unsuspend is the exact mirror. See AdminService.suspendCompany/
+  // unsuspendCompany for what actually changes server-side.
+  const handleSuspendCompany = async (company: CompanyRow) => {
+    const isSuspended = company.status === "suspended"
+    const confirmed = window.confirm(
+      isSuspended
+        ? `Reactivate ${company.name}? Recruiters who were suspended along with it will be reactivated too, and its approved job postings will become visible to candidates again.`
+        : `Suspend ${company.name}? This will also suspend every recruiter under this company and hide its job postings from candidates.`
+    )
+    if (!confirmed) return
+
+    setCompanyActionId(company.id)
+    try {
+      if (isSuspended) {
+        await AdminApi.unsuspendCompany(company.id)
+        toast.success(`${company.name} and its recruiters have been reactivated.`)
+      } else {
+        await AdminApi.suspendCompany(company.id)
+        toast.success(`${company.name} and its recruiters have been suspended.`)
+      }
+      loadUsers()
+    } catch (err: any) {
+      console.error("Failed to update company suspension", err)
+      toast.error(err?.message || "Failed to update company status.")
+    } finally {
+      setCompanyActionId(null)
+    }
+  }
+
+  // Permanent delete -- the company, every recruiter account under it, and
+  // all of its job postings (with everything those cascade to: applications,
+  // interviews, saved-job entries). See AdminService.deleteCompany.
+  const handleDeleteCompany = async (company: CompanyRow) => {
+    const confirmed = window.confirm(
+      `Permanently delete ${company.name}?\n\nThis will remove the company, every recruiter account under it, and all of its job postings -- including applications, interviews, and saved-job entries tied to those jobs. This cannot be undone.`
+    )
+    if (!confirmed) return
+
+    setDeletingId(company.id)
+    try {
+      await AdminApi.deleteCompany(company.id)
+      toast.success(`${company.name} has been permanently deleted.`)
+      loadUsers()
+    } catch (err: any) {
+      console.error("Failed to delete company", err)
+      toast.error(err?.message || "Failed to delete company.")
+    } finally {
+      setDeletingId(null)
     }
   }
 
@@ -504,8 +562,8 @@ export function UserModeration() {
   ]
 
   // Company status badge colors -- same mapping CompanyApprovals.tsx uses,
-  // kept local here since this tab is a lightweight read-only directory, not
-  // a moderation queue (no action buttons beyond "View Details").
+  // now with a real "suspended" state too (this tab is no longer read-only:
+  // Suspend and Delete actions live in the Actions column below).
   const COMPANY_STATUS_STYLES: Record<string, { style: string; label: string }> = {
     approved: { style: "bg-emerald-100/60 text-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-350", label: "Approved" },
     pending: { style: "bg-blue-100/60 text-blue-800 dark:bg-blue-950/30 dark:text-blue-350", label: "Pending Verification" },
@@ -515,6 +573,7 @@ export function UserModeration() {
     draft: { style: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400", label: "Draft (Not Submitted)" },
     info_requested: { style: "bg-indigo-100/60 text-indigo-800 dark:bg-indigo-950/30 dark:text-indigo-300", label: "More Info Requested" },
     rejected: { style: "bg-pink-100/60 text-pink-850 dark:bg-pink-955/35 dark:text-pink-300", label: "Rejected" },
+    suspended: { style: "bg-red-100/60 text-red-800 dark:bg-red-950/30 dark:text-red-350", label: "Suspended" },
   }
 
   const companyColumns: ColumnDef<CompanyRow>[] = [
@@ -569,19 +628,56 @@ export function UserModeration() {
     {
       header: "Actions",
       className: "text-right",
-      cell: (row) => (
-        <div className="flex justify-end">
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-7 text-[10px] font-bold border-slate-200 dark:border-slate-800"
-            onClick={() => goToCompanyDetails(row.id)}
-          >
-            <Eye className="size-3 mr-0.5" />
-            View Details
-          </Button>
-        </div>
-      ),
+      cell: (row) => {
+        const isSuspended = row.status === "suspended"
+        const isCompanyActionPending = companyActionId === row.id
+        return (
+          <div className="flex flex-wrap justify-end gap-1.5">
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 text-[10px] font-bold border-slate-200 dark:border-slate-800"
+              onClick={() => goToCompanyDetails(row.id)}
+            >
+              <Eye className="size-3 mr-0.5" />
+              View Details
+            </Button>
+            {canDeleteUsers && (
+              <>
+                <Button
+                  size="sm"
+                  variant={isSuspended ? "outline" : "destructive"}
+                  className="h-7 text-[10px] font-bold flex items-center gap-1"
+                  disabled={isCompanyActionPending}
+                  onClick={() => handleSuspendCompany(row)}
+                >
+                  {isSuspended ? (
+                    <>
+                      <ShieldCheck className="size-3" />
+                      {isCompanyActionPending ? "Reactivating..." : "Unsuspend"}
+                    </>
+                  ) : (
+                    <>
+                      <ShieldOff className="size-3" />
+                      {isCompanyActionPending ? "Suspending..." : "Suspend"}
+                    </>
+                  )}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 text-[10px] font-bold flex items-center gap-1 border-red-200 text-red-600 hover:bg-red-50 dark:border-red-950/50 dark:text-red-400 dark:hover:bg-red-950/20"
+                  disabled={deletingId === row.id}
+                  onClick={() => handleDeleteCompany(row)}
+                >
+                  <Trash2 className="size-3" />
+                  {deletingId === row.id ? "Deleting..." : "Delete"}
+                </Button>
+              </>
+            )}
+          </div>
+        )
+      },
     },
   ]
 
@@ -707,7 +803,11 @@ export function UserModeration() {
               <DataTable
                 columns={companyColumns}
                 data={filteredCompanies}
-                onRowClick={(row) => goToCompanyDetails(row.id)}
+                // No onRowClick anymore -- this row now has Suspend/Delete
+                // action buttons too (same reason the Candidates tab's row
+                // isn't whole-row-clickable: a row click would fire on top
+                // of clicking those buttons). The company name and "View
+                // Details" button both still navigate to Company Details.
                 emptyMessage="No matching companies found."
               />
             )}

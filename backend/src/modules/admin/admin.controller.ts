@@ -105,6 +105,39 @@ export class AdminController {
     }
   }
 
+  suspendCompany = async (req: Request, res: Response, next: any) => {
+    try {
+      const adminId = req.user?.userId || ""
+      const context = this.getContext(req)
+      const result = await this.service.suspendCompany(adminId, req.params.id as string, context)
+      return sendSuccess(res, result, "Company and its recruiters have been suspended.")
+    } catch (err: any) {
+      next(err)
+    }
+  }
+
+  unsuspendCompany = async (req: Request, res: Response, next: any) => {
+    try {
+      const adminId = req.user?.userId || ""
+      const context = this.getContext(req)
+      const result = await this.service.unsuspendCompany(adminId, req.params.id as string, context)
+      return sendSuccess(res, result, "Company and its recruiters have been reactivated.")
+    } catch (err: any) {
+      next(err)
+    }
+  }
+
+  deleteCompany = async (req: Request, res: Response, next: any) => {
+    try {
+      const adminId = req.user?.userId || ""
+      const context = this.getContext(req)
+      const result = await this.service.deleteCompany(adminId, req.params.id as string, context)
+      return sendSuccess(res, result, "Company and all its recruiters and job postings have been permanently deleted.")
+    } catch (err: any) {
+      next(err)
+    }
+  }
+
   // ==========================================
   // COMPANY PERK REQUESTS (Parts 6/7 -- separate module from company
   // verification above; see admin.routes.ts's "/perks" mount)

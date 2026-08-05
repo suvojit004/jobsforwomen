@@ -523,6 +523,232 @@ export class AdminService {
     return updatedCompany
   }
 
+  // Suspends a company: the company itself, every recruiter under it (only
+  // ones currently Active -- an independently Blocked recruiter is left
+  // alone rather than silently downgraded), and every one of its `approved`
+  // jobs is hidden from candidates (visibility flips to hidden; jobs in any
+  // other status are already invisible to candidates regardless of this
+  // field, per candidate.service.ts's status===approved filter, so they're
+  // left untouched). Fully reversible via unsuspendCompany below.
+  async suspendCompany(adminId: string, companyId: string, context?: ServiceContext) {
+    const company = await prisma.company.findUnique({
+      where: { id: companyId },
+      include: { recruiters: { include: { user: true } } },
+    })
+    if (!company) {
+      throw new Error("Company profile not found")
+    }
+    if (company.status === CompanyStatus.suspended) {
+      throw new AppError("This company is already suspended.", 400)
+    }
+
+    const admin = await prisma.user.findUnique({ where: { id: adminId } })
+    const recruitersToSuspend = company.recruiters.filter((r) => r.user.status === UserStatus.Active)
+
+    await prisma.$transaction(async (tx) => {
+      await tx.company.update({ where: { id: companyId }, data: { status: CompanyStatus.suspended } })
+
+      if (recruitersToSuspend.length > 0) {
+        const userIds = recruitersToSuspend.map((r) => r.userId)
+        await tx.user.updateMany({ where: { id: { in: userIds } }, data: { status: UserStatus.Suspended } })
+        // Same forced-logout treatment updateUserStatus gives an ordinary
+        // suspended user -- otherwise a currently-logged-in recruiter would
+        // keep a live session/refresh token despite the account no longer
+        // being Active.
+        await tx.refreshToken.deleteMany({ where: { userId: { in: userIds } } })
+        await tx.session.updateMany({ where: { userId: { in: userIds }, revoked: false }, data: { revoked: true } })
+      }
+
+      await tx.job.updateMany({
+        where: { companyId, status: JobStatus.approved },
+        data: { visibility: JobVisibility.hidden },
+      })
+    })
+
+    for (const r of recruitersToSuspend) {
+      await PermissionCacheManager.invalidateUser(r.userId)
+      EventBus.publish("UserAccountStatusChanged", {
+        userId: r.userId,
+        email: r.user.email,
+        fullName: r.fullName,
+        status: "Suspended",
+        operatorEmail: admin?.email,
+        context,
+      })
+    }
+
+    EventBus.publish("AuditCreated", {
+      ...context,
+      operatorId: adminId,
+      operatorEmail: admin?.email,
+      category: "ADMIN",
+      action: "SUSPEND_COMPANY",
+      entity: "Company",
+      entityId: companyId,
+      oldValue: { status: company.status },
+      newValue: { status: CompanyStatus.suspended, recruitersSuspended: recruitersToSuspend.length },
+    })
+
+    return { success: true }
+  }
+
+  // Mirror of suspendCompany -- always restores `approved` (this method can
+  // only ever be called on a currently-suspended company, and a company
+  // only reaches `suspended` from `approved` in the first place; see
+  // suspendCompany's guard). Only recruiters left Suspended by
+  // suspendCompany are reactivated -- one independently Blocked before the
+  // company was ever suspended stays Blocked, not silently reactivated as a
+  // side effect of this company-level action.
+  async unsuspendCompany(adminId: string, companyId: string, context?: ServiceContext) {
+    const company = await prisma.company.findUnique({
+      where: { id: companyId },
+      include: { recruiters: { include: { user: true } } },
+    })
+    if (!company) {
+      throw new Error("Company profile not found")
+    }
+    if (company.status !== CompanyStatus.suspended) {
+      throw new AppError("This company is not currently suspended.", 400)
+    }
+
+    const admin = await prisma.user.findUnique({ where: { id: adminId } })
+    const recruitersToReactivate = company.recruiters.filter((r) => r.user.status === UserStatus.Suspended)
+
+    await prisma.$transaction(async (tx) => {
+      await tx.company.update({ where: { id: companyId }, data: { status: CompanyStatus.approved } })
+
+      if (recruitersToReactivate.length > 0) {
+        await tx.user.updateMany({
+          where: { id: { in: recruitersToReactivate.map((r) => r.userId) } },
+          data: { status: UserStatus.Active },
+        })
+      }
+
+      await tx.job.updateMany({
+        where: { companyId, status: JobStatus.approved },
+        data: { visibility: JobVisibility.visible },
+      })
+    })
+
+    for (const r of recruitersToReactivate) {
+      await PermissionCacheManager.invalidateUser(r.userId)
+      EventBus.publish("UserAccountReactivated", {
+        userId: r.userId,
+        email: r.user.email,
+        fullName: r.fullName,
+        operatorEmail: admin?.email,
+        context,
+      })
+    }
+
+    EventBus.publish("AuditCreated", {
+      ...context,
+      operatorId: adminId,
+      operatorEmail: admin?.email,
+      category: "ADMIN",
+      action: "UNSUSPEND_COMPANY",
+      entity: "Company",
+      entityId: companyId,
+      oldValue: { status: CompanyStatus.suspended },
+      newValue: { status: CompanyStatus.approved, recruitersReactivated: recruitersToReactivate.length },
+    })
+
+    return { success: true }
+  }
+
+  // Permanent company deletion -- the company, every recruiter account under
+  // it, and every job those recruiters posted (with everything Job/User
+  // cascade normally reach: applications, interviews, saved-job entries,
+  // notifications, etc). Order matters: Job.recruiterId and
+  // RecruiterProfile.companyId are both plain restricted FKs (no onDelete:
+  // Cascade), so jobs must go first, then the recruiter Users (which cascade
+  // -delete their RecruiterProfile rows), and only then the Company row
+  // itself -- attempting any other order hits a foreign key violation.
+  async deleteCompany(adminId: string, companyId: string, context?: ServiceContext) {
+    const company = await prisma.company.findUnique({
+      where: { id: companyId },
+      include: { recruiters: { include: { user: true } } },
+    })
+    if (!company) {
+      throw new Error("Company profile not found")
+    }
+
+    const admin = await prisma.user.findUnique({ where: { id: adminId } })
+    const jobCount = await prisma.job.count({ where: { companyId } })
+
+    // Best-effort cleanup of files cascade can't reach (only the DB pointers
+    // get removed by the deletes below) -- same non-fatal try/catch pattern
+    // deleteUser already uses for a candidate's resume file.
+    const filesToClean: string[] = []
+    if (company.logoPublicId) filesToClean.push(company.logoPublicId)
+    if (Array.isArray(company.verificationDocuments)) {
+      for (const doc of company.verificationDocuments as any[]) {
+        if (doc?.publicId) filesToClean.push(doc.publicId)
+      }
+    }
+    for (const publicId of filesToClean) {
+      try {
+        await deleteFile(publicId, true)
+      } catch (err: any) {
+        logger.warn(`[FileStorage] Failed to delete asset for deleted company ${companyId}: ${err.message}`)
+      }
+    }
+
+    try {
+      await prisma.$transaction(async (tx) => {
+        await tx.job.deleteMany({ where: { companyId } })
+        if (company.recruiters.length > 0) {
+          await tx.user.deleteMany({ where: { id: { in: company.recruiters.map((r) => r.userId) } } })
+        }
+        await tx.company.delete({ where: { id: companyId } })
+      })
+    } catch (err: any) {
+      if (err?.code === "P2003" || /foreign key|violates.*constraint/i.test(err?.message || "")) {
+        throw new AppError(
+          "This company can't be deleted because other records still reference it.",
+          409
+        )
+      }
+      throw err
+    }
+
+    for (const r of company.recruiters) {
+      await PermissionCacheManager.invalidateUser(r.userId)
+    }
+
+    EventBus.publish("AuditCreated", {
+      ...context,
+      operatorId: adminId,
+      operatorEmail: admin?.email,
+      category: "ADMIN",
+      action: "DELETE_COMPANY",
+      entity: "Company",
+      entityId: companyId,
+      oldValue: {
+        name: company.name,
+        status: company.status,
+        recruitersDeleted: company.recruiters.length,
+        jobsDeleted: jobCount,
+      },
+    })
+
+    // Best-effort notification to each recruiter whose account just got
+    // deleted as a side effect -- reuses the same UserAccountDeleted email
+    // an ordinary recruiter delete already sends, so there's no separate
+    // "your company was deleted" template to maintain.
+    for (const r of company.recruiters) {
+      EventBus.publish("UserAccountDeleted", {
+        userId: r.userId,
+        email: r.user.email,
+        fullName: r.fullName,
+        operatorEmail: admin?.email,
+        context,
+      })
+    }
+
+    return { success: true, recruitersDeleted: company.recruiters.length, jobsDeleted: jobCount }
+  }
+
   // ==========================================
   // COMPANY PERK REQUESTS (Parts 6/7 -- deliberately independent from
   // verifyCompany() above; a company's registration approval must never

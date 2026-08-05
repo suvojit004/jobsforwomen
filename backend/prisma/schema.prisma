@@ -25,6 +25,15 @@ enum CompanyStatus {
   approved
   rejected
   info_requested
+  // Distinct from `rejected`/`info_requested` -- those are verification-
+  // workflow outcomes for a company that never got approved. `suspended` is
+  // a moderation action against a company that WAS approved and operating,
+  // same conflation of verification-workflow + moderation status that
+  // UserStatus already has (PendingVerification/Rejected alongside
+  // Active/Suspended/Blocked). Unsuspending always restores `approved`
+  // rather than tracking whatever the prior sub-state was -- see
+  // AdminService.suspendCompany/unsuspendCompany.
+  suspended
 }
 
 // Per-perk approval workflow (Parts 6/7 of the recruiter-onboarding spec).
