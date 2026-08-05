@@ -1305,8 +1305,24 @@ export class AdminService {
   // ==========================================
   // FEATURE FLAGS
   // ==========================================
+  // push_notifications, advanced_analytics, experimental_sockets, and
+  // mfa_enforced are no longer seeded (see seed.ts) since nothing in the
+  // codebase ever branched on them -- they only ever rendered as permanently
+  // disabled "Not Implemented" rows on the Feature Configs page. Filtered
+  // out here too so a database seeded before this change (which still has
+  // those 4 rows sitting in the table) stops surfacing them immediately on
+  // redeploy, with no migration required -- the rows are just left dormant
+  // rather than destructively deleted.
+  private static readonly RETIRED_UNIMPLEMENTED_FLAG_KEYS = new Set([
+    "push_notifications",
+    "advanced_analytics",
+    "experimental_sockets",
+    "mfa_enforced",
+  ])
+
   async getFeatureFlags() {
-    return prisma.featureFlag.findMany()
+    const flags = await prisma.featureFlag.findMany()
+    return flags.filter((f) => !AdminService.RETIRED_UNIMPLEMENTED_FLAG_KEYS.has(f.key))
   }
 
   async createFeatureFlag(adminId: string, data: any, context?: ServiceContext) {

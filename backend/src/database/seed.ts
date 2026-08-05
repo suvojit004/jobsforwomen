@@ -138,13 +138,18 @@ async function main() {
   }
 
   // 6. Seed Feature Flags
+  // push_notifications, advanced_analytics, experimental_sockets, and
+  // mfa_enforced used to be seeded here too, but nothing in the codebase
+  // ever branched on them (no push delivery mechanism, no analytics gate,
+  // no socket-listener gate, no MFA challenge in the login flow) -- they
+  // only ever showed up on the admin Feature Configs page as permanently
+  // disabled "Not Implemented" rows. Removed from seeding entirely rather
+  // than kept as dead placeholders; see AdminService.getFeatureFlags for
+  // the matching filter that hides any pre-existing rows for these keys on
+  // databases seeded before this change.
   const flags = [
     { key: "chat_enabled", value: true, category: "Communication", description: "Enables realtime candidate-recruiter chat messages" },
     { key: "email_automation", value: true, category: "Communication", description: "Automates welcome and status updates mailing queues" },
-    { key: "push_notifications", value: false, category: "Notifications", description: "Allows browser push alerts and notifications" },
-    { key: "advanced_analytics", value: false, category: "Analytics", description: "Displays dynamic hiring conversion rates donut details" },
-    { key: "experimental_sockets", value: true, category: "Experimental", description: "Toggles advanced multi-room typing listeners" },
-    { key: "mfa_enforced", value: false, category: "Security", description: "Enforces two-factor registration check processes" },
   ]
   console.log("Seeding Feature Flags...")
   for (const flag of flags) {

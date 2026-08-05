@@ -2,20 +2,23 @@ import { useState, useEffect } from "react"
 import {
   MessageSquare,
   Mail,
-  Bell,
-  BarChart,
   Network,
-  Lock,
 } from "lucide-react"
 import { DashboardCard } from "@/components/shared/DashboardCard"
 import { Button } from "@/components/ui/button"
 import { AdminApi } from "../services/adminApi"
 
-// Displays and edits the actual 6 seeded FeatureFlag rows (chat_enabled,
-// email_automation, push_notifications, advanced_analytics,
-// experimental_sockets, mfa_enforced) with the payload shape the backend's
+// Displays and edits the real, database-persisted FeatureFlag rows
+// (chat_enabled, email_automation) with the payload shape the backend's
 // Zod schema expects (`{ value }`), and doesn't touch the separate
 // client-only @/config/features localStorage store.
+//
+// push_notifications, advanced_analytics, experimental_sockets, and
+// mfa_enforced used to be seeded and shown here too, always as permanently
+// disabled "Not Implemented" rows -- nothing in the codebase ever branched
+// on them. They've been removed from seeding and are filtered out of
+// AdminService.getFeatureFlags() server-side, so they no longer come back
+// from the API at all; there's nothing left here to special-case for them.
 
 interface ApiFlag {
   id: string
@@ -40,30 +43,6 @@ const FLAG_META: Record<
     icon: Mail,
     enforced: "Enforced: when off, status-update/digest emails are skipped before being queued. Account verification and password-reset emails always send regardless (security-critical).",
     implemented: true,
-  },
-  push_notifications: {
-    name: "Browser Push Notifications",
-    icon: Bell,
-    enforced: "Not implemented: there is no push-notification delivery mechanism in the codebase yet (no service worker / Web Push subscription flow). Toggling this row would change nothing, so it's locked instead of offered as a working switch.",
-    implemented: false,
-  },
-  advanced_analytics: {
-    name: "Advanced Analytics",
-    icon: BarChart,
-    enforced: "Not implemented: no code path currently branches on this flag. The Admin Dashboard's real analytics are always shown regardless. Toggling this row would change nothing, so it's locked instead of offered as a working switch.",
-    implemented: false,
-  },
-  experimental_sockets: {
-    name: "Experimental Socket Listeners",
-    icon: Network,
-    enforced: "Not implemented: no code path currently branches on this flag. Socket.IO's typing/read-receipt listeners are always active regardless. Toggling this row would change nothing, so it's locked instead of offered as a working switch.",
-    implemented: false,
-  },
-  mfa_enforced: {
-    name: "Enforce Multi-Factor Auth",
-    icon: Lock,
-    enforced: "Not implemented: there is no MFA/2FA challenge anywhere in the login flow yet (no OTP generation, verification endpoint, or challenge step exists in auth). Toggling this row would change nothing, so it's locked instead of offered as a working switch.",
-    implemented: false,
   },
 }
 
@@ -136,7 +115,7 @@ export function FeatureConfigs() {
           </h1>
           <p className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">
             Toggles the real, database-persisted platform flags. Each card states exactly what it does and does not
-            enforce -- some flags below are honest placeholders for features that don't exist yet.
+            enforce.
           </p>
         </div>
         <Button
