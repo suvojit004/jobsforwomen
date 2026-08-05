@@ -23,7 +23,7 @@ import { DashboardCard } from "@/components/shared/DashboardCard"
 import { AdminApi } from "../services/adminApi"
 import { useAuth } from "@/hooks/useAuth"
 
-type TabType = "candidates" | "recruiters" | "admins" | "companies"
+type TabType = "candidates" | "recruiters" | "companies"
 
 interface CandidateUser {
   id: string
@@ -52,15 +52,6 @@ interface RecruiterUser {
   recruiterProfileId: string
   companyId: string | null
   verified: boolean
-  status: string
-}
-
-interface AdminUser {
-  id: string
-  name: string
-  email: string
-  role: string
-  roles: string[]
   status: string
 }
 
@@ -96,9 +87,15 @@ export function UserModeration() {
   const [activeTab, setActiveTab] = useState<TabType>("candidates")
   const [candidates, setCandidates] = useState<CandidateUser[]>([])
   const [recruiters, setRecruiters] = useState<RecruiterUser[]>([])
-  const [admins, setAdmins] = useState<AdminUser[]>([])
   const [companies, setCompanies] = useState<CompanyRow[]>([])
   const [searchQuery, setSearchQuery] = useState("")
+  // Candidates-tab-only filter row (All Candidates / With Resume / No
+  // Resume / Blocked), same filterMode pattern CandidateManagement.tsx
+  // already uses -- "Blocked" here means the collapsed two-state status
+  // this table uses (see loadUsers below: anything non-Active reads as
+  // "Inactive"), not the richer PendingVerification/Suspended/Blocked enum
+  // CandidateManagement.tsx's own status column shows.
+  const [filterMode, setFilterMode] = useState<"all" | "hasResume" | "noResume" | "blocked">("all")
   const [loading, setLoading] = useState(true)
   const [deletingId, setDeletingId] = useState<string | null>(null)
 
@@ -120,10 +117,9 @@ export function UserModeration() {
   const loadUsers = async () => {
     try {
       setLoading(true)
-      const [candidatesList, recruitersList, adminsList, companiesList] = await Promise.all([
+      const [candidatesList, recruitersList, companiesList] = await Promise.all([
         AdminApi.getUsers("candidate"),
         AdminApi.getUsers("recruiter"),
-        AdminApi.getUsers("admin"),
         AdminApi.getCompanies(),
       ])
 
@@ -147,18 +143,6 @@ export function UserModeration() {
         verified: !!u.recruiterProfile?.verified,
         status: u.status === "Active" ? "Active" : "Inactive"
       })))
-
-      setAdmins((adminsList || []).map((u: any) => {
-        const roleNames: string[] = (u.roles || []).map((r: any) => r.role?.name).filter(Boolean)
-        return {
-          id: u.id,
-          name: u.fullName || u.email.split("@")[0],
-          email: u.email,
-          role: roleNames.join(", ") || "Admin",
-          roles: roleNames,
-          status: u.status === "Active" ? "Active" : "Inactive"
-        }
-      }))
 
       setCompanies((companiesList || []).map((c: any) => {
         const recruiter = (c.recruiters || [])[0]
@@ -185,9 +169,9 @@ export function UserModeration() {
   }, [])
 
   // Action handlers
-  const handleToggleStatus = async (userId: string, role: "candidate" | "recruiter" | "admin") => {
+  const handleToggleStatus = async (userId: string, role: "candidate" | "recruiter") => {
     try {
-      const list = role === "candidate" ? candidates : role === "recruiter" ? recruiters : admins
+      const list = role === "candidate" ? candidates : recruiters
       const userObj = list.find((u) => u.id === userId)
       const nextStatus = userObj?.status === "Active" ? "Suspended" : "Active"
       await AdminApi.updateUserStatus(userId, nextStatus)
@@ -277,25 +261,24 @@ export function UserModeration() {
   }
 
   // Filter lists based on search
-  const filteredCandidates = candidates.filter(
-    (c) =>
+  const filteredCandidates = candidates.filter((c) => {
+    const matchesSearch =
       c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       c.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
       c.role.toLowerCase().includes(searchQuery.toLowerCase())
-  )
+    if (!matchesSearch) return false
+
+    if (filterMode === "hasResume") return c.hasResume
+    if (filterMode === "noResume") return !c.hasResume
+    if (filterMode === "blocked") return c.status !== "Active"
+    return true
+  })
 
   const filteredRecruiters = recruiters.filter(
     (r) =>
       r.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       r.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
       r.company.toLowerCase().includes(searchQuery.toLowerCase())
-  )
-
-  const filteredAdmins = admins.filter(
-    (a) =>
-      a.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      a.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      a.role.toLowerCase().includes(searchQuery.toLowerCase())
   )
 
   const filteredCompanies = companies.filter(
@@ -520,107 +503,6 @@ export function UserModeration() {
     },
   ]
 
-  const adminColumns: ColumnDef<AdminUser>[] = [
-    {
-      header: "Admin Info",
-      cell: (row) => (
-        <div className="space-y-0.5">
-          <p className="font-bold text-slate-900 dark:text-white">{row.name}</p>
-          <p className="text-[10px] text-slate-400 dark:text-slate-500 font-semibold">{row.email}</p>
-        </div>
-      ),
-    },
-    {
-      header: "System Role",
-      accessorKey: "role",
-    },
-    {
-      header: "Assigned Roles",
-      cell: (row) => (
-        <div className="flex flex-wrap gap-1">
-          {row.roles.length > 0 ? (
-            row.roles.map((r, i) => (
-              <span key={i} className="text-[9px] font-extrabold bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded text-slate-650 dark:text-slate-300">
-                {r}
-              </span>
-            ))
-          ) : (
-            <span className="text-[10px] text-slate-400 dark:text-slate-500 font-bold">No roles assigned</span>
-          )}
-        </div>
-      ),
-    },
-    {
-      header: "Status",
-      cell: (row) => (
-        <span
-          className={`inline-flex items-center text-[10px] font-black px-2 py-0.5 rounded-full ${
-            row.status === "Active"
-              ? "bg-emerald-100/60 text-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-350"
-              : "bg-pink-100/60 text-pink-800 dark:bg-pink-950/30 dark:text-pink-350"
-          }`}
-        >
-          {row.status}
-        </span>
-      ),
-    },
-    {
-      header: "Actions",
-      className: "text-right",
-      cell: (row) => {
-        const isSuperAdmin = row.roles.includes("Super Admin")
-        const isSelf = row.id === currentUser?.id
-        return (
-          <div className="flex flex-wrap justify-end gap-1.5">
-            <Button
-              size="sm"
-              variant={row.status === "Active" ? "destructive" : "outline"}
-              className="h-7 text-[10px] font-bold flex items-center gap-1"
-              // Never allow suspending a Super Admin through this screen -- the
-              // previous check compared row.id to the literal string "admin-1",
-              // which no real seeded/created user ID ever equals (IDs are
-              // UUIDs), so it silently protected nobody. Guard on the real role.
-              disabled={isSuperAdmin}
-              title={isSuperAdmin ? "Super Admin accounts cannot be suspended from this screen." : undefined}
-              onClick={() => handleToggleStatus(row.id, "admin")}
-            >
-              {row.status === "Active" ? (
-                <>
-                  <UserX className="size-3" />
-                  Suspend Admin
-                </>
-              ) : (
-                <>
-                  <UserCheck className="size-3" />
-                  Activate Admin
-                </>
-              )}
-            </Button>
-            {canDeleteUsers && (
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-7 text-[10px] font-bold flex items-center gap-1 border-red-200 text-red-600 hover:bg-red-50 dark:border-red-950/50 dark:text-red-400 dark:hover:bg-red-950/20"
-                disabled={isSuperAdmin || isSelf || deletingId === row.id}
-                title={
-                  isSuperAdmin
-                    ? "Super Admin accounts cannot be deleted from this screen."
-                    : isSelf
-                      ? "You cannot delete your own account from this screen."
-                      : undefined
-                }
-                onClick={() => handleDeleteUser(row.id, row.name, row.email)}
-              >
-                <Trash2 className="size-3" />
-                {deletingId === row.id ? "Deleting..." : "Delete"}
-              </Button>
-            )}
-          </div>
-        )
-      },
-    },
-  ]
-
   // Company status badge colors -- same mapping CompanyApprovals.tsx uses,
   // kept local here since this tab is a lightweight read-only directory, not
   // a moderation queue (no action buttons beyond "View Details").
@@ -706,7 +588,6 @@ export function UserModeration() {
   const tabsConfig = [
     { key: "candidates", label: "Candidates", count: candidates.length },
     { key: "recruiters", label: "Recruiters", count: recruiters.length },
-    { key: "admins", label: "Administrators", count: admins.length },
     { key: "companies", label: "Companies", count: companies.length },
   ]
 
@@ -762,6 +643,41 @@ export function UserModeration() {
         </div>
       </div>
 
+      {/* Resume/status filter pills -- Candidates tab only, same filterMode
+          pattern CandidateManagement.tsx uses. */}
+      {activeTab === "candidates" && (
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant={filterMode === "all" ? "default" : "outline"}
+            className="h-8 text-[11px] font-bold"
+            onClick={() => setFilterMode("all")}
+          >
+            All Candidates
+          </Button>
+          <Button
+            variant={filterMode === "hasResume" ? "default" : "outline"}
+            className="h-8 text-[11px] font-bold"
+            onClick={() => setFilterMode("hasResume")}
+          >
+            With Resume
+          </Button>
+          <Button
+            variant={filterMode === "noResume" ? "default" : "outline"}
+            className="h-8 text-[11px] font-bold"
+            onClick={() => setFilterMode("noResume")}
+          >
+            No Resume
+          </Button>
+          <Button
+            variant={filterMode === "blocked" ? "default" : "outline"}
+            className="h-8 text-[11px] font-bold"
+            onClick={() => setFilterMode("blocked")}
+          >
+            Blocked
+          </Button>
+        </div>
+      )}
+
       {/* Table view */}
       <DashboardCard className="p-4 overflow-hidden">
         {loading ? (
@@ -785,13 +701,6 @@ export function UserModeration() {
                 columns={recruiterColumns}
                 data={filteredRecruiters}
                 emptyMessage="No matching recruiters found."
-              />
-            )}
-            {activeTab === "admins" && (
-              <DataTable
-                columns={adminColumns}
-                data={filteredAdmins}
-                emptyMessage="No matching administrators found."
               />
             )}
             {activeTab === "companies" && (
