@@ -9,6 +9,7 @@ jest.mock("../../shared/database/db", () => {
     rolePermission: { createMany: jest.fn(), deleteMany: jest.fn() },
     userRole: { deleteMany: jest.fn(), createMany: jest.fn(), count: jest.fn() },
     recruiterProfile: { findUnique: jest.fn(), update: jest.fn(), updateMany: jest.fn(), findMany: jest.fn() },
+    adminProfile: { findUnique: jest.fn(), upsert: jest.fn() },
     company: { findUnique: jest.fn(), update: jest.fn(), count: jest.fn() },
     companyVerificationHistory: { create: jest.fn() },
     industry: { upsert: jest.fn() },
@@ -968,52 +969,61 @@ describe("Admin Module Integration Tests (Phase 7)", () => {
     })
   })
 
-  // Final Implementation Pass, Part 4: PUT /admins/settings previously
-  // received the admin profile payload as the raw request body, but
-  // admin.controller.ts's updateAdminSettings has always read
-  // `req.body.preferences` -- so the field was always `undefined`, and
-  // Prisma silently treats an `undefined` field as "leave unchanged." The
-  // endpoint returned 200 and the frontend showed a success toast, but the
-  // database write never happened. This is now fixed on the frontend
-  // (adminApi.ts wraps the payload under `preferences`); these tests lock in
-  // the backend's actual contract so a future regression can't silently
-  // reintroduce the mismatch.
+  // Administrator Profile Details fix: name/email were previously read and
+  // written into the generic User.preferences JSON blob, which nothing else
+  // in the app (Navbar greeting, audit operatorEmail, etc.) actually reads.
+  // The real identity field is AdminProfile.fullName, created for every
+  // admin account on every provisioning path (seed, create-admin script,
+  // AdminService.createAdmin, invitation acceptance). Email is deliberately
+  // read-only: no role on the platform can self-service change their real
+  // login email, so admins shouldn't be able to either -- see
+  // updateAdminSettingsSchema in admin.validator.ts.
   describe("Admin Settings persistence contract (PUT /admins/settings)", () => {
-    it("persists the settings object when sent wrapped under `preferences`", async () => {
-      mockPrisma.user.update.mockResolvedValue({
-        preferences: { name: "New Admin Name", email: "newadmin@jfw.info" },
-      })
+    it("persists the display name to the real AdminProfile.fullName field via upsert, not the generic User.preferences blob", async () => {
+      mockPrisma.user.findUnique.mockImplementation(async (args: any) => ({
+        id: args.where.id,
+        status: UserStatus.Active,
+        email: "moderator@jfw.info",
+        preferences: {},
+        adminProfile: { fullName: "Old Admin Name" },
+      }))
+      mockPrisma.adminProfile.upsert.mockResolvedValue({ userId: "moderator-id", fullName: "New Admin Name" })
 
       const res = await request(app)
         .put("/api/v1/admins/settings")
         .set("Authorization", `Bearer ${moderatorToken}`)
-        .send({ preferences: { name: "New Admin Name", email: "newadmin@jfw.info" } })
+        .send({ name: "New Admin Name" })
 
       expect(res.status).toBe(200)
-      expect(mockPrisma.user.update).toHaveBeenCalledWith(
-        expect.objectContaining({
-          data: { preferences: { name: "New Admin Name", email: "newadmin@jfw.info" } },
-        })
-      )
+      expect(mockPrisma.adminProfile.upsert).toHaveBeenCalledWith({
+        where: { userId: "moderator-id" },
+        update: { fullName: "New Admin Name" },
+        create: { userId: "moderator-id", fullName: "New Admin Name" },
+      })
+      // Regression guard: this used to write into the generic JSON blob
+      // instead of a real column.
+      expect(mockPrisma.user.update).not.toHaveBeenCalled()
     })
 
-    it("does not silently no-op when the payload is sent flat (regression guard for the confirmed bug)", async () => {
-      mockPrisma.user.update.mockResolvedValue({ preferences: undefined })
+    it("ignores an `email` field in the request body -- there is no self-service email change anywhere on the platform", async () => {
+      mockPrisma.user.findUnique.mockImplementation(async (args: any) => ({
+        id: args.where.id,
+        status: UserStatus.Active,
+        email: "moderator@jfw.info",
+        preferences: {},
+        adminProfile: { fullName: "Existing Name" },
+      }))
 
-      await request(app)
+      const res = await request(app)
         .put("/api/v1/admins/settings")
         .set("Authorization", `Bearer ${moderatorToken}`)
-        .send({ name: "Flat Payload Name" })
+        .send({ name: "Existing Name", email: "attacker-supplied@jfw.info" })
 
-      // This documents the real (still-current) backend contract: a flat
-      // payload without a `preferences` wrapper resolves to `undefined` and
-      // Prisma leaves the row unchanged. Callers (the frontend API client)
-      // are responsible for wrapping the payload -- this test exists so
-      // that fact is explicit and covered, not rediscovered by another
-      // silent production save failure.
-      expect(mockPrisma.user.update).toHaveBeenCalledWith(
-        expect.objectContaining({ data: { preferences: undefined } })
-      )
+      expect(res.status).toBe(200)
+      // updateAdminSettingsSchema only recognizes `name` -- Zod's .parse()
+      // silently strips unknown keys, so `email` never reaches the service
+      // layer and User.email is never written from this endpoint.
+      expect(mockPrisma.user.update).not.toHaveBeenCalled()
     })
   })
 })

@@ -62,6 +62,16 @@ export const createAdminSchema = z.object({
   roleNames: z.array(z.string().min(1)).min(1, "At least one role is required"),
 })
 
+// Administrative Settings ("Administrator Profile Details" card) -- name is
+// the only real, writable field. Email is deliberately excluded: no role
+// anywhere on the platform can self-service change their own login email
+// (candidates/recruiters only get notification-preference toggles under
+// "email", never the real User.email), so admins shouldn't be able to
+// either. See AdminService.updateAdminSettings.
+export const updateAdminSettingsSchema = z.object({
+  name: z.string().trim().min(2, "Full name must be at least 2 characters").max(100).optional(),
+})
+
 // Admin Management listing filters
 export const listAdminsQuerySchema = z.object({
   search: z.string().trim().max(200).optional(),

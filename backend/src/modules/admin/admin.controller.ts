@@ -17,6 +17,7 @@ import {
   reviewPerkRequestSchema,
   createAdminSchema,
   listAdminsQuerySchema,
+  updateAdminSettingsSchema,
 } from "./admin.validator"
 import { CompanyStatus, UserStatus, PerkStatus } from "@prisma/client"
 
@@ -547,9 +548,17 @@ export class AdminController {
 
   updateAdminSettings = async (req: Request, res: Response, next: any) => {
     try {
+      // Previously read req.body.preferences with zero validation and wrote
+      // it straight into the generic User.preferences JSON blob -- so
+      // "saving" a new name/email here never touched the real
+      // AdminProfile.fullName/User.email columns anything else in the app
+      // reads (Navbar greeting, audit log operatorEmail, etc). It silently
+      // round-tripped into a blob nothing else looks at. Now validated and
+      // routed to the real field; see AdminService.updateAdminSettings.
+      const validated = updateAdminSettingsSchema.parse(req.body)
       const adminId = req.user?.userId || ""
       const context = this.getContext(req)
-      const settings = await this.service.updateAdminSettings(adminId, req.body.preferences, context)
+      const settings = await this.service.updateAdminSettings(adminId, validated, context)
       return sendSuccess(res, { settings }, "Admin settings updated successfully.")
     } catch (err: any) {
       next(err)

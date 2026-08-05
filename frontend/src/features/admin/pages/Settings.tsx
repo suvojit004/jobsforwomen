@@ -14,10 +14,14 @@ import { isValidPassword, PASSWORD_HELP_TEXT } from "@/utils/validators"
 // JWT_REFRESH_EXPIRY), not a per-user setting, and there's no OTP/MFA step
 // anywhere in the auth flow. Both are honestly disabled in the UI rather
 // than saving a value that has no runtime effect.
+// `email` is read-only display-only: no role on the platform (candidate,
+// recruiter, or admin) has any self-service way to change their real login
+// User.email, so this field is never submitted and isn't validated as an
+// editable value -- see AdminApi.updateSettings / AdminService.updateAdminSettings.
 const adminSettingsSchema = z
   .object({
     name: z.string().min(3, "Name must be at least 3 characters."),
-    email: z.string().email("Please provide a valid administrative email address."),
+    email: z.string().optional(),
     currentPassword: z.string().min(1, "Current password is required to verify changes."),
     newPassword: z.string().optional().or(z.literal("")),
     confirmNewPassword: z.string().optional().or(z.literal("")),
@@ -80,8 +84,8 @@ export function Settings() {
       try {
         const setts = await AdminApi.getSettings()
         reset({
-          name: setts.name || "SysAdmin Control",
-          email: setts.email || "admin@jobsforwomen.info",
+          name: setts.name || "",
+          email: setts.email || "",
           currentPassword: "",
           newPassword: "",
           confirmNewPassword: "",
@@ -105,7 +109,6 @@ export function Settings() {
       }
       await AdminApi.updateSettings({
         name: values.name,
-        email: values.email,
       })
       setSuccess(true)
       reset({
@@ -136,8 +139,8 @@ export function Settings() {
           Administrative Settings
         </h1>
         <p className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">
-          Update your administrator profile and password. Session timeout and 2FA below are shown for visibility
-          but are not yet backed by real enforcement -- see each control for details.
+          Update your administrator name and password. Administrative email is read-only. Session timeout and 2FA
+          below are shown for visibility but are not yet backed by real enforcement -- see each control for details.
         </p>
       </div>
 
@@ -185,22 +188,25 @@ export function Settings() {
                   )}
                 </div>
 
-                {/* Admin email */}
-                <div className="space-y-1.5">
-                  <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400">
-                    Administrative Email <span className="text-red-500">*</span>
+                {/* Admin email -- read-only. No role on the platform
+                    (candidate, recruiter, or admin) has any self-service way
+                    to change their real login email, so this isn't an
+                    editable field here either; it's shown for reference only. */}
+                <div className="space-y-1.5 opacity-70">
+                  <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400 flex items-center gap-1.5">
+                    <Lock className="size-3" />
+                    Administrative Email
                   </label>
                   <input
                     type="email"
+                    disabled
                     {...register("email")}
-                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-[#6B2C91]/30 dark:border-slate-800 dark:bg-slate-950 dark:text-white font-bold"
+                    title="Not editable -- there is no self-service email change anywhere on the platform. Contact a Super Admin to change this."
+                    className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs cursor-not-allowed dark:border-slate-800 dark:bg-slate-900 dark:text-slate-500 font-bold"
                   />
-                  {errors.email && (
-                    <p className="text-[10px] text-red-500 font-bold flex items-center gap-1">
-                      <AlertCircle className="size-3 shrink-0" />
-                      {errors.email.message}
-                    </p>
-                  )}
+                  <p className="text-[9px] font-semibold text-slate-400 dark:text-slate-500">
+                    Not editable -- login email can't be self-service changed by any role on the platform.
+                  </p>
                 </div>
               </div>
 

@@ -2607,37 +2607,69 @@ export class AdminService {
     return { success: true, roles: nextRoleNames }
   }
 
+  // Real profile fields, not the generic preferences blob -- name comes
+  // from AdminProfile.fullName (what Navbar, audit logs, and every email
+  // template actually display), email from the real User.email (read-only
+  // here; see updateAdminSettings for why). preferences is still returned
+  // for forward-compatibility with any future appearance/notification
+  // settings, but nothing in the current UI reads or writes it.
   async getAdminSettings(adminId: string) {
     const user = await prisma.user.findUnique({
       where: { id: adminId },
-      select: { preferences: true }
+      include: { adminProfile: true },
     })
-    return user?.preferences || {}
+    if (!user) {
+      throw new Error("Admin account not found")
+    }
+    return {
+      name: user.adminProfile?.fullName || "",
+      email: user.email,
+      preferences: user.preferences || {},
+    }
   }
 
-  async updateAdminSettings(adminId: string, preferences: any, context?: ServiceContext) {
-    const updated = await prisma.user.update({
+  async updateAdminSettings(adminId: string, data: { name?: string }, context?: ServiceContext) {
+    const user = await prisma.user.findUnique({
       where: { id: adminId },
-      data: { preferences },
-      select: { preferences: true }
+      include: { adminProfile: true },
     })
+    if (!user) {
+      throw new Error("Admin account not found")
+    }
 
-    // Part 14 audit-completeness fix: the recruiter and candidate
-    // equivalents of "save my own settings" are both audited
-    // (UPDATE_SETTINGS / UPDATE_FEATURE_FLAG respectively) -- this admin
-    // one previously wasn't, despite admin preferences including things
-    // like notification routing that are worth being able to trace.
-    EventBus.publish("AuditCreated", {
-      ...context,
-      operatorId: adminId,
-      category: "ADMIN",
-      action: "UPDATE_SETTINGS",
-      entity: "User",
-      entityId: adminId,
-      newValue: preferences,
-    })
+    const oldName = user.adminProfile?.fullName || ""
 
-    return updated.preferences
+    // Previously this wrote whatever the frontend sent into User.preferences
+    // (a generic JSON blob meant for appearance/privacy/notification
+    // settings, per the schema comment) -- so "Save Admin Profile" appeared
+    // to succeed but never actually renamed the admin anywhere real. This
+    // now updates the actual AdminProfile.fullName column, the same one
+    // Navbar's greeting, audit log entries, and every admin-tier email
+    // template already read from.
+    if (typeof data.name === "string" && data.name.trim().length > 0 && data.name.trim() !== oldName) {
+      await prisma.adminProfile.upsert({
+        where: { userId: adminId },
+        update: { fullName: data.name.trim() },
+        // Defensive fallback -- every admin creation path (seed, Admin
+        // Management, invitation acceptance) already creates an
+        // AdminProfile row alongside the User, so this create branch should
+        // never actually run in practice.
+        create: { userId: adminId, fullName: data.name.trim() },
+      })
+
+      EventBus.publish("AuditCreated", {
+        ...context,
+        operatorId: adminId,
+        category: "ADMIN",
+        action: "UPDATE_SETTINGS",
+        entity: "User",
+        entityId: adminId,
+        oldValue: { name: oldName },
+        newValue: { name: data.name.trim() },
+      })
+    }
+
+    return this.getAdminSettings(adminId)
   }
 
   async getAdminNotifications(adminId: string) {

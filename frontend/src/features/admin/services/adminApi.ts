@@ -150,10 +150,14 @@ export const AdminApi = {
     return res?.data?.settings || res?.data || {}
   },
 
-  async updateSettings(payload: any) {
-    // admin.controller.ts's updateAdminSettings reads req.body.preferences,
-    // so the payload must be wrapped under that key.
-    const res = await apiClient.put("/api/v1/admins/settings", { preferences: payload })
+  // Only `name` is a real, writable field (-> AdminProfile.fullName). Email
+  // is intentionally not sent -- it's read-only everywhere in this app (no
+  // role can self-service change their login email), and the old
+  // implementation that accepted it here never actually updated the real
+  // User.email anyway, just a decorative copy nothing else read. See
+  // AdminService.updateAdminSettings.
+  async updateSettings(payload: { name: string }) {
+    const res = await apiClient.put("/api/v1/admins/settings", { name: payload.name })
     return res?.data?.settings || res?.data || {}
   },
 
