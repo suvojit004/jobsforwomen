@@ -265,7 +265,14 @@ export class AuthRepository {
     })
   }
 
-  async createRefreshToken(userId: string, token: string, expiresAt: Date, userAgent?: string, ipAddress?: string) {
+  async createRefreshToken(
+    userId: string,
+    token: string,
+    expiresAt: Date,
+    userAgent?: string,
+    ipAddress?: string,
+    sessionId?: string
+  ) {
     return prisma.refreshToken.create({
       data: {
         userId,
@@ -273,6 +280,7 @@ export class AuthRepository {
         expiresAt,
         userAgent,
         ipAddress,
+        sessionId,
       },
     })
   }

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react"
+import { useState, useEffect, type ChangeEvent } from "react"
 import { toast } from "sonner"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
@@ -8,12 +8,14 @@ import { DashboardCard } from "@/components/shared/DashboardCard"
 import { Button } from "@/components/ui/button"
 import { AdminApi } from "../services/adminApi"
 import { isValidPassword, PASSWORD_HELP_TEXT } from "@/utils/validators"
+import { useAuth } from "@/contexts/AuthContext"
 
-// `sessionTimeout` and `twoFactorEnabled` are intentionally not form fields:
-// token lifetimes are fixed, process-wide config (JWT_ACCESS_EXPIRY/
-// JWT_REFRESH_EXPIRY), not a per-user setting, and there's no OTP/MFA step
-// anywhere in the auth flow. Both are honestly disabled in the UI rather
-// than saving a value that has no runtime effect.
+// `twoFactorEnabled` is intentionally not a form field: there's no OTP/MFA
+// step anywhere in the login flow, so it's honestly disabled in the UI
+// rather than saving a value that has no runtime effect. Inactivity Session
+// Timeout, below, USED to be in the same boat -- it's now real, enforced by
+// sessionTimeout.middleware.ts on every admin-tier request. See
+// TIMEOUT_OPTIONS/handleTimeoutChange further down.
 // `email` is read-only display-only: no role on the platform (candidate,
 // recruiter, or admin) has any self-service way to change their real login
 // User.email, so this field is never submitted and isn't validated as an
@@ -57,11 +59,30 @@ const adminSettingsSchema = z
 
 type AdminSettingsValues = z.infer<typeof adminSettingsSchema>
 
+// Platform-wide policy (SecurityPolicy singleton row) -- "off" means
+// enforcement is disabled (null on the backend). See
+// AdminService.getSecuritySettings/updateSecuritySettings and
+// sessionTimeout.middleware.ts.
+const TIMEOUT_OPTIONS: { value: string; label: string; minutes: number | null }[] = [
+  { value: "off", label: "Never (disabled)", minutes: null },
+  { value: "15", label: "15 Minutes", minutes: 15 },
+  { value: "30", label: "30 Minutes", minutes: 30 },
+  { value: "60", label: "1 Hour", minutes: 60 },
+  { value: "120", label: "2 Hours", minutes: 120 },
+]
+
 export function Settings() {
+  const { user } = useAuth()
+  const isSuperAdmin = !!user?.roles?.includes("Super Admin")
+
   const [saving, setSaving] = useState(false)
   const [success, setSuccess] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
   const [submitError, setSubmitError] = useState("")
+
+  const [timeoutValue, setTimeoutValue] = useState("off")
+  const [timeoutLoading, setTimeoutLoading] = useState(true)
+  const [timeoutSaving, setTimeoutSaving] = useState(false)
 
   const {
     register,
@@ -99,6 +120,40 @@ export function Settings() {
     }
     loadSettings()
   }, [reset])
+
+  useEffect(() => {
+    async function loadSecuritySettings() {
+      try {
+        const sec = await AdminApi.getSecuritySettings()
+        const minutes = sec.adminSessionTimeoutMinutes ?? null
+        const match = TIMEOUT_OPTIONS.find((o) => o.minutes === minutes)
+        setTimeoutValue(match ? match.value : "off")
+      } catch (err: any) {
+        console.error("Failed to load security settings", err)
+      } finally {
+        setTimeoutLoading(false)
+      }
+    }
+    loadSecuritySettings()
+  }, [])
+
+  const handleTimeoutChange = async (e: ChangeEvent<HTMLSelectElement>) => {
+    const nextValue = e.target.value
+    const previousValue = timeoutValue
+    setTimeoutValue(nextValue)
+    setTimeoutSaving(true)
+    try {
+      const opt = TIMEOUT_OPTIONS.find((o) => o.value === nextValue)
+      await AdminApi.updateSecuritySettings(opt ? opt.minutes : null)
+      toast.success("Inactivity session timeout updated.")
+    } catch (err: any) {
+      console.error("Failed to update security settings", err)
+      toast.error(err?.message || "Failed to update session timeout.")
+      setTimeoutValue(previousValue)
+    } finally {
+      setTimeoutSaving(false)
+    }
+  }
 
   const onSubmit = async (values: AdminSettingsValues) => {
     setSaving(true)
@@ -139,8 +194,9 @@ export function Settings() {
           Administrative Settings
         </h1>
         <p className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">
-          Update your administrator name and password. Administrative email is read-only. Session timeout and 2FA
-          below are shown for visibility but are not yet backed by real enforcement -- see each control for details.
+          Update your administrator name and password. Administrative email is read-only. Inactivity Session Timeout
+          is enforced platform-wide. 2FA below is shown for visibility but is not yet backed by real enforcement --
+          see the control for details.
         </p>
       </div>
 
@@ -295,27 +351,42 @@ export function Settings() {
               </h3>
             </div>
 
-            {/* Session Timeout -- honestly disabled (Final Implementation
-                Pass Part 4). Access/refresh token lifetimes are fixed,
-                process-wide values (JWT_ACCESS_EXPIRY/JWT_REFRESH_EXPIRY),
-                not a per-admin setting; there is no session architecture in
-                place to honor a per-user timeout without redesigning how
-                tokens are issued and invalidated. */}
-            <div className="space-y-1.5 opacity-70">
+            {/* Inactivity Session Timeout -- really enforced now (see
+                sessionTimeout.middleware.ts, applied to every admin-tier
+                request). This is a platform-wide policy (SecurityPolicy
+                singleton row), not a per-admin preference, so only a Super
+                Admin can change it -- same gating as Feature Flags. */}
+            <div className={"space-y-1.5" + (isSuperAdmin ? "" : " opacity-70")}>
               <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400 flex items-center gap-1.5">
                 <Lock className="size-3" />
                 Inactivity Session Timeout
               </label>
               <select
-                disabled
-                value="30m"
-                title="Not implemented -- token lifetimes are a fixed, process-wide config value, not a per-admin setting"
-                className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs cursor-not-allowed dark:border-slate-800 dark:bg-slate-900 dark:text-slate-500 font-bold"
+                value={timeoutValue}
+                disabled={!isSuperAdmin || timeoutLoading || timeoutSaving}
+                onChange={handleTimeoutChange}
+                title={
+                  isSuperAdmin
+                    ? "Force-expires admin-tier sessions after this much inactivity, platform-wide."
+                    : "Platform-wide policy -- only a Super Admin can change this."
+                }
+                className={
+                  "w-full rounded-lg border px-3 py-2 text-xs font-bold dark:text-white " +
+                  (isSuperAdmin
+                    ? "border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-[#6B2C91]/30 dark:border-slate-800 dark:bg-slate-950"
+                    : "border-slate-200 bg-slate-50 cursor-not-allowed dark:border-slate-800 dark:bg-slate-900 dark:text-slate-500")
+                }
               >
-                <option value="30m">30 Minutes (fixed)</option>
+                {TIMEOUT_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
               </select>
               <p className="text-[9px] font-semibold text-slate-400 dark:text-slate-500">
-                Not implemented -- access tokens expire on a fixed, server-wide schedule. This control has no runtime effect.
+                {isSuperAdmin
+                  ? "Applies platform-wide to Admin/Super Admin/Moderator/Support Executive sessions."
+                  : "Platform-wide policy -- only a Super Admin can change this."}
               </p>
             </div>
 

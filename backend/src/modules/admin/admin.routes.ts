@@ -7,6 +7,7 @@ import {
   requirePermission,
 } from "../rbac/rbac.middleware"
 import { adminRateLimiter } from "../../shared/middleware/rateLimit.middleware"
+import { enforceAdminSessionTimeout } from "../../shared/middleware/sessionTimeout.middleware"
 
 const router = Router()
 const controller = new AdminController()
@@ -24,6 +25,10 @@ router.use(requireRole(ADMIN_TIER_ROLES))
 // credentials, a buggy client hammering an endpoint) while staying loose
 // enough for legitimate high-volume moderation sessions.
 router.use(adminRateLimiter)
+// Real "Inactivity Session Timeout" enforcement (see Administrative Settings
+// > Platform Security Policies). No-ops when the policy is unset/disabled or
+// the token predates this feature -- see sessionTimeout.middleware.ts.
+router.use(enforceAdminSessionTimeout)
 
 // General Admin Search & Dashboard metrics (Admin, Super Admin, Moderator, Support)
 router.get("/dashboard", controller.getDashboard)
@@ -112,6 +117,12 @@ router.get("/feature-flags", controller.getFeatureFlags)
 router.post("/feature-flags", requireSuperAdmin, controller.createFeatureFlag)
 router.put("/feature-flags/:id", requireSuperAdmin, controller.updateFeatureFlag)
 router.delete("/feature-flags/:id", requireSuperAdmin, controller.deleteFeatureFlag)
+
+// Platform-wide admin security policy (currently just the Inactivity Session
+// Timeout) -- every admin-tier role can view it, only Super Admin can change
+// it, same gating pattern as Feature Flags above.
+router.get("/security-settings", controller.getSecuritySettings)
+router.put("/security-settings", requireSuperAdmin, controller.updateSecuritySettings)
 
 // Personal preferences and notifications for Admin
 router.get("/settings", controller.getAdminSettings)

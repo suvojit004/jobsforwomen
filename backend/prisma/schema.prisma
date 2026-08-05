@@ -111,6 +111,7 @@ model User {
   featureFlags     FeatureFlag[]
   oauthAccounts    OAuthAccount[]
   jobReports       JobReport[]
+  updatedSecurityPolicies SecurityPolicy[]
 
   // Invitations
   createdInvitations Invitation[] @relation("Inviter")
@@ -527,6 +528,16 @@ model RefreshToken {
   userAgent String?
   ipAddress String?
   revoked   Boolean  @default(false)
+  // Correlates this refresh token back to the Session row it was issued
+  // alongside (see AuthService.createAuthSession). Nullable/unindexed-FK by
+  // design -- rows created before this field existed have no value, and
+  // Session rows are never hard-deleted (only revoked), so a plain string
+  // correlation key is enough for sessionTimeout.middleware.ts to revoke a
+  // session's refresh token when it force-expires it for inactivity,
+  // without a real FK relation.
+  sessionId String?
+
+  @@index([sessionId])
 }
 
 model Session {
@@ -539,6 +550,24 @@ model Session {
   createdAt    DateTime @default(now())
   lastActiveAt DateTime @default(now())
   revoked      Boolean  @default(false)
+}
+
+// Singleton row (fixed id "singleton") holding platform-wide admin security
+// policy. Only a Super Admin can change it (admin.routes.ts) -- distinct
+// from the personal Administrator Profile Details on AdminProfile, this
+// governs every Admin/Super Admin/Moderator/Support Executive session
+// platform-wide, enforced by sessionTimeout.middleware.ts.
+model SecurityPolicy {
+  id String @id @default("singleton")
+
+  // Minutes of inactivity after which an admin-tier session is force-expired.
+  // Null/0 disables enforcement entirely (the honest default -- there was no
+  // real enforcement before this field existed).
+  adminSessionTimeoutMinutes Int?
+
+  updatedById String?
+  updatedBy   User?    @relation(fields: [updatedById], references: [id], onDelete: SetNull)
+  updatedAt   DateTime @updatedAt
 }
 
 model AuditLog {

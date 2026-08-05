@@ -18,6 +18,7 @@ import {
   createAdminSchema,
   listAdminsQuerySchema,
   updateAdminSettingsSchema,
+  updateSecuritySettingsSchema,
 } from "./admin.validator"
 import { CompanyStatus, UserStatus, PerkStatus } from "@prisma/client"
 
@@ -560,6 +561,27 @@ export class AdminController {
       const context = this.getContext(req)
       const settings = await this.service.updateAdminSettings(adminId, validated, context)
       return sendSuccess(res, { settings }, "Admin settings updated successfully.")
+    } catch (err: any) {
+      next(err)
+    }
+  }
+
+  getSecuritySettings = async (req: Request, res: Response, next: any) => {
+    try {
+      const settings = await this.service.getSecuritySettings()
+      return sendSuccess(res, { settings }, "Fetched security settings successfully.")
+    } catch (err: any) {
+      next(err)
+    }
+  }
+
+  updateSecuritySettings = async (req: Request, res: Response, next: any) => {
+    try {
+      const validated = updateSecuritySettingsSchema.parse(req.body)
+      const adminId = req.user?.userId || ""
+      const context = this.getContext(req)
+      const settings = await this.service.updateSecuritySettings(adminId, validated.adminSessionTimeoutMinutes, context)
+      return sendSuccess(res, { settings }, "Security settings updated successfully.")
     } catch (err: any) {
       next(err)
     }

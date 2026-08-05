@@ -309,16 +309,11 @@ export class AuthService {
     const roles = user.roles.map((r: any) => r.role.name)
     const permissions = user.roles.flatMap((r: any) => r.role.permissions.map((p: any) => p.permission.name))
 
-    const payload = {
-      userId: user.id,
-      email: user.email,
-      roles,
-      permissions,
-    }
-
-    const accessToken = generateAccessToken(payload)
-    const refreshToken = generateRefreshToken(payload)
-
+    // Session is created BEFORE the tokens so its id can be embedded in both
+    // (see TokenPayload.sessionId) -- sessionTimeout.middleware.ts uses this
+    // to enforce admin inactivity timeouts, and to revoke the matching
+    // refresh token when it force-expires a session so a silent
+    // refresh-on-401 can't resurrect it.
     const session = await this.authRepository.createSession(
       user.id,
       ipAddress,
@@ -326,8 +321,19 @@ export class AuthService {
       this.detectDeviceType(userAgent)
     )
 
+    const payload = {
+      userId: user.id,
+      email: user.email,
+      roles,
+      permissions,
+      sessionId: session.id,
+    }
+
+    const accessToken = generateAccessToken(payload)
+    const refreshToken = generateRefreshToken(payload)
+
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
-    await this.authRepository.createRefreshToken(user.id, refreshToken, expiresAt, userAgent, ipAddress)
+    await this.authRepository.createRefreshToken(user.id, refreshToken, expiresAt, userAgent, ipAddress, session.id)
 
     const profileCompletePercent = calculateProfileCompletion(user)
 

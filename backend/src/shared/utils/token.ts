@@ -7,6 +7,11 @@ interface TokenPayload {
   email: string
   roles: string[]
   permissions: string[]
+  // Correlates this token back to the Session row created at login/refresh
+  // (see AuthService.createAuthSession). Optional: tokens issued before this
+  // field existed won't carry it -- sessionTimeout.middleware.ts treats a
+  // missing sessionId as "skip enforcement" rather than rejecting the token.
+  sessionId?: string
 }
 
 export function generateAccessToken(payload: TokenPayload): string {

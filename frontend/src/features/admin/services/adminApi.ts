@@ -161,6 +161,18 @@ export const AdminApi = {
     return res?.data?.settings || res?.data || {}
   },
 
+  // Platform-wide "Inactivity Session Timeout" policy -- readable by any
+  // admin-tier role, writable only by a Super Admin (backend 403s otherwise).
+  async getSecuritySettings() {
+    const res = await apiClient.get("/api/v1/admins/security-settings")
+    return res?.data?.settings || res?.data || {}
+  },
+
+  async updateSecuritySettings(adminSessionTimeoutMinutes: number | null) {
+    const res = await apiClient.put("/api/v1/admins/security-settings", { adminSessionTimeoutMinutes })
+    return res?.data?.settings || res?.data || {}
+  },
+
   async getNotifications() {
     const res = await apiClient.get("/api/v1/admins/notifications")
     return res?.data?.notifications || res?.data || []

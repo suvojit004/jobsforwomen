@@ -17,6 +17,7 @@ import { storageMetrics } from "../../shared/utils/fileStorage"
 import { emailMetrics } from "../../shared/utils/email"
 import { AppError } from "../../shared/middleware/errorHandler"
 import { hashPassword } from "../../shared/utils/password"
+import { invalidateSessionTimeoutSettingsCache } from "../../shared/middleware/sessionTimeout.middleware"
 
 export interface ServiceContext {
   operatorId?: string
@@ -2014,7 +2015,11 @@ export class AdminService {
           and.push({ entity: "FeatureFlag" })
           break
         case "Security Settings":
-          and.push({ OR: [{ entity: "Role" }, { category: "RBAC" }] })
+          // Extended to also capture SecurityPolicy changes (e.g. the
+          // Inactivity Session Timeout) alongside RBAC role/permission
+          // changes -- both are "Security Settings" in the sense this tab
+          // has always meant.
+          and.push({ OR: [{ entity: "Role" }, { category: "RBAC" }, { entity: "SecurityPolicy" }, { category: "SECURITY" }] })
           break
         case "User Management":
           and.push({
@@ -2670,6 +2675,46 @@ export class AdminService {
     }
 
     return this.getAdminSettings(adminId)
+  }
+
+  // Platform-wide "Inactivity Session Timeout" policy (SecurityPolicy
+  // singleton row) -- readable by any admin-tier role, only writable by a
+  // Super Admin (see admin.routes.ts). Actually enforced in
+  // sessionTimeout.middleware.ts, not just displayed for visibility like the
+  // old disabled dropdown was.
+  async getSecuritySettings() {
+    const policy = await prisma.securityPolicy.findUnique({ where: { id: "singleton" } })
+    return {
+      adminSessionTimeoutMinutes: policy?.adminSessionTimeoutMinutes ?? null,
+    }
+  }
+
+  async updateSecuritySettings(adminId: string, minutes: number | null, context?: ServiceContext) {
+    const previous = await this.getSecuritySettings()
+
+    await prisma.securityPolicy.upsert({
+      where: { id: "singleton" },
+      update: { adminSessionTimeoutMinutes: minutes, updatedById: adminId },
+      create: { id: "singleton", adminSessionTimeoutMinutes: minutes, updatedById: adminId },
+    })
+
+    // Middleware caches the configured value in Redis for up to a minute --
+    // invalidate immediately so a Super Admin's change is felt right away
+    // rather than on the next cache expiry.
+    await invalidateSessionTimeoutSettingsCache()
+
+    EventBus.publish("AuditCreated", {
+      ...context,
+      operatorId: adminId,
+      category: "SECURITY",
+      action: "UPDATE_SECURITY_SETTINGS",
+      entity: "SecurityPolicy",
+      entityId: "singleton",
+      oldValue: { adminSessionTimeoutMinutes: previous.adminSessionTimeoutMinutes },
+      newValue: { adminSessionTimeoutMinutes: minutes },
+    })
+
+    return this.getSecuritySettings()
   }
 
   async getAdminNotifications(adminId: string) {

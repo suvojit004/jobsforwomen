@@ -37,8 +37,9 @@ jest.mock("../../shared/database/db", () => {
       count: jest.fn(),
     },
     invitation: { create: jest.fn(), findUnique: jest.fn(), update: jest.fn(), findMany: jest.fn() },
-    refreshToken: { deleteMany: jest.fn() },
-    session: { updateMany: jest.fn() },
+    refreshToken: { deleteMany: jest.fn(), updateMany: jest.fn() },
+    session: { updateMany: jest.fn(), update: jest.fn(), findUnique: jest.fn() },
+    securityPolicy: { findUnique: jest.fn(), upsert: jest.fn() },
     companyBenefit: { updateMany: jest.fn() },
     featureFlag: { create: jest.fn(), update: jest.fn(), findUnique: jest.fn(), findMany: jest.fn(), delete: jest.fn() },
     notification: { create: jest.fn(), findMany: jest.fn(), count: jest.fn() },
@@ -1024,6 +1025,135 @@ describe("Admin Module Integration Tests (Phase 7)", () => {
       // silently strips unknown keys, so `email` never reaches the service
       // layer and User.email is never written from this endpoint.
       expect(mockPrisma.user.update).not.toHaveBeenCalled()
+    })
+  })
+
+  // Inactivity Session Timeout: previously a disabled dropdown locked to
+  // "30 Minutes (fixed)" with zero runtime effect. Now a real, Super-Admin-
+  // gated platform policy (SecurityPolicy singleton row) enforced by
+  // sessionTimeout.middleware.ts on every admin-tier request.
+  describe("GET/PUT /admins/security-settings", () => {
+    it("allows any admin-tier role to read the current policy", async () => {
+      mockPrisma.securityPolicy.findUnique.mockResolvedValue({ id: "singleton", adminSessionTimeoutMinutes: 30 })
+
+      const res = await request(app)
+        .get("/api/v1/admins/security-settings")
+        .set("Authorization", `Bearer ${moderatorToken}`)
+
+      expect(res.status).toBe(200)
+      expect(res.body.data.settings.adminSessionTimeoutMinutes).toBe(30)
+    })
+
+    it("rejects a non-Super-Admin trying to change the platform-wide policy", async () => {
+      const res = await request(app)
+        .put("/api/v1/admins/security-settings")
+        .set("Authorization", `Bearer ${moderatorToken}`)
+        .send({ adminSessionTimeoutMinutes: 30 })
+
+      expect(res.status).toBe(403)
+      expect(mockPrisma.securityPolicy.upsert).not.toHaveBeenCalled()
+    })
+
+    it("lets a Super Admin update the policy and invalidates the middleware's settings cache", async () => {
+      mockPrisma.securityPolicy.findUnique.mockResolvedValue({ id: "singleton", adminSessionTimeoutMinutes: null })
+      mockPrisma.securityPolicy.upsert.mockResolvedValue({ id: "singleton", adminSessionTimeoutMinutes: 30 })
+
+      const res = await request(app)
+        .put("/api/v1/admins/security-settings")
+        .set("Authorization", `Bearer ${superAdminToken}`)
+        .send({ adminSessionTimeoutMinutes: 30 })
+
+      expect(res.status).toBe(200)
+      expect(mockPrisma.securityPolicy.upsert).toHaveBeenCalledWith({
+        where: { id: "singleton" },
+        update: { adminSessionTimeoutMinutes: 30, updatedById: "super-admin-id" },
+        create: { id: "singleton", adminSessionTimeoutMinutes: 30, updatedById: "super-admin-id" },
+      })
+      // sessionTimeout.middleware.ts caches the configured value for up to a
+      // minute -- a Super Admin's change must not have to wait that out.
+      expect(mockRedis.del).toHaveBeenCalledWith("security:adminSessionTimeoutMinutes")
+    })
+  })
+
+  describe("enforceAdminSessionTimeout middleware", () => {
+    it("force-expires a session once it has been inactive longer than the configured timeout", async () => {
+      mockRedis.get.mockImplementation(async (key: string) => {
+        if (key === "security:adminSessionTimeoutMinutes") return "15"
+        if (key.startsWith("session:lastActive:")) return String(Date.now() - 20 * 60 * 1000) // 20 min ago > 15 min timeout
+        return null
+      })
+      const tokenWithSession = jwt.sign(
+        {
+          userId: "moderator-id",
+          email: "moderator@jfw.info",
+          roles: ["Moderator"],
+          permissions: ["manage:admin"],
+          sessionId: "sess-expired-1",
+        },
+        env.JWT_ACCESS_SECRET
+      )
+
+      const res = await request(app)
+        .get("/api/v1/admins/security-settings")
+        .set("Authorization", `Bearer ${tokenWithSession}`)
+
+      expect(res.status).toBe(401)
+      expect(res.body.message).toContain("inactivity")
+      // Revoking the Session row alone isn't enough -- the refresh token
+      // issued alongside it must be revoked too, otherwise the frontend's
+      // automatic 401 -> POST /auth/refresh retry would silently mint a
+      // brand new session and undo the timeout.
+      expect(mockPrisma.session.update).toHaveBeenCalledWith({
+        where: { id: "sess-expired-1" },
+        data: { revoked: true },
+      })
+      expect(mockPrisma.refreshToken.updateMany).toHaveBeenCalledWith({
+        where: { sessionId: "sess-expired-1", revoked: false },
+        data: { revoked: true },
+      })
+    })
+
+    it("lets a session through when it has been active within the configured timeout", async () => {
+      mockRedis.get.mockImplementation(async (key: string) => {
+        if (key === "security:adminSessionTimeoutMinutes") return "15"
+        if (key.startsWith("session:lastActive:")) return String(Date.now() - 2 * 60 * 1000) // 2 min ago, well inside 15
+        return null
+      })
+      mockPrisma.securityPolicy.findUnique.mockResolvedValue({ id: "singleton", adminSessionTimeoutMinutes: 15 })
+      const tokenWithSession = jwt.sign(
+        {
+          userId: "moderator-id",
+          email: "moderator@jfw.info",
+          roles: ["Moderator"],
+          permissions: ["manage:admin"],
+          sessionId: "sess-fresh-1",
+        },
+        env.JWT_ACCESS_SECRET
+      )
+
+      const res = await request(app)
+        .get("/api/v1/admins/security-settings")
+        .set("Authorization", `Bearer ${tokenWithSession}`)
+
+      expect(res.status).toBe(200)
+      expect(mockPrisma.session.update).not.toHaveBeenCalled()
+    })
+
+    it("skips enforcement for tokens issued before this feature shipped (no sessionId claim)", async () => {
+      // moderatorToken (signed in beforeEach) has no sessionId -- a policy
+      // being configured must not lock out every already-logged-in admin
+      // the moment this deploys.
+      mockRedis.get.mockImplementation(async (key: string) =>
+        key === "security:adminSessionTimeoutMinutes" ? "15" : null
+      )
+      mockPrisma.securityPolicy.findUnique.mockResolvedValue({ id: "singleton", adminSessionTimeoutMinutes: 15 })
+
+      const res = await request(app)
+        .get("/api/v1/admins/security-settings")
+        .set("Authorization", `Bearer ${moderatorToken}`)
+
+      expect(res.status).toBe(200)
+      expect(mockPrisma.session.update).not.toHaveBeenCalled()
     })
   })
 })

@@ -72,6 +72,19 @@ export const updateAdminSettingsSchema = z.object({
   name: z.string().trim().min(2, "Full name must be at least 2 characters").max(100).optional(),
 })
 
+// Platform-wide "Inactivity Session Timeout" policy (SecurityPolicy
+// singleton row) -- Super-Admin-only to change, see admin.routes.ts.
+// `null` disables enforcement entirely; otherwise bounded to a sane
+// 5-minute floor (anything shorter is unusable) and 8-hour ceiling.
+export const updateSecuritySettingsSchema = z.object({
+  adminSessionTimeoutMinutes: z
+    .number()
+    .int()
+    .min(5, "Timeout must be at least 5 minutes.")
+    .max(480, "Timeout must be at most 8 hours (480 minutes).")
+    .nullable(),
+})
+
 // Admin Management listing filters
 export const listAdminsQuerySchema = z.object({
   search: z.string().trim().max(200).optional(),
