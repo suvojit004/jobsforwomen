@@ -6,7 +6,7 @@ import { CompanyStatus, JobStatus, ApplicationStatus, UserStatus, JobVisibility,
 import crypto from "crypto"
 import redis from "../../shared/utils/redis"
 import { verifyEmailTransport } from "../../shared/utils/email"
-import { verifyStorageConnection, runOrphanAssetCleanup, deleteFile } from "../../shared/utils/fileStorage"
+import { verifyStorageConnection, runOrphanAssetCleanup, deleteFile, signFileUrl } from "../../shared/utils/fileStorage"
 import { normalizeDocuments } from "../../shared/utils/documents"
 import { RECRUITER_SUMMARY_SELECT, shapeRecruiterSummary } from "../../shared/utils/recruiterSummary"
 import { io as socketIo } from "../../shared/socket/socket"
@@ -1413,6 +1413,200 @@ export class AdminService {
     return lines.join("\n")
   }
 
+  // Used only by the "all" combined export -- stacks a labeled section
+  // (title line + its own header row + its own data rows) so one CSV can
+  // hold multiple tables with different column shapes side by side. Not
+  // strictly tidy data, but it's the standard way admins hand-export mixed
+  // entity dumps for a human to open in Excel/Sheets, and it lets every
+  // section keep its own column set instead of forcing everything into one
+  // wide, mostly-empty table.
+  private toCsvSection(title: string, headers: string[], rows: any[][]): string {
+    return `${this.csvEscape(title)}\n${this.toCsv(headers, rows)}`
+  }
+
+  // Resume/verification-document links embedded in an export need a much
+  // longer signature window than the default (see FILE_URL_TTL_SECONDS,
+  // 1 hour) -- an admin generating a CSV today may not open a link in it
+  // until days later. 7 days balances that against not signing a URL
+  // "forever". Every export link is a point-in-time snapshot: if it's
+  // opened after this window, it'll need a fresh export instead.
+  private static readonly EXPORT_LINK_TTL_SECONDS = 60 * 60 * 24 * 7
+
+  private signExportUrl(url: string | null | undefined): string {
+    if (!url) return ""
+    return signFileUrl(url, AdminService.EXPORT_LINK_TTL_SECONDS)
+  }
+
+  // Flattening helpers for the Json[]/Json fields on CandidateProfile and
+  // Company -- same "join with '; '" approach the original candidates
+  // export already used for skills, just extended to the other array/object
+  // fields so the CSV stays one row per record instead of exploding into a
+  // separate row per sub-item.
+  private flattenExperience(experience: any[] | null | undefined): string {
+    if (!Array.isArray(experience) || experience.length === 0) return ""
+    return experience
+      .map((e) => `${e?.jobTitle || "Untitled Role"} @ ${e?.company || "Unknown Company"} (${e?.duration || "duration not specified"})`)
+      .join("; ")
+  }
+
+  private flattenEducation(education: any[] | null | undefined): string {
+    if (!Array.isArray(education) || education.length === 0) return ""
+    return education
+      .map((e) => `${e?.degree || "Degree"}, ${e?.institution || "Unknown Institution"} (${e?.duration || "duration not specified"})${e?.grade ? ` - ${e.grade}` : ""}`)
+      .join("; ")
+  }
+
+  private flattenSocialLinks(links: any[] | null | undefined): string {
+    if (!Array.isArray(links) || links.length === 0) return ""
+    return links.map((l) => `${l?.platform || "Link"}: ${l?.url || ""}`).join("; ")
+  }
+
+  private flattenCareerBreak(careerBreak: any | null | undefined): string {
+    if (!careerBreak?.hasBreak) return "None"
+    const parts = [careerBreak.reason, careerBreak.duration].filter(Boolean).join(", ")
+    return careerBreak.summary ? `${parts} - ${careerBreak.summary}` : parts || "Yes"
+  }
+
+  // Every field on CandidateProfile that has a real counterpart shown
+  // somewhere in the candidate's own profile UI or the admin Candidate
+  // Details page -- previously this export only had 7 thin columns
+  // (name/email/location/experience/status/skills/joined), nothing like a
+  // "complete" record. resumeUrl is explicitly signed here since this CSV
+  // is built by hand (bypasses sendSuccess()'s automatic signFileUrlsDeep).
+  private async getCandidatesCsvData(): Promise<{ headers: string[]; rows: any[][] }> {
+    const rows = await prisma.candidateProfile.findMany({
+      include: { user: true, skills: { include: { skill: true } } },
+    })
+    return {
+      headers: [
+        "Full Name", "Email", "Phone", "Location", "Title", "Bio",
+        "Total Experience", "Notice Period", "Expected Salary", "Availability",
+        "Preferred Locations", "Languages", "Skills", "Career Break",
+        "Work Experience", "Education", "Social Links", "Resume Link",
+        "Account Status", "Joined On",
+      ],
+      rows: rows.map((c) => [
+        c.fullName,
+        c.user.email,
+        c.phone || "",
+        c.location || "",
+        c.title || "",
+        c.bio || "",
+        c.totalExperience || "",
+        c.noticePeriod || "",
+        c.expectedSalary || "",
+        c.availability || "",
+        (c.preferredLocations || []).join("; "),
+        (c.languages || []).join("; "),
+        c.skills.map((s) => s.skill.name).join("; "),
+        this.flattenCareerBreak(c.careerBreak),
+        this.flattenExperience(c.experience as any[]),
+        this.flattenEducation(c.education as any[]),
+        this.flattenSocialLinks(c.socialLinks as any[]),
+        this.signExportUrl(c.resumeUrl),
+        c.user.status,
+        c.user.createdAt.toISOString().slice(0, 10),
+      ]),
+    }
+  }
+
+  // Adds phone and the recruiter's company context (website/industry/
+  // location) that the old 6-column version left out entirely.
+  private async getRecruitersCsvData(): Promise<{ headers: string[]; rows: any[][] }> {
+    const rows = await prisma.recruiterProfile.findMany({
+      include: { user: true, company: { include: { industry: true } } },
+    })
+    return {
+      headers: [
+        "Full Name", "Email", "Phone", "Company", "Company Website",
+        "Company Industry", "Company Location", "Company Status", "Verified",
+        "Account Status", "Joined On",
+      ],
+      rows: rows.map((r) => [
+        r.fullName,
+        r.user.email,
+        r.phone || "",
+        r.company.name,
+        r.company.website || "",
+        r.company.industry?.name || "",
+        r.company.location || "",
+        r.company.status,
+        r.verified ? "Yes" : "No",
+        r.user.status,
+        r.user.createdAt.toISOString().slice(0, 10),
+      ]),
+    }
+  }
+
+  // New export -- there was no per-company CSV at all before this. Signs
+  // every verification-document URL the same way the resume link above is
+  // signed, so an admin can actually open them from the downloaded file.
+  private async getCompaniesCsvData(): Promise<{ headers: string[]; rows: any[][] }> {
+    const rows = await prisma.company.findMany({
+      include: {
+        industry: true,
+        recruiters: { include: { user: true } },
+        perkRequests: true,
+      },
+    })
+
+    // Real "total hires" per company -- same computation getCompanies() uses
+    // for the admin Company Details screen (Application.status === Hired,
+    // grouped by the job's companyId), reused here for consistency rather
+    // than reimplementing it slightly differently.
+    const hiredApps = await prisma.application.findMany({
+      where: { status: ApplicationStatus.Hired, job: { companyId: { in: rows.map((c) => c.id) } } },
+      select: { job: { select: { companyId: true } } },
+    })
+    const hiredCountByCompany: Record<string, number> = {}
+    hiredApps.forEach((a) => {
+      const cid = a.job.companyId
+      hiredCountByCompany[cid] = (hiredCountByCompany[cid] || 0) + 1
+    })
+
+    return {
+      headers: [
+        "Company Name", "Website", "Industry", "Location", "Status",
+        "Recruiters", "Hired Count", "Perk Requests", "Verification Documents",
+        "Registered On",
+      ],
+      rows: rows.map((c) => {
+        const verificationDocs = Array.isArray(c.verificationDocuments) ? (c.verificationDocuments as any[]) : []
+        return [
+          c.name,
+          c.website || "",
+          c.industry?.name || "",
+          c.location || "",
+          c.status,
+          c.recruiters.map((r) => `${r.fullName} <${r.user.email}>`).join("; "),
+          hiredCountByCompany[c.id] || 0,
+          c.perkRequests.map((p) => `${p.perkName}: ${p.status}`).join("; "),
+          verificationDocs.map((d) => `${d.category || "Document"}: ${this.signExportUrl(d.url)}`).join("; "),
+          c.createdAt.toISOString().slice(0, 10),
+        ]
+      }),
+    }
+  }
+
+  private async getJobsCsvData(): Promise<{ headers: string[]; rows: any[][] }> {
+    const rows = await prisma.job.findMany({
+      include: { company: true, _count: { select: { applications: true } } },
+    })
+    return {
+      headers: ["Title", "Company", "Location", "Status", "Visibility", "Reported", "Applications", "Posted On"],
+      rows: rows.map((j) => [
+        j.title,
+        j.company.name,
+        j.location,
+        j.status,
+        j.visibility,
+        j.reported ? "Yes" : "No",
+        j._count.applications,
+        j.postedOn.toISOString().slice(0, 10),
+      ]),
+    }
+  }
+
   async getReports(type: string) {
     const candidatesCount = await prisma.candidateProfile.count()
     const recruitersCount = await prisma.recruiterProfile.count()
@@ -1470,49 +1664,41 @@ export class AdminService {
     let filename: string
 
     if (type === "candidates") {
-      const rows = await prisma.candidateProfile.findMany({
-        include: { user: true, skills: { include: { skill: true } } },
-      })
-      csvContent = this.toCsv(
-        ["Full Name", "Email", "Location", "Total Experience", "Account Status", "Skills", "Joined On"],
-        rows.map((c) => [
-          c.fullName,
-          c.user.email,
-          c.location || "",
-          c.totalExperience || "",
-          c.user.status,
-          c.skills.map((s) => s.skill.name).join("; "),
-          c.user.createdAt.toISOString().slice(0, 10),
-        ])
-      )
+      const { headers, rows } = await this.getCandidatesCsvData()
+      csvContent = this.toCsv(headers, rows)
       filename = "Candidates_Directory_Report.csv"
     } else if (type === "recruiters") {
-      const rows = await prisma.recruiterProfile.findMany({
-        include: { user: true, company: true },
-      })
-      csvContent = this.toCsv(
-        ["Full Name", "Email", "Company", "Company Status", "Verified", "Account Status"],
-        rows.map((r) => [r.fullName, r.user.email, r.company.name, r.company.status, r.verified ? "Yes" : "No", r.user.status])
-      )
+      const { headers, rows } = await this.getRecruitersCsvData()
+      csvContent = this.toCsv(headers, rows)
       filename = "Recruiters_Partner_Report.csv"
+    } else if (type === "companies") {
+      const { headers, rows } = await this.getCompaniesCsvData()
+      csvContent = this.toCsv(headers, rows)
+      filename = "Companies_Directory_Report.csv"
     } else if (type === "jobs") {
-      const rows = await prisma.job.findMany({
-        include: { company: true, _count: { select: { applications: true } } },
-      })
-      csvContent = this.toCsv(
-        ["Title", "Company", "Location", "Status", "Visibility", "Reported", "Applications", "Posted On"],
-        rows.map((j) => [
-          j.title,
-          j.company.name,
-          j.location,
-          j.status,
-          j.visibility,
-          j.reported ? "Yes" : "No",
-          j._count.applications,
-          j.postedOn.toISOString().slice(0, 10),
-        ])
-      )
+      const { headers, rows } = await this.getJobsCsvData()
+      csvContent = this.toCsv(headers, rows)
       filename = "JobListings_Platform_Report.csv"
+    } else if (type === "all") {
+      // One combined export bundling every entity type into a single file,
+      // each as its own labeled section (see toCsvSection) since the
+      // column shapes are all different. Point-in-time snapshot, same as
+      // the individual exports -- resume/document links inside carry the
+      // same 7-day signature window as the standalone candidate/company
+      // exports.
+      const [candidatesData, recruitersData, companiesData, jobsData] = await Promise.all([
+        this.getCandidatesCsvData(),
+        this.getRecruitersCsvData(),
+        this.getCompaniesCsvData(),
+        this.getJobsCsvData(),
+      ])
+      csvContent = [
+        this.toCsvSection("=== CANDIDATES ===", candidatesData.headers, candidatesData.rows),
+        this.toCsvSection("=== RECRUITERS ===", recruitersData.headers, recruitersData.rows),
+        this.toCsvSection("=== COMPANIES ===", companiesData.headers, companiesData.rows),
+        this.toCsvSection("=== JOBS ===", jobsData.headers, jobsData.rows),
+      ].join("\n\n")
+      filename = "JobsForWomen_Complete_Data_Export.csv"
     } else {
       csvContent = this.toCsv(
         ["Report Type", "Generated At", "Total Candidates", "Total Recruiters", "Total Jobs", "Application-to-Interview Rate %"],

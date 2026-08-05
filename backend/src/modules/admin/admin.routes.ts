@@ -32,7 +32,22 @@ router.get("/storage/orphan-scan", requireSuperAdmin, controller.getOrphanAssetR
 router.get("/search", controller.globalSearch)
 
 // Audits & Reports (Admin, Super Admin)
-router.get("/reports", controller.getReports)
+// The comment above always claimed Admin/Super Admin only, but /reports had
+// no extra gate beyond the blanket ADMIN_TIER_ROLES check above -- meaning
+// Moderator and Support Executive could already hit it. That was a minor
+// gap when the CSV export was a handful of summary columns; now that it
+// includes full candidate/recruiter/company PII plus signed resume and
+// verification-document links (see AdminService.getReports), the actual
+// file download needs the real restriction the comment always implied.
+// Scoped to the export=csv path specifically, not the whole endpoint --
+// Moderator/Support Executive still need the plain JSON summary this same
+// route returns to render the Reports & Analytics trend chart.
+const requireReportsExportRole = requireRole(["Admin", "Super Admin"])
+router.get(
+  "/reports",
+  (req, res, next) => (req.query.export === "csv" ? requireReportsExportRole(req, res, next) : next()),
+  controller.getReports
+)
 router.get("/audits", controller.getAuditLogs)
 
 // Recruiter / Company Verification (Admin, Super Admin, Moderator)

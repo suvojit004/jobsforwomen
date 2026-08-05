@@ -6,6 +6,8 @@ import {
   FileSpreadsheet,
   FileText,
   TrendingUp,
+  Building,
+  Layers,
 } from "lucide-react"
 import {
   BarChart,
@@ -20,8 +22,17 @@ import { DashboardCard } from "@/components/shared/DashboardCard"
 import { Button } from "@/components/ui/button"
 import apiClient from "@/api/client"
 import { AdminApi } from "../services/adminApi"
+import { useAuth } from "@/hooks/useAuth"
 
 export function ReportsAnalytics() {
+  const { user } = useAuth()
+  // Backend now restricts the actual CSV download (GET /admins/reports?
+  // export=csv) to Admin/Super Admin -- see admin.routes.ts -- since these
+  // exports carry full candidate/recruiter/company PII plus signed resume
+  // and verification-document links. Moderator/Support Executive can still
+  // view this whole page (the trend chart above uses the same endpoint
+  // without export=csv, which isn't gated), just not download the files.
+  const canExport = !!user?.roles?.some((r) => r === "Admin" || r === "Super Admin")
   const [downloading, setDownloading] = useState<string | null>(null)
   const [exportError, setExportError] = useState("")
 
@@ -94,7 +105,7 @@ export function ReportsAnalytics() {
   const exportCards = [
     {
       title: "Candidates Directory",
-      desc: "All registered candidate accounts, career breaks, profiles completion percentage, and skills.",
+      desc: "Full candidate profiles -- contact details, career break, work history, education, skills, and a signed resume link.",
       fileName: "Candidates_Directory_Report.csv",
       type: "candidates",
       icon: FileSpreadsheet,
@@ -102,10 +113,18 @@ export function ReportsAnalytics() {
     },
     {
       title: "Employers & Recruiters",
-      desc: "Recruiter profiles, associated companies, and equality perks validation statuses.",
+      desc: "Recruiter profiles, phone numbers, and associated company details, verification and account status.",
       fileName: "Recruiters_Partner_Report.csv",
       type: "recruiters",
       icon: FileSpreadsheet,
+      format: "CSV File",
+    },
+    {
+      title: "Corporate Partners",
+      desc: "Company directory with recruiters, hire counts, perk request statuses, and signed verification document links.",
+      fileName: "Companies_Directory_Report.csv",
+      type: "companies",
+      icon: Building,
       format: "CSV File",
     },
     {
@@ -122,6 +141,14 @@ export function ReportsAnalytics() {
       fileName: "JobsForWomen_System_Analytics.csv",
       type: "analytics",
       icon: FileText,
+      format: "CSV File",
+    },
+    {
+      title: "Complete Data Export",
+      desc: "Everything above in one file -- candidates, recruiters, companies, and jobs, each as its own labeled section.",
+      fileName: "JobsForWomen_Complete_Data_Export.csv",
+      type: "all",
+      icon: Layers,
       format: "CSV File",
     },
   ]
@@ -221,6 +248,12 @@ export function ReportsAnalytics() {
         <h4 className="text-xs font-black text-slate-500 uppercase tracking-widest border-b border-slate-200 pb-2.5 dark:border-slate-800">
           Data Export Directory
         </h4>
+        {!canExport && (
+          <p className="mt-3 text-[11px] font-semibold text-slate-450 dark:text-slate-500">
+            These exports contain full candidate/recruiter/company details and resume links, so downloading them is
+            restricted to Admin and Super Admin accounts.
+          </p>
+        )}
         {exportError && (
           <p className="mt-3 text-xs font-bold text-red-600 dark:text-red-400">{exportError}</p>
         )}
@@ -249,8 +282,9 @@ export function ReportsAnalytics() {
                 <div>
                   <Button
                     onClick={() => handleExport(card.type, card.fileName)}
-                    disabled={isDownloading}
-                    className="w-full text-[10px] font-black flex items-center justify-center gap-1.5 h-8 bg-slate-100 hover:bg-slate-200 text-slate-900 border border-slate-250/20 dark:bg-slate-900 dark:hover:bg-slate-800 dark:text-white dark:border-slate-800"
+                    disabled={isDownloading || !canExport}
+                    title={canExport ? undefined : "Only Admin and Super Admin accounts can download data exports."}
+                    className="w-full text-[10px] font-black flex items-center justify-center gap-1.5 h-8 bg-slate-100 hover:bg-slate-200 text-slate-900 border border-slate-250/20 dark:bg-slate-900 dark:hover:bg-slate-800 dark:text-white dark:border-slate-800 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {isDownloading ? (
                       <>
@@ -260,7 +294,7 @@ export function ReportsAnalytics() {
                     ) : (
                       <>
                         <Download className="size-3" />
-                        Download Report
+                        {canExport ? "Download Report" : "Restricted"}
                       </>
                     )}
                   </Button>
