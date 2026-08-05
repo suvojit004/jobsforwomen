@@ -230,6 +230,31 @@ export class AuthRepository {
     })
   }
 
+  // 2FA enrollment is two steps: this stores the (encrypted) secret without
+  // flipping twoFactorEnabled -- the account isn't protected by it yet, only
+  // "pending confirmation" that the user can actually produce valid codes
+  // from it. See AuthService.startTwoFactorEnrollment/confirmTwoFactorEnrollment.
+  async setPendingTwoFactorSecret(userId: string, encryptedSecret: string) {
+    return prisma.user.update({
+      where: { id: userId },
+      data: { twoFactorSecret: encryptedSecret },
+    })
+  }
+
+  async enableTwoFactor(userId: string) {
+    return prisma.user.update({
+      where: { id: userId },
+      data: { twoFactorEnabled: true },
+    })
+  }
+
+  async disableTwoFactor(userId: string) {
+    return prisma.user.update({
+      where: { id: userId },
+      data: { twoFactorEnabled: false, twoFactorSecret: null },
+    })
+  }
+
   async createSession(userId: string, ipAddress: string, userAgent: string, deviceType: string | null) {
     return prisma.session.create({
       data: {

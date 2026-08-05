@@ -92,7 +92,15 @@ model User {
   email            String     @unique
   passwordHash     String? // Nullable for OAuth-only users
   status           UserStatus @default(PendingVerification)
+  // twoFactorEnabled existed for a long time as a stub -- nothing ever read
+  // or wrote it, so the "Force Two-Factor (2FA)" control on Administrative
+  // Settings was honestly disabled. Now real: twoFactorSecret holds the
+  // AES-256-GCM-encrypted TOTP secret (see shared/utils/twoFactor.ts), null
+  // until enrollment completes; twoFactorEnabled flips to true only once
+  // enrollment is confirmed with a valid code (AuthService.
+  // confirmTwoFactorEnrollment).
   twoFactorEnabled Boolean    @default(false)
+  twoFactorSecret  String?
   createdAt        DateTime   @default(now())
   updatedAt        DateTime   @updatedAt
   preferences      Json? // Appearance, privacy, email notification settings
@@ -564,6 +572,14 @@ model SecurityPolicy {
   // Null/0 disables enforcement entirely (the honest default -- there was no
   // real enforcement before this field existed).
   adminSessionTimeoutMinutes Int?
+
+  // When true, every admin-tier account (Admin/Super Admin/Moderator/
+  // Support Executive) without User.twoFactorEnabled is blocked from all
+  // /admins/* routes until they enroll -- see enforceTwoFactorPolicy in
+  // securityPolicy.middleware.ts. They can still log in and reach the
+  // enrollment endpoints (under /auth/2fa/enroll/*), so this can't lock
+  // anyone out permanently.
+  forceTwoFactorForAdmins Boolean @default(false)
 
   updatedById String?
   updatedBy   User?    @relation(fields: [updatedById], references: [id], onDelete: SetNull)

@@ -23,6 +23,17 @@ router.post("/oauth", authRateLimiter, controller.oauth)
 router.get("/google", authRateLimiter, controller.initiateGoogleOAuth)
 router.get("/google/callback", authRateLimiter, controller.googleCallback)
 
+// Two-Factor Authentication. /2fa/verify completes a login paused by
+// AuthService.login() (the pendingToken IS the auth here, so it's public
+// like /login itself, and shares the same strict rate limiter since it's
+// exactly the kind of endpoint a 6-digit-code brute force would target).
+// The enroll/disable endpoints are self-service account management, so they
+// require a real session same as change-password/delete-account below.
+router.post("/2fa/verify", authRateLimiter, controller.verifyTwoFactorLogin)
+router.post("/2fa/enroll/start", authenticateToken, controller.startTwoFactorEnrollment)
+router.post("/2fa/enroll/confirm", authenticateToken, controller.confirmTwoFactorEnrollment)
+router.post("/2fa/disable", authenticateToken, controller.disableTwoFactor)
+
 // Token Refresh & Invalidation
 router.post("/refresh", authRateLimiter, controller.refresh)
 router.post("/logout", controller.logout)

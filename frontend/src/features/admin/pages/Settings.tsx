@@ -1,21 +1,15 @@
-import { useState, useEffect, type ChangeEvent } from "react"
+import { useState, useEffect, type ChangeEvent, type FormEvent } from "react"
 import { toast } from "sonner"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import * as z from "zod"
-import { Settings as SettingsIcon, ShieldAlert, Save, AlertCircle, Lock } from "lucide-react"
+import { Settings as SettingsIcon, ShieldAlert, ShieldCheck, Save, AlertCircle, Lock } from "lucide-react"
 import { DashboardCard } from "@/components/shared/DashboardCard"
 import { Button } from "@/components/ui/button"
 import { AdminApi } from "../services/adminApi"
 import { isValidPassword, PASSWORD_HELP_TEXT } from "@/utils/validators"
 import { useAuth } from "@/contexts/AuthContext"
 
-// `twoFactorEnabled` is intentionally not a form field: there's no OTP/MFA
-// step anywhere in the login flow, so it's honestly disabled in the UI
-// rather than saving a value that has no runtime effect. Inactivity Session
-// Timeout, below, USED to be in the same boat -- it's now real, enforced by
-// sessionTimeout.middleware.ts on every admin-tier request. See
-// TIMEOUT_OPTIONS/handleTimeoutChange further down.
 // `email` is read-only display-only: no role on the platform (candidate,
 // recruiter, or admin) has any self-service way to change their real login
 // User.email, so this field is never submitted and isn't validated as an
@@ -72,7 +66,7 @@ const TIMEOUT_OPTIONS: { value: string; label: string; minutes: number | null }[
 ]
 
 export function Settings() {
-  const { user } = useAuth()
+  const { user, refreshSession } = useAuth()
   const isSuperAdmin = !!user?.roles?.includes("Super Admin")
 
   const [saving, setSaving] = useState(false)
@@ -83,6 +77,23 @@ export function Settings() {
   const [timeoutValue, setTimeoutValue] = useState("off")
   const [timeoutLoading, setTimeoutLoading] = useState(true)
   const [timeoutSaving, setTimeoutSaving] = useState(false)
+
+  const [forceTwoFactor, setForceTwoFactor] = useState(false)
+  const [forceTwoFactorSaving, setForceTwoFactorSaving] = useState(false)
+
+  // 2FA enrollment (self-service, any authenticated admin -- see
+  // AuthService.startTwoFactorEnrollment/confirmTwoFactorEnrollment).
+  // `user.twoFactorEnabled` is the source of truth; enrolling/secret/code
+  // only track the in-progress "scan this, then confirm" step.
+  const [enrolling, setEnrolling] = useState(false)
+  const [enrollSecret, setEnrollSecret] = useState("")
+  const [enrollOtpauthUri, setEnrollOtpauthUri] = useState("")
+  const [enrollCode, setEnrollCode] = useState("")
+  const [enrollSubmitting, setEnrollSubmitting] = useState(false)
+
+  const [disabling, setDisabling] = useState(false)
+  const [disablePassword, setDisablePassword] = useState("")
+  const [disableSubmitting, setDisableSubmitting] = useState(false)
 
   const {
     register,
@@ -128,6 +139,7 @@ export function Settings() {
         const minutes = sec.adminSessionTimeoutMinutes ?? null
         const match = TIMEOUT_OPTIONS.find((o) => o.minutes === minutes)
         setTimeoutValue(match ? match.value : "off")
+        setForceTwoFactor(!!sec.forceTwoFactorForAdmins)
       } catch (err: any) {
         console.error("Failed to load security settings", err)
       } finally {
@@ -144,7 +156,7 @@ export function Settings() {
     setTimeoutSaving(true)
     try {
       const opt = TIMEOUT_OPTIONS.find((o) => o.value === nextValue)
-      await AdminApi.updateSecuritySettings(opt ? opt.minutes : null)
+      await AdminApi.updateSecuritySettings({ adminSessionTimeoutMinutes: opt ? opt.minutes : null })
       toast.success("Inactivity session timeout updated.")
     } catch (err: any) {
       console.error("Failed to update security settings", err)
@@ -152,6 +164,89 @@ export function Settings() {
       setTimeoutValue(previousValue)
     } finally {
       setTimeoutSaving(false)
+    }
+  }
+
+  const handleForceTwoFactorToggle = async () => {
+    const nextValue = !forceTwoFactor
+    const previousValue = forceTwoFactor
+    setForceTwoFactor(nextValue)
+    setForceTwoFactorSaving(true)
+    try {
+      await AdminApi.updateSecuritySettings({ forceTwoFactorForAdmins: nextValue })
+      toast.success(nextValue ? "Force Two-Factor enabled for all admin accounts." : "Force Two-Factor disabled.")
+    } catch (err: any) {
+      console.error("Failed to update Force Two-Factor policy", err)
+      toast.error(err?.message || "Failed to update Force Two-Factor.")
+      setForceTwoFactor(previousValue)
+    } finally {
+      setForceTwoFactorSaving(false)
+    }
+  }
+
+  const handleStartEnrollment = async () => {
+    setEnrollSubmitting(true)
+    try {
+      const result = await AdminApi.start2FAEnrollment()
+      setEnrollSecret(result.secret || "")
+      setEnrollOtpauthUri(result.otpauthUri || "")
+      setEnrolling(true)
+    } catch (err: any) {
+      console.error("Failed to start 2FA enrollment", err)
+      toast.error(err?.message || "Failed to start two-factor enrollment.")
+    } finally {
+      setEnrollSubmitting(false)
+    }
+  }
+
+  const handleConfirmEnrollment = async (e: FormEvent) => {
+    e.preventDefault()
+    if (!/^\d{6}$/.test(enrollCode.trim())) {
+      toast.error("Enter the 6-digit code from your authenticator app.")
+      return
+    }
+    setEnrollSubmitting(true)
+    try {
+      await AdminApi.confirm2FAEnrollment(enrollCode.trim())
+      toast.success("Two-factor authentication enabled.")
+      setEnrolling(false)
+      setEnrollSecret("")
+      setEnrollOtpauthUri("")
+      setEnrollCode("")
+      await refreshSession()
+    } catch (err: any) {
+      console.error("Failed to confirm 2FA enrollment", err)
+      toast.error(err?.message || "Invalid code. Please try again.")
+    } finally {
+      setEnrollSubmitting(false)
+    }
+  }
+
+  const handleCancelEnrollment = () => {
+    setEnrolling(false)
+    setEnrollSecret("")
+    setEnrollOtpauthUri("")
+    setEnrollCode("")
+  }
+
+  const handleConfirmDisable = async (e: FormEvent) => {
+    e.preventDefault()
+    if (!disablePassword) {
+      toast.error("Enter your current password.")
+      return
+    }
+    setDisableSubmitting(true)
+    try {
+      await AdminApi.disable2FA(disablePassword)
+      toast.success("Two-factor authentication disabled.")
+      setDisabling(false)
+      setDisablePassword("")
+      await refreshSession()
+    } catch (err: any) {
+      console.error("Failed to disable 2FA", err)
+      toast.error(err?.message || "Failed to disable two-factor authentication.")
+    } finally {
+      setDisableSubmitting(false)
     }
   }
 
@@ -194,9 +289,8 @@ export function Settings() {
           Administrative Settings
         </h1>
         <p className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">
-          Update your administrator name and password. Administrative email is read-only. Inactivity Session Timeout
-          is enforced platform-wide. 2FA below is shown for visibility but is not yet backed by real enforcement --
-          see the control for details.
+          Update your administrator name, password, and two-factor authentication. Administrative email is
+          read-only. Inactivity Session Timeout and Force Two-Factor are enforced platform-wide.
         </p>
       </div>
 
@@ -340,6 +434,124 @@ export function Settings() {
               </div>
             </DashboardCard>
           </form>
+
+          {/* Two-Factor Authentication -- real now (TOTP, RFC 6238). This is
+              a per-admin self-service setting (like the password above), not
+              a platform policy -- see the Force Two-Factor toggle in
+              Platform Security Policies for the Super-Admin-only policy that
+              requires this to be on. */}
+          <DashboardCard className="p-6 space-y-4 mt-6">
+            <div className="border-b border-slate-100 pb-3 dark:border-slate-800 flex items-center justify-between">
+              <h3 className="text-xs font-black text-slate-900 uppercase dark:text-white">
+                Two-Factor Authentication
+              </h3>
+              {user?.twoFactorEnabled && !disabling && (
+                <span className="flex items-center gap-1 text-[10px] font-black text-emerald-600 dark:text-emerald-400">
+                  <ShieldCheck className="size-3.5" />
+                  Enabled
+                </span>
+              )}
+            </div>
+
+            {user?.twoFactorEnabled ? (
+              disabling ? (
+                <form onSubmit={handleConfirmDisable} className="space-y-3">
+                  <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+                    Enter your current password to disable two-factor authentication.
+                  </p>
+                  <input
+                    type="password"
+                    placeholder="Current password"
+                    value={disablePassword}
+                    onChange={(e) => setDisablePassword(e.target.value)}
+                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-[#6B2C91]/30 dark:border-slate-800 dark:bg-slate-950 dark:text-white"
+                  />
+                  <div className="flex gap-2">
+                    <Button
+                      type="submit"
+                      disabled={disableSubmitting}
+                      className="h-8 text-xs font-black bg-red-600 hover:bg-red-700 text-white"
+                    >
+                      {disableSubmitting ? "Disabling..." : "Confirm Disable"}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => {
+                        setDisabling(false)
+                        setDisablePassword("")
+                      }}
+                      className="h-8 text-xs font-bold"
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                </form>
+              ) : (
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 max-w-[70%]">
+                    Your account is protected by an authenticator app code at every login.
+                  </p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setDisabling(true)}
+                    className="h-8 text-xs font-bold border-red-200 text-red-600 hover:bg-red-50 dark:border-red-900 dark:text-red-400"
+                  >
+                    Disable
+                  </Button>
+                </div>
+              )
+            ) : enrolling ? (
+              <form onSubmit={handleConfirmEnrollment} className="space-y-3">
+                <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+                  Scan this with your authenticator app (Google Authenticator, Authy, 1Password, etc.), or enter the
+                  secret manually, then confirm with the 6-digit code it shows.
+                </p>
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-900 space-y-1.5">
+                  <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase">Manual entry secret</p>
+                  <p className="text-xs font-mono font-bold text-slate-900 dark:text-white break-all">{enrollSecret}</p>
+                  <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase pt-1">otpauth URI</p>
+                  <p className="text-[10px] font-mono text-slate-500 dark:text-slate-400 break-all">{enrollOtpauthUri}</p>
+                </div>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={6}
+                  placeholder="123456"
+                  value={enrollCode}
+                  onChange={(e) => setEnrollCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-center text-sm font-bold tracking-[0.4em] focus:outline-none focus:ring-2 focus:ring-[#6B2C91]/30 dark:border-slate-800 dark:bg-slate-950 dark:text-white"
+                />
+                <div className="flex gap-2">
+                  <Button
+                    type="submit"
+                    disabled={enrollSubmitting}
+                    className="h-8 text-xs font-black bg-[#6B2C91] hover:bg-[#5a237b] text-white"
+                  >
+                    {enrollSubmitting ? "Confirming..." : "Confirm & Enable"}
+                  </Button>
+                  <Button type="button" variant="outline" onClick={handleCancelEnrollment} className="h-8 text-xs font-bold">
+                    Cancel
+                  </Button>
+                </div>
+              </form>
+            ) : (
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 max-w-[70%]">
+                  Add an authenticator app code as a second step at login.
+                </p>
+                <Button
+                  type="button"
+                  onClick={handleStartEnrollment}
+                  disabled={enrollSubmitting}
+                  className="h-8 text-xs font-black bg-[#6B2C91] hover:bg-[#5a237b] text-white"
+                >
+                  {enrollSubmitting ? "Starting..." : "Enable 2FA"}
+                </Button>
+              </div>
+            )}
+          </DashboardCard>
         </div>
 
         {/* Security Preferences Card */}
@@ -390,26 +602,51 @@ export function Settings() {
               </p>
             </div>
 
-            {/* 2FA Toggle -- honestly disabled. No OTP/MFA challenge exists
-                anywhere in the login flow (same reality as the mfa_enforced
-                feature flag). */}
-            <div className="flex items-center justify-between py-2 border-t border-slate-100 dark:border-slate-850 opacity-70">
+            {/* Force Two-Factor -- really enforced now (see
+                enforceTwoFactorPolicy in securityPolicy.middleware.ts,
+                applied to every admin-tier route). Platform-wide, so only a
+                Super Admin can flip it; everyone else sees the current
+                state read-only. Turning this on blocks any admin-tier
+                account without their own 2FA enabled (see the card on the
+                left) from /admins/* until they enroll -- they can still log
+                in and reach the enrollment endpoints, so nobody gets
+                permanently locked out. */}
+            <button
+              type="button"
+              onClick={isSuperAdmin ? handleForceTwoFactorToggle : undefined}
+              disabled={!isSuperAdmin || timeoutLoading || forceTwoFactorSaving}
+              title={
+                isSuperAdmin
+                  ? "Blocks admin-tier accounts without their own 2FA enabled from the admin panel, platform-wide."
+                  : "Platform-wide policy -- only a Super Admin can change this."
+              }
+              className={
+                "flex w-full items-center justify-between py-2 border-t border-slate-100 dark:border-slate-850 text-left " +
+                (isSuperAdmin ? "" : "opacity-70 cursor-not-allowed")
+              }
+            >
               <div className="space-y-0.5">
                 <p className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
                   <Lock className="size-3" />
                   Force Two-Factor (2FA)
                 </p>
                 <p className="text-[10px] text-slate-450 dark:text-slate-500 leading-normal max-w-[200px]">
-                  Not implemented -- there is no MFA challenge step in the login flow yet. This control has no runtime effect.
+                  {isSuperAdmin
+                    ? "Requires every admin-tier account to enable 2FA to keep using the admin panel."
+                    : "Platform-wide policy -- only a Super Admin can change this."}
                 </p>
               </div>
-              <div
-                className="relative inline-flex items-center cursor-not-allowed"
-                title="Not implemented -- no MFA challenge exists in the login flow"
-              >
-                <div className="w-9 h-5 bg-slate-150 rounded-full dark:bg-slate-800 border border-slate-200 dark:border-slate-700 relative after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-slate-350 dark:after:bg-slate-600 after:rounded-full after:h-4 after:w-4" />
+              <div className={"relative inline-flex items-center" + (isSuperAdmin ? "" : " cursor-not-allowed")}>
+                <div
+                  className={
+                    "w-9 h-5 rounded-full border relative after:content-[''] after:absolute after:top-[2px] after:rounded-full after:h-4 after:w-4 transition-colors " +
+                    (forceTwoFactor
+                      ? "bg-[#6B2C91] border-[#6B2C91] after:left-[18px] after:bg-white"
+                      : "bg-slate-150 dark:bg-slate-800 border-slate-200 dark:border-slate-700 after:left-[2px] after:bg-slate-350 dark:after:bg-slate-600")
+                  }
+                />
               </div>
-            </div>
+            </button>
           </div>
 
           <div className="p-3.5 border border-teal-200/40 rounded-xl bg-teal-50/20 dark:border-teal-900/10 dark:bg-teal-950/5 flex gap-2">

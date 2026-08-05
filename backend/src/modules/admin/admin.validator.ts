@@ -72,18 +72,27 @@ export const updateAdminSettingsSchema = z.object({
   name: z.string().trim().min(2, "Full name must be at least 2 characters").max(100).optional(),
 })
 
-// Platform-wide "Inactivity Session Timeout" policy (SecurityPolicy
-// singleton row) -- Super-Admin-only to change, see admin.routes.ts.
-// `null` disables enforcement entirely; otherwise bounded to a sane
-// 5-minute floor (anything shorter is unusable) and 8-hour ceiling.
-export const updateSecuritySettingsSchema = z.object({
-  adminSessionTimeoutMinutes: z
-    .number()
-    .int()
-    .min(5, "Timeout must be at least 5 minutes.")
-    .max(480, "Timeout must be at most 8 hours (480 minutes).")
-    .nullable(),
-})
+// Platform-wide security policies (SecurityPolicy singleton row) --
+// Super-Admin-only to change, see admin.routes.ts. Both fields are
+// independently optional so the Settings page can update just the timeout
+// or just the Force 2FA toggle without resending the other. `null` for
+// adminSessionTimeoutMinutes disables that check entirely; otherwise bounded
+// to a sane 5-minute floor (anything shorter is unusable) and 8-hour
+// ceiling.
+export const updateSecuritySettingsSchema = z
+  .object({
+    adminSessionTimeoutMinutes: z
+      .number()
+      .int()
+      .min(5, "Timeout must be at least 5 minutes.")
+      .max(480, "Timeout must be at most 8 hours (480 minutes).")
+      .nullable()
+      .optional(),
+    forceTwoFactorForAdmins: z.boolean().optional(),
+  })
+  .refine((data) => data.adminSessionTimeoutMinutes !== undefined || data.forceTwoFactorForAdmins !== undefined, {
+    message: "At least one security setting must be provided.",
+  })
 
 // Admin Management listing filters
 export const listAdminsQuerySchema = z.object({

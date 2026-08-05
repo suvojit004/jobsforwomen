@@ -56,6 +56,9 @@ const mockCreateOAuthAccount = jest.fn()
 const mockFindInvitation = jest.fn()
 const mockAcceptInvitation = jest.fn()
 const mockCreateInvitedUser = jest.fn()
+const mockSetPendingTwoFactorSecret = jest.fn()
+const mockEnableTwoFactor = jest.fn()
+const mockDisableTwoFactor = jest.fn()
 
 // Factory Mock AuthRepository
 jest.mock("./auth.repository", () => {
@@ -82,6 +85,9 @@ jest.mock("./auth.repository", () => {
         findInvitation: mockFindInvitation,
         acceptInvitation: mockAcceptInvitation,
         createInvitedUser: mockCreateInvitedUser,
+        setPendingTwoFactorSecret: mockSetPendingTwoFactorSecret,
+        enableTwoFactor: mockEnableTwoFactor,
+        disableTwoFactor: mockDisableTwoFactor,
       }
     }),
   }
@@ -92,6 +98,7 @@ import jwt from "jsonwebtoken"
 import env from "../../shared/config/env"
 import { UserStatus } from "@prisma/client"
 import EventBus from "../../shared/eventBus/eventBus"
+import { generateTotpSecret, generateTotpToken, encryptTwoFactorSecret } from "../../shared/utils/twoFactor"
 
 describe("Authentication Routes Integration Tests (Phase 3)", () => {
   beforeEach(() => {
@@ -419,6 +426,223 @@ describe("Authentication Routes Integration Tests (Phase 3)", () => {
       expect(res.status).toBe(200)
       expect(res.body.success).toBe(true)
       expect(res.body.data.sessions).toHaveLength(1)
+    })
+  })
+
+  // Force 2FA fix: twoFactorEnabled existed on User as a stub that nothing
+  // read or wrote. Now real -- login() pauses with a pending challenge
+  // instead of issuing tokens, and enrollment is a real TOTP secret +
+  // confirmation flow.
+  describe("Two-Factor Authentication", () => {
+    beforeEach(() => {
+      const bcrypt = require("bcrypt")
+      jest.spyOn(bcrypt, "compare").mockResolvedValue(true as never)
+    })
+
+    it("pauses login with a pending challenge instead of issuing tokens when 2FA is enabled", async () => {
+      mockFindUserByEmail.mockResolvedValue({
+        id: "2fa-user-id",
+        email: "twofactor@email.com",
+        status: UserStatus.Active,
+        passwordHash: "$2b$10$hashedpass",
+        twoFactorEnabled: true,
+        roles: [{ role: { name: "Candidate", permissions: [] } }],
+      })
+
+      const res = await request(app)
+        .post("/api/v1/auth/login")
+        .send({ email: "twofactor@email.com", password: "password123" })
+
+      expect(res.status).toBe(200)
+      expect(res.body.data.requiresTwoFactor).toBe(true)
+      expect(typeof res.body.data.pendingToken).toBe("string")
+      expect(res.body.data.accessToken).toBeUndefined()
+      expect(res.headers["set-cookie"]).toBeUndefined()
+      expect(mockCreateSession).not.toHaveBeenCalled()
+    })
+
+    it("completes login via POST /auth/2fa/verify with a valid code", async () => {
+      const secret = generateTotpSecret()
+      const validCode = generateTotpToken(secret)
+
+      mockFindUserByEmail.mockResolvedValue({
+        id: "2fa-user-id-2",
+        email: "twofactor2@email.com",
+        status: UserStatus.Active,
+        passwordHash: "$2b$10$hashedpass",
+        twoFactorEnabled: true,
+        roles: [{ role: { name: "Candidate", permissions: [] } }],
+      })
+
+      const loginRes = await request(app)
+        .post("/api/v1/auth/login")
+        .send({ email: "twofactor2@email.com", password: "password123" })
+      const pendingToken = loginRes.body.data.pendingToken
+
+      mockFindUserById.mockResolvedValue({
+        id: "2fa-user-id-2",
+        email: "twofactor2@email.com",
+        status: UserStatus.Active,
+        twoFactorEnabled: true,
+        twoFactorSecret: encryptTwoFactorSecret(secret),
+        roles: [{ role: { name: "Candidate", permissions: [] } }],
+      })
+      mockCreateSession.mockResolvedValue({ id: "session-id-2fa" })
+      mockCreateRefreshToken.mockResolvedValue({ id: "token-id-2fa" })
+
+      const verifyRes = await request(app)
+        .post("/api/v1/auth/2fa/verify")
+        .send({ pendingToken, code: validCode })
+
+      expect(verifyRes.status).toBe(200)
+      expect(verifyRes.body.success).toBe(true)
+      expect(verifyRes.body.data).toHaveProperty("accessToken")
+      expect(verifyRes.headers["set-cookie"]).toBeDefined()
+    })
+
+    it("rejects POST /auth/2fa/verify with an incorrect code", async () => {
+      const secret = generateTotpSecret()
+
+      mockFindUserByEmail.mockResolvedValue({
+        id: "2fa-user-id-3",
+        email: "twofactor3@email.com",
+        status: UserStatus.Active,
+        passwordHash: "$2b$10$hashedpass",
+        twoFactorEnabled: true,
+        roles: [{ role: { name: "Candidate", permissions: [] } }],
+      })
+
+      const loginRes = await request(app)
+        .post("/api/v1/auth/login")
+        .send({ email: "twofactor3@email.com", password: "password123" })
+      const pendingToken = loginRes.body.data.pendingToken
+
+      mockFindUserById.mockResolvedValue({
+        id: "2fa-user-id-3",
+        twoFactorEnabled: true,
+        twoFactorSecret: encryptTwoFactorSecret(secret),
+        roles: [{ role: { name: "Candidate", permissions: [] } }],
+      })
+
+      const verifyRes = await request(app)
+        .post("/api/v1/auth/2fa/verify")
+        .send({ pendingToken, code: "000000" })
+
+      expect(verifyRes.status).toBe(401)
+      expect(verifyRes.body.message).toMatch(/invalid authentication code/i)
+    })
+
+    it("rejects a pendingToken signed for a different purpose (e.g. a real access token can't be reused here)", async () => {
+      const realAccessToken = jwt.sign(
+        { userId: "some-user", email: "x@y.com", roles: ["Candidate"], permissions: [] },
+        env.JWT_ACCESS_SECRET
+      )
+
+      const res = await request(app)
+        .post("/api/v1/auth/2fa/verify")
+        .send({ pendingToken: realAccessToken, code: "123456" })
+
+      expect(res.status).toBe(401)
+      expect(res.body.message).toMatch(/expired/i)
+    })
+
+    it("starts enrollment with a real TOTP secret and otpauth URI, without enabling 2FA yet", async () => {
+      const accessToken = jwt.sign(
+        { userId: "enroll-user-id", email: "enroll@email.com", roles: ["Admin"], permissions: [] },
+        env.JWT_ACCESS_SECRET
+      )
+      mockFindUserById.mockResolvedValue({
+        id: "enroll-user-id",
+        email: "enroll@email.com",
+        twoFactorEnabled: false,
+        roles: [{ role: { name: "Admin", permissions: [] } }],
+      })
+      mockSetPendingTwoFactorSecret.mockResolvedValue({})
+
+      const res = await request(app)
+        .post("/api/v1/auth/2fa/enroll/start")
+        .set("Authorization", `Bearer ${accessToken}`)
+
+      expect(res.status).toBe(200)
+      expect(typeof res.body.data.secret).toBe("string")
+      expect(res.body.data.otpauthUri).toContain("otpauth://totp/")
+      expect(mockSetPendingTwoFactorSecret).toHaveBeenCalledWith("enroll-user-id", expect.any(String))
+      // The stored secret must be encrypted, not the plaintext one returned to the client.
+      expect(mockSetPendingTwoFactorSecret.mock.calls[0][1]).not.toBe(res.body.data.secret)
+    })
+
+    it("confirms enrollment with a valid code and enables 2FA", async () => {
+      const secret = generateTotpSecret()
+      const validCode = generateTotpToken(secret)
+      const accessToken = jwt.sign(
+        { userId: "confirm-user-id", email: "confirm@email.com", roles: ["Admin"], permissions: [] },
+        env.JWT_ACCESS_SECRET
+      )
+      mockFindUserById.mockResolvedValue({
+        id: "confirm-user-id",
+        email: "confirm@email.com",
+        twoFactorEnabled: false,
+        twoFactorSecret: encryptTwoFactorSecret(secret),
+        roles: [{ role: { name: "Admin", permissions: [] } }],
+      })
+      mockEnableTwoFactor.mockResolvedValue({})
+
+      const res = await request(app)
+        .post("/api/v1/auth/2fa/enroll/confirm")
+        .set("Authorization", `Bearer ${accessToken}`)
+        .send({ code: validCode })
+
+      expect(res.status).toBe(200)
+      expect(res.body.data.twoFactorEnabled).toBe(true)
+      expect(mockEnableTwoFactor).toHaveBeenCalledWith("confirm-user-id")
+    })
+
+    it("disables 2FA only after re-verifying the current password", async () => {
+      const accessToken = jwt.sign(
+        { userId: "disable-user-id", email: "disable@email.com", roles: ["Admin"], permissions: [] },
+        env.JWT_ACCESS_SECRET
+      )
+      mockFindUserById.mockResolvedValue({
+        id: "disable-user-id",
+        email: "disable@email.com",
+        passwordHash: "$2b$10$hashedpass",
+        twoFactorEnabled: true,
+        roles: [{ role: { name: "Admin", permissions: [] } }],
+      })
+      mockDisableTwoFactor.mockResolvedValue({})
+
+      const res = await request(app)
+        .post("/api/v1/auth/2fa/disable")
+        .set("Authorization", `Bearer ${accessToken}`)
+        .send({ password: "correct-password" })
+
+      expect(res.status).toBe(200)
+      expect(res.body.data.twoFactorEnabled).toBe(false)
+      expect(mockDisableTwoFactor).toHaveBeenCalledWith("disable-user-id")
+    })
+
+    it("rejects disabling 2FA with the wrong password", async () => {
+      const bcrypt = require("bcrypt")
+      jest.spyOn(bcrypt, "compare").mockResolvedValueOnce(false as never)
+
+      const accessToken = jwt.sign(
+        { userId: "disable-user-id-2", email: "disable2@email.com", roles: ["Admin"], permissions: [] },
+        env.JWT_ACCESS_SECRET
+      )
+      mockFindUserById.mockResolvedValue({
+        id: "disable-user-id-2",
+        passwordHash: "$2b$10$hashedpass",
+        twoFactorEnabled: true,
+        roles: [{ role: { name: "Admin", permissions: [] } }],
+      })
+
+      const res = await request(app)
+        .post("/api/v1/auth/2fa/disable")
+        .set("Authorization", `Bearer ${accessToken}`)
+        .send({ password: "wrong-password" })
+
+      expect(res.status).toBe(401)
+      expect(mockDisableTwoFactor).not.toHaveBeenCalled()
     })
   })
 })

@@ -168,9 +168,27 @@ export const AdminApi = {
     return res?.data?.settings || res?.data || {}
   },
 
-  async updateSecuritySettings(adminSessionTimeoutMinutes: number | null) {
-    const res = await apiClient.put("/api/v1/admins/security-settings", { adminSessionTimeoutMinutes })
+  async updateSecuritySettings(payload: { adminSessionTimeoutMinutes?: number | null; forceTwoFactorForAdmins?: boolean }) {
+    const res = await apiClient.put("/api/v1/admins/security-settings", payload)
     return res?.data?.settings || res?.data || {}
+  },
+
+  // Two-Factor Authentication -- these hit /auth/2fa/*, not /admins/*
+  // (self-service account management, same as changePassword above calling
+  // /auth/change-password), but are exposed from the Admin Settings page.
+  async start2FAEnrollment() {
+    const res = await apiClient.post("/api/v1/auth/2fa/enroll/start", {})
+    return res?.data || {}
+  },
+
+  async confirm2FAEnrollment(code: string) {
+    const res = await apiClient.post("/api/v1/auth/2fa/enroll/confirm", { code })
+    return res?.data || {}
+  },
+
+  async disable2FA(password: string) {
+    const res = await apiClient.post("/api/v1/auth/2fa/disable", { password })
+    return res?.data || {}
   },
 
   async getNotifications() {

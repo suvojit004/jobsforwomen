@@ -74,3 +74,26 @@ export const changePasswordSchema = z.object({
 export const deleteAccountSchema = z.object({
   password: z.string().min(1, "Your current password is required to delete your account"),
 })
+
+const totpCode = z
+  .string()
+  .trim()
+  .regex(/^\d{6}$/, "Enter the 6-digit code from your authenticator app.")
+
+// POST /auth/2fa/verify -- completes a login paused by AuthService.login()'s
+// twoFactorEnabled branch.
+export const twoFactorVerifyLoginSchema = z.object({
+  pendingToken: z.string().min(1, "Two-factor challenge token is required."),
+  code: totpCode,
+})
+
+// POST /auth/2fa/enroll/confirm
+export const twoFactorEnrollConfirmSchema = z.object({
+  code: totpCode,
+})
+
+// POST /auth/2fa/disable -- re-authenticates with the current password
+// before turning 2FA off, same bar as deleteAccountSchema above.
+export const twoFactorDisableSchema = z.object({
+  password: z.string().min(1, "Current password is required to disable two-factor authentication."),
+})

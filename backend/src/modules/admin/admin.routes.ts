@@ -7,7 +7,7 @@ import {
   requirePermission,
 } from "../rbac/rbac.middleware"
 import { adminRateLimiter } from "../../shared/middleware/rateLimit.middleware"
-import { enforceAdminSessionTimeout } from "../../shared/middleware/sessionTimeout.middleware"
+import { enforceAdminSessionTimeout, enforceTwoFactorPolicy } from "../../shared/middleware/securityPolicy.middleware"
 
 const router = Router()
 const controller = new AdminController()
@@ -25,10 +25,15 @@ router.use(requireRole(ADMIN_TIER_ROLES))
 // credentials, a buggy client hammering an endpoint) while staying loose
 // enough for legitimate high-volume moderation sessions.
 router.use(adminRateLimiter)
-// Real "Inactivity Session Timeout" enforcement (see Administrative Settings
-// > Platform Security Policies). No-ops when the policy is unset/disabled or
-// the token predates this feature -- see sessionTimeout.middleware.ts.
+// Real "Inactivity Session Timeout" and "Force Two-Factor (2FA)" enforcement
+// (see Administrative Settings > Platform Security Policies). Both no-op
+// when their policy is unset/disabled -- see securityPolicy.middleware.ts.
 router.use(enforceAdminSessionTimeout)
+// Deliberately after enforceAdminSessionTimeout (an expired session should
+// 401 before a 2FA-policy 403) and applies to every /admins/* route --
+// enrollment itself lives under /auth/2fa/* (session-gated only, not
+// admin-tier-gated), so an unenrolled admin can always reach it to comply.
+router.use(enforceTwoFactorPolicy)
 
 // General Admin Search & Dashboard metrics (Admin, Super Admin, Moderator, Support)
 router.get("/dashboard", controller.getDashboard)

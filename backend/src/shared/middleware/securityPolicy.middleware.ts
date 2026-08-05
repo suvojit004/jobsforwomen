@@ -4,56 +4,65 @@ import { redis } from "../utils/redis"
 import { sendError } from "../utils/response"
 import { logger } from "../utils/logger"
 
-// Enforces the "Inactivity Session Timeout" security policy configured on
-// the Administrative Settings page (SecurityPolicy.adminSessionTimeoutMinutes,
-// Super-Admin-only to change -- see admin.service.ts's
-// getSecuritySettings/updateSecuritySettings). Previously this control was a
-// disabled dropdown locked to "30 Minutes (fixed)": access/refresh token
-// lifetimes are fixed, process-wide env vars (JWT_ACCESS_EXPIRY/
-// JWT_REFRESH_EXPIRY), the same for every user, and nothing tracked
-// "time since last activity" at all. This middleware is the real
-// enforcement point.
+// Enforces the two real, Super-Admin-configurable platform security policies
+// on the Administrative Settings page -- both used to be honestly-disabled
+// controls with zero runtime effect:
+//   - Inactivity Session Timeout (enforceAdminSessionTimeout)
+//   - Force Two-Factor (2FA) for admin-tier accounts (enforceTwoFactorPolicy)
+// Both read the same SecurityPolicy singleton row (see admin.service.ts's
+// getSecuritySettings/updateSecuritySettings), so this file shares one
+// cached read of it rather than each maintaining its own Redis key.
+// (This file was named sessionTimeout.middleware.ts before Force 2FA was
+// added -- renamed since it now covers more than session timeout.)
 
 const SETTINGS_ROW_ID = "singleton"
-const SETTINGS_CACHE_KEY = "security:adminSessionTimeoutMinutes"
+const SETTINGS_CACHE_KEY = "security:policy"
 const SETTINGS_CACHE_TTL_SECONDS = 60 // Super Admin policy changes take effect within a minute platform-wide.
 const LAST_ACTIVE_PREFIX = "session:lastActive:"
 
-async function getConfiguredTimeoutMinutes(): Promise<number | null> {
+interface SecurityPolicySnapshot {
+  adminSessionTimeoutMinutes: number | null
+  forceTwoFactorForAdmins: boolean
+}
+
+async function getSecurityPolicy(): Promise<SecurityPolicySnapshot> {
   if (redis) {
     try {
       const cached = await redis.get(SETTINGS_CACHE_KEY)
-      if (cached !== null) {
-        return cached === "" ? null : Number(cached)
+      if (cached) {
+        return JSON.parse(cached)
       }
     } catch (err: any) {
-      logger.warn(`[SessionTimeout] Redis cache read failed, falling back to DB: ${err.message}`)
+      logger.warn(`[SecurityPolicy] Redis cache read failed, falling back to DB: ${err.message}`)
     }
   }
 
   const row = await prisma.securityPolicy.findUnique({ where: { id: SETTINGS_ROW_ID } })
-  const minutes = row?.adminSessionTimeoutMinutes ?? null
+  const snapshot: SecurityPolicySnapshot = {
+    adminSessionTimeoutMinutes: row?.adminSessionTimeoutMinutes ?? null,
+    forceTwoFactorForAdmins: row?.forceTwoFactorForAdmins ?? false,
+  }
 
   if (redis) {
     try {
-      await redis.set(SETTINGS_CACHE_KEY, minutes === null ? "" : String(minutes), "EX", SETTINGS_CACHE_TTL_SECONDS)
+      await redis.set(SETTINGS_CACHE_KEY, JSON.stringify(snapshot), "EX", SETTINGS_CACHE_TTL_SECONDS)
     } catch (err: any) {
-      logger.warn(`[SessionTimeout] Redis cache write failed: ${err.message}`)
+      logger.warn(`[SecurityPolicy] Redis cache write failed: ${err.message}`)
     }
   }
 
-  return minutes
+  return snapshot
 }
 
 // Called by AdminService.updateSecuritySettings right after a Super Admin
-// changes the timeout, so the new value is picked up immediately instead of
-// waiting out the cache TTL.
-export async function invalidateSessionTimeoutSettingsCache(): Promise<void> {
+// changes either policy, so the new value is picked up immediately instead
+// of waiting out the cache TTL.
+export async function invalidateSecurityPolicyCache(): Promise<void> {
   if (!redis) return
   try {
     await redis.del(SETTINGS_CACHE_KEY)
   } catch (err: any) {
-    logger.warn(`[SessionTimeout] Failed to invalidate settings cache: ${err.message}`)
+    logger.warn(`[SecurityPolicy] Failed to invalidate cache: ${err.message}`)
   }
 }
 
@@ -66,12 +75,12 @@ async function expireSession(sessionId: string): Promise<void> {
   try {
     await prisma.session.update({ where: { id: sessionId }, data: { revoked: true } })
   } catch (err: any) {
-    logger.warn(`[SessionTimeout] Failed to mark session ${sessionId} revoked: ${err.message}`)
+    logger.warn(`[SecurityPolicy] Failed to mark session ${sessionId} revoked: ${err.message}`)
   }
   try {
     await prisma.refreshToken.updateMany({ where: { sessionId, revoked: false }, data: { revoked: true } })
   } catch (err: any) {
-    logger.warn(`[SessionTimeout] Failed to revoke refresh tokens for session ${sessionId}: ${err.message}`)
+    logger.warn(`[SecurityPolicy] Failed to revoke refresh tokens for session ${sessionId}: ${err.message}`)
   }
   if (redis) {
     try {
@@ -98,7 +107,8 @@ export async function enforceAdminSessionTimeout(req: Request, res: Response, ne
   }
 
   try {
-    const timeoutMinutes = await getConfiguredTimeoutMinutes()
+    const policy = await getSecurityPolicy()
+    const timeoutMinutes = policy.adminSessionTimeoutMinutes
     if (!timeoutMinutes || timeoutMinutes <= 0) {
       // Enforcement disabled (the honest default) -- nothing to check.
       return next()
@@ -124,7 +134,7 @@ export async function enforceAdminSessionTimeout(req: Request, res: Response, ne
         await redis.set(key, String(nowMs), "EX", Math.ceil(timeoutMs / 1000))
         return next()
       } catch (err: any) {
-        logger.warn(`[SessionTimeout] Redis check failed, falling back to DB: ${err.message}`)
+        logger.warn(`[SecurityPolicy] Redis check failed, falling back to DB: ${err.message}`)
       }
     }
 
@@ -145,7 +155,41 @@ export async function enforceAdminSessionTimeout(req: Request, res: Response, ne
     // every admin out of the platform. The request still passed real JWT
     // signature verification upstream -- this only weakens the inactivity
     // check specifically, not authentication itself.
-    logger.error(`[SessionTimeout] Unexpected error, failing open: ${err.message}`)
+    logger.error(`[SecurityPolicy] Unexpected error enforcing session timeout, failing open: ${err.message}`)
+    return next()
+  }
+}
+
+export async function enforceTwoFactorPolicy(req: Request, res: Response, next: NextFunction) {
+  const user = req.user
+  if (!user) {
+    return sendError(res, "Authentication required", null, 401)
+  }
+
+  try {
+    const policy = await getSecurityPolicy()
+    if (!policy.forceTwoFactorForAdmins) {
+      return next()
+    }
+
+    // Tokens minted before Force 2FA existed (or before this admin last
+    // logged in/refreshed) won't carry twoFactorEnabled -- treated as "not
+    // enrolled" rather than crashing. This can transiently block an admin
+    // who actually does have 2FA enabled until their token naturally
+    // refreshes (bounded by JWT_ACCESS_EXPIRY), which is the safe direction
+    // to be wrong in for a security gate.
+    if (user.twoFactorEnabled) {
+      return next()
+    }
+
+    return sendError(
+      res,
+      "Two-factor authentication is required for admin accounts. Enable it from Administrative Settings to continue.",
+      null,
+      403
+    )
+  } catch (err: any) {
+    logger.error(`[SecurityPolicy] Unexpected error enforcing 2FA policy, failing open: ${err.message}`)
     return next()
   }
 }

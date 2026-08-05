@@ -17,7 +17,7 @@ import { storageMetrics } from "../../shared/utils/fileStorage"
 import { emailMetrics } from "../../shared/utils/email"
 import { AppError } from "../../shared/middleware/errorHandler"
 import { hashPassword } from "../../shared/utils/password"
-import { invalidateSessionTimeoutSettingsCache } from "../../shared/middleware/sessionTimeout.middleware"
+import { invalidateSecurityPolicyCache } from "../../shared/middleware/securityPolicy.middleware"
 
 export interface ServiceContext {
   operatorId?: string
@@ -2686,22 +2686,42 @@ export class AdminService {
     const policy = await prisma.securityPolicy.findUnique({ where: { id: "singleton" } })
     return {
       adminSessionTimeoutMinutes: policy?.adminSessionTimeoutMinutes ?? null,
+      forceTwoFactorForAdmins: policy?.forceTwoFactorForAdmins ?? false,
     }
   }
 
-  async updateSecuritySettings(adminId: string, minutes: number | null, context?: ServiceContext) {
+  async updateSecuritySettings(
+    adminId: string,
+    data: { adminSessionTimeoutMinutes?: number | null; forceTwoFactorForAdmins?: boolean },
+    context?: ServiceContext
+  ) {
     const previous = await this.getSecuritySettings()
+
+    const updateData: { adminSessionTimeoutMinutes?: number | null; forceTwoFactorForAdmins?: boolean; updatedById: string } = {
+      updatedById: adminId,
+    }
+    if (data.adminSessionTimeoutMinutes !== undefined) {
+      updateData.adminSessionTimeoutMinutes = data.adminSessionTimeoutMinutes
+    }
+    if (data.forceTwoFactorForAdmins !== undefined) {
+      updateData.forceTwoFactorForAdmins = data.forceTwoFactorForAdmins
+    }
 
     await prisma.securityPolicy.upsert({
       where: { id: "singleton" },
-      update: { adminSessionTimeoutMinutes: minutes, updatedById: adminId },
-      create: { id: "singleton", adminSessionTimeoutMinutes: minutes, updatedById: adminId },
+      update: updateData,
+      create: {
+        id: "singleton",
+        adminSessionTimeoutMinutes: data.adminSessionTimeoutMinutes ?? null,
+        forceTwoFactorForAdmins: data.forceTwoFactorForAdmins ?? false,
+        updatedById: adminId,
+      },
     })
 
-    // Middleware caches the configured value in Redis for up to a minute --
+    // Middleware caches the configured values in Redis for up to a minute --
     // invalidate immediately so a Super Admin's change is felt right away
     // rather than on the next cache expiry.
-    await invalidateSessionTimeoutSettingsCache()
+    await invalidateSecurityPolicyCache()
 
     EventBus.publish("AuditCreated", {
       ...context,
@@ -2710,8 +2730,8 @@ export class AdminService {
       action: "UPDATE_SECURITY_SETTINGS",
       entity: "SecurityPolicy",
       entityId: "singleton",
-      oldValue: { adminSessionTimeoutMinutes: previous.adminSessionTimeoutMinutes },
-      newValue: { adminSessionTimeoutMinutes: minutes },
+      oldValue: previous,
+      newValue: { ...previous, ...data },
     })
 
     return this.getSecuritySettings()

@@ -1028,13 +1028,17 @@ describe("Admin Module Integration Tests (Phase 7)", () => {
     })
   })
 
-  // Inactivity Session Timeout: previously a disabled dropdown locked to
-  // "30 Minutes (fixed)" with zero runtime effect. Now a real, Super-Admin-
-  // gated platform policy (SecurityPolicy singleton row) enforced by
-  // sessionTimeout.middleware.ts on every admin-tier request.
+  // Inactivity Session Timeout and Force Two-Factor (2FA): previously two
+  // disabled controls with zero runtime effect. Now real, Super-Admin-gated
+  // platform policies (one SecurityPolicy singleton row) enforced by
+  // securityPolicy.middleware.ts on every admin-tier request.
   describe("GET/PUT /admins/security-settings", () => {
     it("allows any admin-tier role to read the current policy", async () => {
-      mockPrisma.securityPolicy.findUnique.mockResolvedValue({ id: "singleton", adminSessionTimeoutMinutes: 30 })
+      mockPrisma.securityPolicy.findUnique.mockResolvedValue({
+        id: "singleton",
+        adminSessionTimeoutMinutes: 30,
+        forceTwoFactorForAdmins: true,
+      })
 
       const res = await request(app)
         .get("/api/v1/admins/security-settings")
@@ -1042,6 +1046,7 @@ describe("Admin Module Integration Tests (Phase 7)", () => {
 
       expect(res.status).toBe(200)
       expect(res.body.data.settings.adminSessionTimeoutMinutes).toBe(30)
+      expect(res.body.data.settings.forceTwoFactorForAdmins).toBe(true)
     })
 
     it("rejects a non-Super-Admin trying to change the platform-wide policy", async () => {
@@ -1054,8 +1059,12 @@ describe("Admin Module Integration Tests (Phase 7)", () => {
       expect(mockPrisma.securityPolicy.upsert).not.toHaveBeenCalled()
     })
 
-    it("lets a Super Admin update the policy and invalidates the middleware's settings cache", async () => {
-      mockPrisma.securityPolicy.findUnique.mockResolvedValue({ id: "singleton", adminSessionTimeoutMinutes: null })
+    it("lets a Super Admin update just the timeout without touching the Force 2FA flag", async () => {
+      mockPrisma.securityPolicy.findUnique.mockResolvedValue({
+        id: "singleton",
+        adminSessionTimeoutMinutes: null,
+        forceTwoFactorForAdmins: false,
+      })
       mockPrisma.securityPolicy.upsert.mockResolvedValue({ id: "singleton", adminSessionTimeoutMinutes: 30 })
 
       const res = await request(app)
@@ -1067,18 +1076,41 @@ describe("Admin Module Integration Tests (Phase 7)", () => {
       expect(mockPrisma.securityPolicy.upsert).toHaveBeenCalledWith({
         where: { id: "singleton" },
         update: { adminSessionTimeoutMinutes: 30, updatedById: "super-admin-id" },
-        create: { id: "singleton", adminSessionTimeoutMinutes: 30, updatedById: "super-admin-id" },
+        create: { id: "singleton", adminSessionTimeoutMinutes: 30, forceTwoFactorForAdmins: false, updatedById: "super-admin-id" },
       })
-      // sessionTimeout.middleware.ts caches the configured value for up to a
-      // minute -- a Super Admin's change must not have to wait that out.
-      expect(mockRedis.del).toHaveBeenCalledWith("security:adminSessionTimeoutMinutes")
+      // securityPolicy.middleware.ts caches the configured values for up to
+      // a minute -- a Super Admin's change must not have to wait that out.
+      expect(mockRedis.del).toHaveBeenCalledWith("security:policy")
+    })
+
+    it("lets a Super Admin turn on Force Two-Factor without touching the timeout", async () => {
+      mockPrisma.securityPolicy.findUnique.mockResolvedValue({
+        id: "singleton",
+        adminSessionTimeoutMinutes: 30,
+        forceTwoFactorForAdmins: false,
+      })
+      mockPrisma.securityPolicy.upsert.mockResolvedValue({ id: "singleton", forceTwoFactorForAdmins: true })
+
+      const res = await request(app)
+        .put("/api/v1/admins/security-settings")
+        .set("Authorization", `Bearer ${superAdminToken}`)
+        .send({ forceTwoFactorForAdmins: true })
+
+      expect(res.status).toBe(200)
+      expect(mockPrisma.securityPolicy.upsert).toHaveBeenCalledWith({
+        where: { id: "singleton" },
+        update: { forceTwoFactorForAdmins: true, updatedById: "super-admin-id" },
+        create: { id: "singleton", adminSessionTimeoutMinutes: null, forceTwoFactorForAdmins: true, updatedById: "super-admin-id" },
+      })
     })
   })
 
   describe("enforceAdminSessionTimeout middleware", () => {
     it("force-expires a session once it has been inactive longer than the configured timeout", async () => {
       mockRedis.get.mockImplementation(async (key: string) => {
-        if (key === "security:adminSessionTimeoutMinutes") return "15"
+        if (key === "security:policy") {
+          return JSON.stringify({ adminSessionTimeoutMinutes: 15, forceTwoFactorForAdmins: false })
+        }
         if (key.startsWith("session:lastActive:")) return String(Date.now() - 20 * 60 * 1000) // 20 min ago > 15 min timeout
         return null
       })
@@ -1115,11 +1147,12 @@ describe("Admin Module Integration Tests (Phase 7)", () => {
 
     it("lets a session through when it has been active within the configured timeout", async () => {
       mockRedis.get.mockImplementation(async (key: string) => {
-        if (key === "security:adminSessionTimeoutMinutes") return "15"
+        if (key === "security:policy") {
+          return JSON.stringify({ adminSessionTimeoutMinutes: 15, forceTwoFactorForAdmins: false })
+        }
         if (key.startsWith("session:lastActive:")) return String(Date.now() - 2 * 60 * 1000) // 2 min ago, well inside 15
         return null
       })
-      mockPrisma.securityPolicy.findUnique.mockResolvedValue({ id: "singleton", adminSessionTimeoutMinutes: 15 })
       const tokenWithSession = jwt.sign(
         {
           userId: "moderator-id",
@@ -1144,9 +1177,10 @@ describe("Admin Module Integration Tests (Phase 7)", () => {
       // being configured must not lock out every already-logged-in admin
       // the moment this deploys.
       mockRedis.get.mockImplementation(async (key: string) =>
-        key === "security:adminSessionTimeoutMinutes" ? "15" : null
+        key === "security:policy"
+          ? JSON.stringify({ adminSessionTimeoutMinutes: 15, forceTwoFactorForAdmins: false })
+          : null
       )
-      mockPrisma.securityPolicy.findUnique.mockResolvedValue({ id: "singleton", adminSessionTimeoutMinutes: 15 })
 
       const res = await request(app)
         .get("/api/v1/admins/security-settings")
@@ -1154,6 +1188,62 @@ describe("Admin Module Integration Tests (Phase 7)", () => {
 
       expect(res.status).toBe(200)
       expect(mockPrisma.session.update).not.toHaveBeenCalled()
+    })
+  })
+
+  describe("enforceTwoFactorPolicy middleware (Force Two-Factor)", () => {
+    it("blocks an admin-tier account without 2FA enabled once the policy is turned on", async () => {
+      mockRedis.get.mockImplementation(async (key: string) =>
+        key === "security:policy"
+          ? JSON.stringify({ adminSessionTimeoutMinutes: null, forceTwoFactorForAdmins: true })
+          : null
+      )
+      // moderatorToken (beforeEach) carries no twoFactorEnabled claim at
+      // all -- same as "not enrolled", the safe default.
+      const res = await request(app)
+        .get("/api/v1/admins/security-settings")
+        .set("Authorization", `Bearer ${moderatorToken}`)
+
+      expect(res.status).toBe(403)
+      expect(res.body.message).toMatch(/two-factor authentication is required/i)
+    })
+
+    it("lets an admin-tier account with 2FA enabled through once the policy is turned on", async () => {
+      mockRedis.get.mockImplementation(async (key: string) =>
+        key === "security:policy"
+          ? JSON.stringify({ adminSessionTimeoutMinutes: null, forceTwoFactorForAdmins: true })
+          : null
+      )
+      const tokenWith2FA = jwt.sign(
+        {
+          userId: "moderator-id",
+          email: "moderator@jfw.info",
+          roles: ["Moderator"],
+          permissions: ["manage:admin"],
+          twoFactorEnabled: true,
+        },
+        env.JWT_ACCESS_SECRET
+      )
+
+      const res = await request(app)
+        .get("/api/v1/admins/security-settings")
+        .set("Authorization", `Bearer ${tokenWith2FA}`)
+
+      expect(res.status).toBe(200)
+    })
+
+    it("does not block anyone when the policy is off (the honest default)", async () => {
+      mockRedis.get.mockImplementation(async (key: string) =>
+        key === "security:policy"
+          ? JSON.stringify({ adminSessionTimeoutMinutes: null, forceTwoFactorForAdmins: false })
+          : null
+      )
+
+      const res = await request(app)
+        .get("/api/v1/admins/security-settings")
+        .set("Authorization", `Bearer ${moderatorToken}`)
+
+      expect(res.status).toBe(200)
     })
   })
 })

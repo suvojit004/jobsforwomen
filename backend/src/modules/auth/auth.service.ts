@@ -2,6 +2,15 @@ import crypto from "crypto"
 import { AuthRepository } from "./auth.repository"
 import { hashPassword, comparePassword } from "../../shared/utils/password"
 import { generateAccessToken, generateRefreshToken, verifyRefreshToken } from "../../shared/utils/token"
+import {
+  generateTotpSecret,
+  verifyTotpToken,
+  buildOtpAuthUri,
+  encryptTwoFactorSecret,
+  decryptTwoFactorSecret,
+  generateTwoFactorPendingToken,
+  verifyTwoFactorPendingToken,
+} from "../../shared/utils/twoFactor"
 import { calculateProfileCompletion } from "../../shared/utils/profileCompletion"
 import { logger } from "../../shared/utils/logger"
 import EventBus from "../../shared/eventBus/eventBus"
@@ -202,7 +211,129 @@ export class AuthService {
       throw new Error("Invalid email or password")
     }
 
+    // Password check passed, but the account has 2FA enrolled -- don't
+    // issue real tokens yet. Return a short-lived pending token that only
+    // authorizes completing the challenge (POST /auth/2fa/verify), not
+    // general API access. See verifyTwoFactorLogin.
+    //
+    // `kind` is a real discriminant (not just a `requiresTwoFactor` flag
+    // present on one branch only) so auth.controller.ts's `result.kind ===
+    // "twoFactorRequired"` check narrows this union reliably -- an `in`/
+    // truthiness check on a flag that's simply *absent* on the other branch
+    // does not narrow consistently across every TS version.
+    if (user.twoFactorEnabled) {
+      return { kind: "twoFactorRequired" as const, pendingToken: generateTwoFactorPendingToken(user.id) }
+    }
+
+    const session = await this.createAuthSession(user, ipAddress, userAgent)
+    return { kind: "success" as const, ...session }
+  }
+
+  // Completes a login that was paused by the twoFactorEnabled branch above.
+  // Uses AppError (explicit status code) rather than this file's usual plain
+  // `throw new Error(...)` + errorHandler.ts message-substring mapping --
+  // these are new, specific messages that wouldn't match any existing
+  // pattern there, and a security-facing endpoint like this shouldn't
+  // depend on a string happening to contain the right substring to avoid
+  // surfacing as a 500.
+  async verifyTwoFactorLogin(pendingToken: string, code: string, ipAddress: string, userAgent: string) {
+    const decoded = verifyTwoFactorPendingToken(pendingToken)
+    if (!decoded) {
+      throw new AppError("Your two-factor challenge has expired. Please log in again.", 401)
+    }
+
+    const user = await this.authRepository.findUserById(decoded.userId)
+    if (!user) {
+      throw new AppError("User not found", 404)
+    }
+
+    if (!user.twoFactorEnabled || !user.twoFactorSecret) {
+      // Account state changed between password check and code entry (e.g.
+      // 2FA was disabled elsewhere mid-flow) -- fail closed rather than
+      // silently logging in without the check that was promised.
+      throw new AppError("Two-factor authentication is not enabled for this account.", 400)
+    }
+
+    const secret = decryptTwoFactorSecret(user.twoFactorSecret)
+    if (!verifyTotpToken(secret, code)) {
+      throw new AppError("Invalid authentication code. Please try again.", 401)
+    }
+
     return this.createAuthSession(user, ipAddress, userAgent)
+  }
+
+  async startTwoFactorEnrollment(userId: string) {
+    const user = await this.authRepository.findUserById(userId)
+    if (!user) {
+      throw new AppError("User not found", 404)
+    }
+    if (user.twoFactorEnabled) {
+      throw new AppError("Two-factor authentication is already enabled on this account.", 409)
+    }
+
+    const secret = generateTotpSecret()
+    await this.authRepository.setPendingTwoFactorSecret(userId, encryptTwoFactorSecret(secret))
+
+    // Plaintext secret is only ever returned here, once, right after
+    // generation -- everywhere else it's stored/read encrypted.
+    return {
+      secret,
+      otpauthUri: buildOtpAuthUri(secret, user.email),
+    }
+  }
+
+  async confirmTwoFactorEnrollment(userId: string, code: string) {
+    const user = await this.authRepository.findUserById(userId)
+    if (!user) {
+      throw new AppError("User not found", 404)
+    }
+    if (!user.twoFactorSecret) {
+      throw new AppError("No pending two-factor enrollment found. Please start enrollment again.", 400)
+    }
+
+    const secret = decryptTwoFactorSecret(user.twoFactorSecret)
+    if (!verifyTotpToken(secret, code)) {
+      throw new AppError("Invalid authentication code. Please try again.", 401)
+    }
+
+    await this.authRepository.enableTwoFactor(userId)
+
+    EventBus.publish("AuditCreated", {
+      operatorId: userId,
+      category: "SECURITY",
+      action: "ENABLE_2FA",
+      entity: "User",
+      entityId: userId,
+    })
+
+    return { twoFactorEnabled: true }
+  }
+
+  async disableTwoFactorSelfService(userId: string, password: string) {
+    const user = await this.authRepository.findUserById(userId)
+    if (!user) {
+      throw new AppError("User not found", 404)
+    }
+    if (!user.passwordHash) {
+      throw new AppError("This account is configured for Google login and has no password to verify.", 400)
+    }
+
+    const isMatch = await comparePassword(password, user.passwordHash)
+    if (!isMatch) {
+      throw new AppError("Incorrect password.", 401)
+    }
+
+    await this.authRepository.disableTwoFactor(userId)
+
+    EventBus.publish("AuditCreated", {
+      operatorId: userId,
+      category: "SECURITY",
+      action: "DISABLE_2FA",
+      entity: "User",
+      entityId: userId,
+    })
+
+    return { twoFactorEnabled: false }
   }
 
   async oauth(
@@ -327,6 +458,12 @@ export class AuthService {
       roles,
       permissions,
       sessionId: session.id,
+      // Baked in at mint time so enforceTwoFactorPolicy (Force Two-Factor
+      // platform policy) can check it with zero extra DB/Redis calls on the
+      // hot path. Self-corrects within one access-token lifetime
+      // (JWT_ACCESS_EXPIRY) if 2FA state changes mid-session -- same
+      // staleness tradeoff this app already accepts for roles/permissions.
+      twoFactorEnabled: !!user.twoFactorEnabled,
     }
 
     const accessToken = generateAccessToken(payload)
@@ -356,6 +493,7 @@ export class AuthService {
         roles,
         permissions,
         profileCompletePercent,
+        twoFactorEnabled: !!user.twoFactorEnabled,
       },
     }
   }
@@ -406,6 +544,7 @@ export class AuthService {
       roles,
       permissions,
       profileCompletePercent,
+      twoFactorEnabled: !!user.twoFactorEnabled,
       candidateProfile: user.candidateProfile,
       recruiterProfile: user.recruiterProfile,
       adminProfile: user.adminProfile,

@@ -9,16 +9,28 @@ export interface User {
   roles: string[]
   permissions: string[]
   profileCompletePercent?: number
+  // Real now -- see AuthService.createAuthSession/getMe. Drives the
+  // Administrative Settings 2FA enrollment UI and the Login.tsx code step.
+  twoFactorEnabled?: boolean
   candidateProfile?: any
   recruiterProfile?: any
   adminProfile?: any
+}
+
+// Returned by login() when the password check passes but the account has
+// 2FA enrolled -- no tokens issued yet. Login.tsx switches to a code-entry
+// step and calls verifyTwoFactor() with the pendingToken to finish.
+export interface TwoFactorChallenge {
+  requiresTwoFactor: true
+  pendingToken: string
 }
 
 interface AuthContextType {
   user: User | null
   loading: boolean
   isAuthenticated: boolean
-  login: (email: string, password: string) => Promise<User>
+  login: (email: string, password: string) => Promise<User | TwoFactorChallenge>
+  verifyTwoFactor: (pendingToken: string, code: string) => Promise<User>
   logout: () => Promise<void>
   registerCandidate: (data: any) => Promise<any>
   registerRecruiter: (data: any) => Promise<any>
@@ -94,10 +106,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener("auth:session-expired", handleSessionExpired)
   }, [])
 
-  const login = async (email: string, password: string): Promise<User> => {
+  const login = async (email: string, password: string): Promise<User | TwoFactorChallenge> => {
     const res = await apiClient.post("/api/v1/auth/login", { email, password })
     if (!res || !res.success || !res.data) {
       throw new Error(res?.message || "Invalid login response")
+    }
+    if (res.data.requiresTwoFactor) {
+      return { requiresTwoFactor: true, pendingToken: res.data.pendingToken }
+    }
+    const { accessToken, user: loggedUser } = res.data
+    localStorage.setItem("jwt_token", accessToken)
+    localStorage.setItem("userRole", loggedUser.roles[0])
+    setUser(loggedUser)
+    return loggedUser
+  }
+
+  const verifyTwoFactor = async (pendingToken: string, code: string): Promise<User> => {
+    const res = await apiClient.post("/api/v1/auth/2fa/verify", { pendingToken, code })
+    if (!res || !res.success || !res.data) {
+      throw new Error(res?.message || "Invalid two-factor response")
     }
     const { accessToken, user: loggedUser } = res.data
     localStorage.setItem("jwt_token", accessToken)
@@ -139,6 +166,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         loading,
         isAuthenticated: !!user,
         login,
+        verifyTwoFactor,
         logout,
         registerCandidate,
         registerRecruiter,

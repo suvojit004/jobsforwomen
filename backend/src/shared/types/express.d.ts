@@ -6,6 +6,9 @@ export interface UserPayload {
   // See TokenPayload in shared/utils/token.ts -- optional, only present on
   // tokens minted after sessionTimeout.middleware.ts was introduced.
   sessionId?: string
+  // See TokenPayload in shared/utils/token.ts -- optional, only present on
+  // tokens minted after Force Two-Factor enforcement was introduced.
+  twoFactorEnabled?: boolean
 }
 
 declare global {

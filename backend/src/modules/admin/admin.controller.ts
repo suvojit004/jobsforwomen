@@ -580,7 +580,7 @@ export class AdminController {
       const validated = updateSecuritySettingsSchema.parse(req.body)
       const adminId = req.user?.userId || ""
       const context = this.getContext(req)
-      const settings = await this.service.updateSecuritySettings(adminId, validated.adminSessionTimeoutMinutes, context)
+      const settings = await this.service.updateSecuritySettings(adminId, validated, context)
       return sendSuccess(res, { settings }, "Security settings updated successfully.")
     } catch (err: any) {
       next(err)

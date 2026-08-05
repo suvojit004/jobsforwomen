@@ -18,6 +18,9 @@ import {
   acceptInvitationSchema,
   changePasswordSchema,
   deleteAccountSchema,
+  twoFactorVerifyLoginSchema,
+  twoFactorEnrollConfirmSchema,
+  twoFactorDisableSchema,
 } from "./auth.validator"
 
 export class AuthController {
@@ -70,6 +73,17 @@ export class AuthController {
 
     const result = await this.authService.login(validated.email, validated.password, ipAddress, userAgent)
 
+    // Password checked out, but the account has 2FA enrolled -- no tokens
+    // issued yet, just a short-lived challenge the client must complete via
+    // POST /auth/2fa/verify.
+    if (result.kind === "twoFactorRequired") {
+      return sendSuccess(
+        res,
+        { requiresTwoFactor: true, pendingToken: result.pendingToken },
+        "Two-factor authentication code required."
+      )
+    }
+
     // Set refresh token HttpOnly cookie
     res.cookie(REFRESH_COOKIE_NAME, result.refreshToken, getRefreshCookieOptions())
 
@@ -81,6 +95,63 @@ export class AuthController {
       },
       "Logged in successfully."
     )
+  }
+
+  verifyTwoFactorLogin = async (req: Request, res: Response) => {
+    const validated = twoFactorVerifyLoginSchema.parse(req.body)
+    const ipAddress = req.ip || "127.0.0.1"
+    const userAgent = req.headers["user-agent"] || "Unknown"
+
+    const result = await this.authService.verifyTwoFactorLogin(
+      validated.pendingToken,
+      validated.code,
+      ipAddress,
+      userAgent
+    )
+
+    res.cookie(REFRESH_COOKIE_NAME, result.refreshToken, getRefreshCookieOptions())
+
+    return sendSuccess(
+      res,
+      {
+        accessToken: result.accessToken,
+        user: result.user,
+      },
+      "Logged in successfully."
+    )
+  }
+
+  startTwoFactorEnrollment = async (req: Request, res: Response) => {
+    const user = req.user
+    if (!user) {
+      return sendError(res, "Authentication required", null, 401)
+    }
+    const result = await this.authService.startTwoFactorEnrollment(user.userId)
+    return sendSuccess(
+      res,
+      result,
+      "Scan the QR code (or enter the secret manually) in your authenticator app, then confirm with a 6-digit code."
+    )
+  }
+
+  confirmTwoFactorEnrollment = async (req: Request, res: Response) => {
+    const user = req.user
+    if (!user) {
+      return sendError(res, "Authentication required", null, 401)
+    }
+    const validated = twoFactorEnrollConfirmSchema.parse(req.body)
+    const result = await this.authService.confirmTwoFactorEnrollment(user.userId, validated.code)
+    return sendSuccess(res, result, "Two-factor authentication enabled.")
+  }
+
+  disableTwoFactor = async (req: Request, res: Response) => {
+    const user = req.user
+    if (!user) {
+      return sendError(res, "Authentication required", null, 401)
+    }
+    const validated = twoFactorDisableSchema.parse(req.body)
+    const result = await this.authService.disableTwoFactorSelfService(user.userId, validated.password)
+    return sendSuccess(res, result, "Two-factor authentication disabled.")
   }
 
   oauth = async (req: Request, res: Response) => {

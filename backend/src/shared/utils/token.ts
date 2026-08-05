@@ -12,6 +12,11 @@ interface TokenPayload {
   // field existed won't carry it -- sessionTimeout.middleware.ts treats a
   // missing sessionId as "skip enforcement" rather than rejecting the token.
   sessionId?: string
+  // Snapshot of User.twoFactorEnabled at mint time -- lets
+  // enforceTwoFactorPolicy check the Force Two-Factor platform policy with
+  // no extra DB/Redis call. Optional for the same legacy-token reason as
+  // sessionId; missing is treated as "not enrolled" (safe default).
+  twoFactorEnabled?: boolean
 }
 
 export function generateAccessToken(payload: TokenPayload): string {
