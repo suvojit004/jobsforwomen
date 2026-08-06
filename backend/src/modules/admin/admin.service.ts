@@ -19,6 +19,11 @@ import { AppError } from "../../shared/middleware/errorHandler"
 import { hashPassword } from "../../shared/utils/password"
 import { invalidateSecurityPolicyCache } from "../../shared/middleware/securityPolicy.middleware"
 import env from "../../shared/config/env"
+import {
+  recordAuditExportReceipt,
+  hasRecentAuditExportReceipt,
+  clearAuditExportReceipt,
+} from "../../shared/utils/auditExportReceipt"
 
 export interface ServiceContext {
   operatorId?: string
@@ -2094,10 +2099,12 @@ export class AdminService {
   // Full, unfiltered CSV export of the ENTIRE audit trail (every AuditLog
   // row, no pagination/date-range/category filtering) -- the "Export" button
   // on Platform Activity Logs. Reuses the same toCsv/csvEscape helpers as
-  // the Reports & Analytics exports above. Also called automatically by
-  // deleteAllAuditLogs below (via the frontend's export-then-delete flow) so
-  // a purge never happens without a copy existing first.
-  async exportAuditLogsCsv() {
+  // the Reports & Analytics exports above. Records an export receipt for
+  // this admin (see shared/utils/auditExportReceipt.ts) -- deleteAllAuditLogs
+  // below refuses to run without one, so a purge can never happen without a
+  // real export having just occurred, enforced server-side rather than just
+  // trusted from the frontend's own export-then-delete sequencing.
+  async exportAuditLogsCsv(adminId: string) {
     const logs = await prisma.auditLog.findMany({ orderBy: { timestamp: "desc" } })
 
     const headers = [
@@ -2131,6 +2138,8 @@ export class AdminService {
     const csvContent = this.toCsv(headers, rows)
     const filename = `activity-logs-${new Date().toISOString().slice(0, 10)}.csv`
 
+    await recordAuditExportReceipt(adminId)
+
     return {
       mimetype: "text/csv",
       filename,
@@ -2139,18 +2148,28 @@ export class AdminService {
   }
 
   // Destructive -- wipes the ENTIRE audit trail. Super-Admin-only (see
-  // admin.routes.ts); the frontend is responsible for making sure an export
-  // actually happened first (ActivityLogs.tsx auto-triggers Export before
-  // calling this if the admin hasn't already clicked it in the current
-  // session), but this method itself doesn't re-verify that -- it trusts the
-  // caller, the same way every other destructive admin action in this file
-  // does. One new AuditLog row is written immediately after the purge,
-  // recording who did it and how many rows were removed -- otherwise a
-  // purge would be the one action in this entire audit system that leaves
-  // no trace of itself.
+  // admin.routes.ts). Refuses to run unless this exact admin holds a recent
+  // export receipt (see shared/utils/auditExportReceipt.ts) -- previously
+  // this was only guaranteed by ActivityLogs.tsx's own client-side sequencing
+  // (auto-export before calling delete if the admin hadn't already), which a
+  // request crafted directly against this endpoint could simply skip. The
+  // receipt is single-use (cleared on success below), so a second delete
+  // right after can't ride the same export. One new AuditLog row is written
+  // immediately after the purge, recording who did it and how many rows
+  // were removed -- otherwise a purge would be the one action in this
+  // entire audit system that leaves no trace of itself.
   async deleteAllAuditLogs(adminId: string, context?: ServiceContext) {
+    const hasReceipt = await hasRecentAuditExportReceipt(adminId)
+    if (!hasReceipt) {
+      throw new AppError(
+        "Export the activity log before deleting it -- no recent export was found for your account. Click \"Export CSV\", then try again.",
+        409
+      )
+    }
+
     const admin = await prisma.user.findUnique({ where: { id: adminId } })
     const result = await prisma.auditLog.deleteMany({})
+    await clearAuditExportReceipt(adminId)
 
     EventBus.publish("AuditCreated", {
       ...context,

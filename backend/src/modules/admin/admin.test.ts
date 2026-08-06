@@ -1006,6 +1006,14 @@ describe("Admin Module Integration Tests (Phase 7)", () => {
       // No skip/take -- the export is always the full table, not whatever
       // page happens to be open on the Activity Logs screen.
       expect(mockPrisma.auditLog.findMany).toHaveBeenCalledWith({ orderBy: { timestamp: "desc" } })
+      // Records the export receipt DELETE /admins/audits requires -- see
+      // shared/utils/auditExportReceipt.ts.
+      expect(mockRedis.set).toHaveBeenCalledWith(
+        expect.stringContaining("auditexport:receipt:super-admin-id"),
+        "1",
+        "EX",
+        expect.any(Number)
+      )
     })
 
     it("rejects a Moderator (below the USER_MGMT_ROLES bar for bulk export)", async () => {
@@ -1017,8 +1025,39 @@ describe("Admin Module Integration Tests (Phase 7)", () => {
     })
   })
 
+  // Server-side enforcement that a purge can never happen without a recent,
+  // real export having occurred -- previously only guaranteed by
+  // ActivityLogs.tsx's own client-side sequencing, which a request crafted
+  // directly against this endpoint could simply skip. See
+  // shared/utils/auditExportReceipt.ts.
   describe("DELETE /admins/audits", () => {
-    it("wipes every AuditLog row and writes exactly one new row recording the purge", async () => {
+    it("rejects the purge when no recent export receipt exists for this admin", async () => {
+      // Overrides the describe-level beforeEach's blanket
+      // `mockRedis.get -> JSON.stringify(["manage:admin"])` (which would
+      // otherwise satisfy the receipt check for every key) so the receipt
+      // key specifically comes back empty, same as an admin who has never
+      // clicked Export.
+      mockRedis.get.mockImplementation(async (key: string) =>
+        key.startsWith("auditexport:receipt:") ? null : JSON.stringify(["manage:admin"])
+      )
+
+      const res = await request(app)
+        .delete("/api/v1/admins/audits")
+        .set("Authorization", `Bearer ${superAdminToken}`)
+
+      expect(res.status).toBe(409)
+      expect(res.body.message).toMatch(/export the activity log before deleting/i)
+      expect(mockPrisma.auditLog.deleteMany).not.toHaveBeenCalled()
+    })
+
+    it("wipes every AuditLog row and writes exactly one new row recording the purge, given a valid export receipt", async () => {
+      // The describe-level beforeEach's blanket mockRedis.get returns a
+      // non-null value for every key, which satisfies the receipt check by
+      // default -- explicit here for clarity about what's actually being
+      // relied on.
+      mockRedis.get.mockImplementation(async (key: string) =>
+        key.startsWith("auditexport:receipt:") ? "1" : JSON.stringify(["manage:admin"])
+      )
       mockPrisma.auditLog.deleteMany.mockResolvedValue({ count: 137 })
       const publishSpy = jest.spyOn(EventBus, "publish")
 
@@ -1037,6 +1076,9 @@ describe("Admin Module Integration Tests (Phase 7)", () => {
           newValue: { deletedCount: 137 },
         })
       )
+      // Receipt is single-use -- cleared on success so a second DELETE call
+      // right after (with no new export in between) can't ride it again.
+      expect(mockRedis.del).toHaveBeenCalledWith(expect.stringContaining("auditexport:receipt:super-admin-id"))
     })
 
     it("rejects a non-Super-Admin (Admin included) -- stricter than export's USER_MGMT_ROLES bar", async () => {

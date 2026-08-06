@@ -200,6 +200,22 @@ export function ActivityLogs() {
 
     setDeleting(true)
     try {
+      await performDelete()
+    } finally {
+      setDeleting(false)
+    }
+  }
+
+  // Backend enforces its own "no purge without a recent export" rule
+  // server-side (see AdminService.deleteAllAuditLogs / shared/utils/
+  // auditExportReceipt.ts) -- independent of hasExported, which is only a
+  // client-side optimization to avoid a redundant download. If the admin's
+  // export receipt has expired (e.g. they exported, then sat on this page
+  // for a while before clicking Delete), the backend 409s; retry once by
+  // re-exporting and trying the delete again, rather than surfacing a
+  // confusing error for something the UI can just fix itself.
+  const performDelete = async (alreadyRetried = false): Promise<void> => {
+    try {
       const result = await AdminApi.deleteAllAuditLogs()
       toast.success(`Purged ${result?.deletedCount ?? 0} activity log record(s).`)
       setHasExported(false)
@@ -209,10 +225,14 @@ export function ActivityLogs() {
       // the one new "PURGE_AUDIT_LOGS" row the deletion itself creates.
       setRefreshKey((k) => k + 1)
     } catch (err: any) {
+      if (err?.status === 409 && !alreadyRetried) {
+        const exported = await handleExport()
+        if (exported) {
+          return performDelete(true)
+        }
+      }
       console.error("Failed to delete activity logs", err)
       toast.error(err?.message || "Failed to delete activity logs.")
-    } finally {
-      setDeleting(false)
     }
   }
 

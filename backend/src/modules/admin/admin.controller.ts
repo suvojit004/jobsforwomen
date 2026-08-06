@@ -390,7 +390,8 @@ export class AdminController {
   // might otherwise be sending, since "Export" always means the whole table.
   exportAuditLogs = async (req: Request, res: Response, next: any) => {
     try {
-      const result = await this.service.exportAuditLogsCsv()
+      const adminId = req.user?.userId || ""
+      const result = await this.service.exportAuditLogsCsv(adminId)
       res.setHeader("Content-Type", result.mimetype)
       res.setHeader("Content-Disposition", `attachment; filename=${result.filename}`)
       return res.send(Buffer.from(result.content, "base64"))
