@@ -145,6 +145,19 @@ const envSchema = z.object({
   // legitimately fires many requests quickly, but still capped.
   RATE_LIMIT_SEARCH_MAX: z.coerce.number().default(300),
   RATE_LIMIT_SEARCH_WINDOW_MS: z.coerce.number().default(60_000),
+
+  // Admin-tier login lockout (shared/utils/loginSecurity.ts). Distinct from
+  // RATE_LIMIT_AUTH_* above -- that's a blunt, IP-keyed request-rate
+  // throttle applied identically to every auth endpoint for every role.
+  // This is failure-counting specifically against admin-tier accounts
+  // (Admin/Super Admin/Moderator/Support Executive), with a durable DB
+  // lockout that survives past the rate limiter's window, plus a
+  // higher-threshold per-IP block for an attacker probing multiple admin
+  // emails from one address.
+  ADMIN_LOGIN_LOCKOUT_THRESHOLD: z.coerce.number().default(5),
+  ADMIN_LOGIN_LOCKOUT_WINDOW_MINUTES: z.coerce.number().default(15),
+  ADMIN_LOGIN_LOCKOUT_DURATION_MINUTES: z.coerce.number().default(30),
+  ADMIN_LOGIN_IP_LOCKOUT_THRESHOLD: z.coerce.number().default(15),
 });
 
 const parsed = envSchema.safeParse(process.env);

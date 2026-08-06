@@ -59,6 +59,7 @@ const mockCreateInvitedUser = jest.fn()
 const mockSetPendingTwoFactorSecret = jest.fn()
 const mockEnableTwoFactor = jest.fn()
 const mockDisableTwoFactor = jest.fn()
+const mockSetLockedUntil = jest.fn()
 
 // Factory Mock AuthRepository
 jest.mock("./auth.repository", () => {
@@ -88,10 +89,25 @@ jest.mock("./auth.repository", () => {
         setPendingTwoFactorSecret: mockSetPendingTwoFactorSecret,
         enableTwoFactor: mockEnableTwoFactor,
         disableTwoFactor: mockDisableTwoFactor,
+        setLockedUntil: mockSetLockedUntil,
       }
     }),
   }
 })
+
+// Admin login lockout counters are unit-tested in isolation in
+// loginSecurity.test.ts -- mocked entirely here so these HTTP-level tests
+// can control exact threshold-crossing behavior deterministically instead
+// of sharing real in-memory counter state (keyed by IP) across every test
+// in this file.
+const mockRecordFailedAdminLogin = jest.fn()
+const mockIsIpFlaggedForAdminLogins = jest.fn()
+const mockClearFailedAdminLogins = jest.fn()
+jest.mock("../../shared/utils/loginSecurity", () => ({
+  recordFailedAdminLogin: (...args: any[]) => mockRecordFailedAdminLogin(...args),
+  isIpFlaggedForAdminLogins: (...args: any[]) => mockIsIpFlaggedForAdminLogins(...args),
+  clearFailedAdminLogins: (...args: any[]) => mockClearFailedAdminLogins(...args),
+}))
 
 import app from "../../app"
 import jwt from "jsonwebtoken"
@@ -643,6 +659,156 @@ describe("Authentication Routes Integration Tests (Phase 3)", () => {
 
       expect(res.status).toBe(401)
       expect(mockDisableTwoFactor).not.toHaveBeenCalled()
+    })
+  })
+
+  // "Admin sessions are tracked by IP audit registries. Suspicious access
+  // patterns trigger instant lockouts" -- previously nothing admin-specific
+  // backed that claim at all, just the generic authRateLimiter every auth
+  // endpoint gets. loginSecurity.ts's counters are unit-tested in isolation
+  // (loginSecurity.test.ts); these tests cover AuthService.login()'s wiring
+  // to them, with the counters mocked so exact threshold-crossing behavior
+  // is deterministic per test.
+  describe("Admin Login Lockout", () => {
+    const adminUser = (overrides: Record<string, any> = {}) => ({
+      id: "lockout-admin-id",
+      email: "lockout-admin@jfw.info",
+      status: UserStatus.Active,
+      passwordHash: "$2b$10$hashedpass",
+      lockedUntil: null,
+      roles: [{ role: { name: "Moderator", permissions: [] } }],
+      ...overrides,
+    })
+
+    it("locks the account and reports it on the attempt that crosses the threshold", async () => {
+      const bcrypt = require("bcrypt")
+      jest.spyOn(bcrypt, "compare").mockResolvedValue(false as never)
+
+      mockFindUserByEmail.mockResolvedValue(adminUser())
+      mockIsIpFlaggedForAdminLogins.mockResolvedValue(false)
+      mockRecordFailedAdminLogin.mockResolvedValue({
+        emailFailureCount: env.ADMIN_LOGIN_LOCKOUT_THRESHOLD,
+        ipFlagged: false,
+      })
+      mockSetLockedUntil.mockResolvedValue({})
+
+      const res = await request(app)
+        .post("/api/v1/auth/login")
+        .send({ email: "lockout-admin@jfw.info", password: "wrong-password" })
+
+      expect(res.status).toBe(423)
+      expect(res.body.message).toMatch(/now locked/i)
+      expect(mockSetLockedUntil).toHaveBeenCalledWith("lockout-admin-id", expect.any(Date))
+    })
+
+    it("does not lock the account while failures stay below the threshold", async () => {
+      const bcrypt = require("bcrypt")
+      jest.spyOn(bcrypt, "compare").mockResolvedValue(false as never)
+
+      mockFindUserByEmail.mockResolvedValue(adminUser())
+      mockIsIpFlaggedForAdminLogins.mockResolvedValue(false)
+      mockRecordFailedAdminLogin.mockResolvedValue({ emailFailureCount: 2, ipFlagged: false })
+
+      const res = await request(app)
+        .post("/api/v1/auth/login")
+        .send({ email: "lockout-admin@jfw.info", password: "wrong-password" })
+
+      expect(res.status).toBe(401)
+      expect(res.body.message).toMatch(/invalid email or password/i)
+      expect(mockSetLockedUntil).not.toHaveBeenCalled()
+    })
+
+    it("rejects a login for an account with an active lockedUntil, before ever checking the password", async () => {
+      const bcrypt = require("bcrypt")
+      const compareSpy = jest.spyOn(bcrypt, "compare").mockResolvedValue(true as never)
+
+      mockFindUserByEmail.mockResolvedValue(
+        adminUser({ lockedUntil: new Date(Date.now() + 10 * 60 * 1000) })
+      )
+
+      const res = await request(app)
+        .post("/api/v1/auth/login")
+        .send({ email: "lockout-admin@jfw.info", password: "correct-password" })
+
+      expect(res.status).toBe(423)
+      expect(res.body.message).toMatch(/temporarily locked/i)
+      expect(compareSpy).not.toHaveBeenCalled()
+      expect(mockRecordFailedAdminLogin).not.toHaveBeenCalled()
+    })
+
+    it("allows login again once lockedUntil is in the past", async () => {
+      const bcrypt = require("bcrypt")
+      jest.spyOn(bcrypt, "compare").mockResolvedValue(true as never)
+
+      mockFindUserByEmail.mockResolvedValue(
+        adminUser({ lockedUntil: new Date(Date.now() - 60 * 1000) })
+      )
+      mockIsIpFlaggedForAdminLogins.mockResolvedValue(false)
+      mockCreateSession.mockResolvedValue({ id: "session-lockout-expired" })
+      mockCreateRefreshToken.mockResolvedValue({ id: "token-lockout-expired" })
+
+      const res = await request(app)
+        .post("/api/v1/auth/login")
+        .send({ email: "lockout-admin@jfw.info", password: "correct-password" })
+
+      expect(res.status).toBe(200)
+      expect(res.body.data).toHaveProperty("accessToken")
+      expect(mockClearFailedAdminLogins).toHaveBeenCalledWith("lockout-admin@jfw.info", expect.any(String))
+    })
+
+    it("rejects login when the source IP itself is flagged, even with a correct password", async () => {
+      const bcrypt = require("bcrypt")
+      const compareSpy = jest.spyOn(bcrypt, "compare").mockResolvedValue(true as never)
+
+      mockFindUserByEmail.mockResolvedValue(adminUser())
+      mockIsIpFlaggedForAdminLogins.mockResolvedValue(true)
+
+      const res = await request(app)
+        .post("/api/v1/auth/login")
+        .send({ email: "lockout-admin@jfw.info", password: "correct-password" })
+
+      expect(res.status).toBe(423)
+      expect(res.body.message).toMatch(/network/i)
+      expect(compareSpy).not.toHaveBeenCalled()
+    })
+
+    it("clears both counters on a successful admin login", async () => {
+      const bcrypt = require("bcrypt")
+      jest.spyOn(bcrypt, "compare").mockResolvedValue(true as never)
+
+      mockFindUserByEmail.mockResolvedValue(adminUser())
+      mockIsIpFlaggedForAdminLogins.mockResolvedValue(false)
+      mockCreateSession.mockResolvedValue({ id: "session-lockout-success" })
+      mockCreateRefreshToken.mockResolvedValue({ id: "token-lockout-success" })
+
+      const res = await request(app)
+        .post("/api/v1/auth/login")
+        .send({ email: "lockout-admin@jfw.info", password: "correct-password" })
+
+      expect(res.status).toBe(200)
+      expect(mockClearFailedAdminLogins).toHaveBeenCalledWith("lockout-admin@jfw.info", expect.any(String))
+    })
+
+    it("does not apply any lockout logic to non-admin-tier accounts (regression guard)", async () => {
+      const bcrypt = require("bcrypt")
+      jest.spyOn(bcrypt, "compare").mockResolvedValue(false as never)
+
+      mockFindUserByEmail.mockResolvedValue({
+        id: "candidate-lockout-id",
+        email: "candidate-lockout@jfw.info",
+        status: UserStatus.Active,
+        passwordHash: "$2b$10$hashedpass",
+        lockedUntil: null,
+        roles: [{ role: { name: "Candidate", permissions: [] } }],
+      })
+
+      const res = await request(app)
+        .post("/api/v1/auth/login")
+        .send({ email: "candidate-lockout@jfw.info", password: "wrong-password" })
+
+      expect(res.status).toBe(401)
+      expect(mockIsIpFlaggedForAdminLogins).not.toHaveBeenCalled()
+      expect(mockRecordFailedAdminLogin).not.toHaveBeenCalled()
     })
   })
 })

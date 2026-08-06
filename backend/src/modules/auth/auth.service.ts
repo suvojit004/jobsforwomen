@@ -12,6 +12,9 @@ import {
   verifyTwoFactorPendingToken,
 } from "../../shared/utils/twoFactor"
 import { calculateProfileCompletion } from "../../shared/utils/profileCompletion"
+import { recordFailedAdminLogin, isIpFlaggedForAdminLogins, clearFailedAdminLogins } from "../../shared/utils/loginSecurity"
+import { ADMIN_TIER_ROLES } from "../../shared/constants/roles"
+import env from "../../shared/config/env"
 import { logger } from "../../shared/utils/logger"
 import EventBus from "../../shared/eventBus/eventBus"
 import { UserStatus } from "@prisma/client"
@@ -173,6 +176,34 @@ export class AuthService {
       throw new Error("Invalid email or password")
     }
 
+    const isAdminTier = user.roles.some((r: any) => ADMIN_TIER_ROLES.includes(r.role.name))
+
+    // Real "Admin sessions are tracked by IP audit registries. Suspicious
+    // access patterns trigger instant lockouts" enforcement -- previously
+    // nothing admin-specific backed that claim, just the generic, IP-keyed
+    // authRateLimiter every auth endpoint gets. Checked before the password
+    // compare so a locked-out attacker can't keep spending bcrypt cycles
+    // probing passwords once the account (or their IP) is flagged.
+    // Candidate/recruiter logins are entirely unaffected -- scoped to
+    // isAdminTier only, matching the claim this is fixing (it lives on the
+    // Administrative Settings page).
+    if (isAdminTier) {
+      if (user.lockedUntil && user.lockedUntil.getTime() > Date.now()) {
+        const minutesLeft = Math.max(1, Math.ceil((user.lockedUntil.getTime() - Date.now()) / 60000))
+        throw new AppError(
+          `This account is temporarily locked due to repeated failed login attempts. Try again in ${minutesLeft} minute${minutesLeft === 1 ? "" : "s"}.`,
+          423
+        )
+      }
+
+      if (await isIpFlaggedForAdminLogins(ipAddress)) {
+        throw new AppError(
+          "Too many failed login attempts against admin accounts from this network. Try again later.",
+          423
+        )
+      }
+    }
+
     if (user.status === UserStatus.PendingVerification) {
       // SECURITY: this used to also auto-activate ANY account whose email
       // ended in "@jobsforwomen.info" -- unconditionally, in every
@@ -208,7 +239,23 @@ export class AuthService {
 
     const isMatch = await comparePassword(passwordHashRaw, user.passwordHash)
     if (!isMatch) {
+      if (isAdminTier) {
+        const justLocked = await this.recordAdminLoginFailure(user, ipAddress)
+        if (justLocked) {
+          throw new AppError(
+            `Too many failed login attempts. This account is now locked for ${env.ADMIN_LOGIN_LOCKOUT_DURATION_MINUTES} minutes.`,
+            423
+          )
+        }
+      }
       throw new Error("Invalid email or password")
+    }
+
+    if (isAdminTier) {
+      // A real login resets the failure counters -- old failures shouldn't
+      // linger toward a future false lockout once the account has proven
+      // it's being used legitimately again.
+      await clearFailedAdminLogins(user.email, ipAddress)
     }
 
     // Password check passed, but the account has 2FA enrolled -- don't
@@ -227,6 +274,47 @@ export class AuthService {
 
     const session = await this.createAuthSession(user, ipAddress, userAgent)
     return { kind: "success" as const, ...session }
+  }
+
+  // Records one failed password attempt against an admin-tier account and,
+  // if it just crossed ADMIN_LOGIN_LOCKOUT_THRESHOLD, sets a durable
+  // User.lockedUntil (survives past loginSecurity.ts's own counting
+  // window) and publishes an audit entry. Returns true when this specific
+  // call is the one that triggered the lock, so login() can surface a
+  // clear "you're now locked out" message on this attempt rather than the
+  // generic "Invalid email or password".
+  private async recordAdminLoginFailure(user: any, ipAddress: string): Promise<boolean> {
+    const { emailFailureCount, ipFlagged } = await recordFailedAdminLogin(user.email, ipAddress)
+
+    let justLocked = false
+    if (emailFailureCount >= env.ADMIN_LOGIN_LOCKOUT_THRESHOLD) {
+      const lockedUntil = new Date(Date.now() + env.ADMIN_LOGIN_LOCKOUT_DURATION_MINUTES * 60 * 1000)
+      await this.authRepository.setLockedUntil(user.id, lockedUntil)
+      // The durable DB lock now covers enforcement -- no need to keep
+      // counting toward it in Redis/memory too.
+      await clearFailedAdminLogins(user.email, ipAddress)
+      justLocked = true
+
+      EventBus.publish("AuditCreated", {
+        category: "SECURITY",
+        action: "ADMIN_ACCOUNT_LOCKED",
+        entity: "User",
+        entityId: user.id,
+        newValue: { lockedUntil, failedAttempts: emailFailureCount },
+      })
+    }
+
+    if (ipFlagged) {
+      EventBus.publish("AuditCreated", {
+        category: "SECURITY",
+        action: "ADMIN_LOGIN_IP_FLAGGED",
+        entity: "User",
+        entityId: user.id,
+        newValue: { ipAddress },
+      })
+    }
+
+    return justLocked
   }
 
   // Completes a login that was paused by the twoFactorEnabled branch above.

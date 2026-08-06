@@ -18,6 +18,7 @@ import { emailMetrics } from "../../shared/utils/email"
 import { AppError } from "../../shared/middleware/errorHandler"
 import { hashPassword } from "../../shared/utils/password"
 import { invalidateSecurityPolicyCache } from "../../shared/middleware/securityPolicy.middleware"
+import env from "../../shared/config/env"
 
 export interface ServiceContext {
   operatorId?: string
@@ -1318,6 +1319,30 @@ export class AdminService {
         operatorEmail: admin?.email,
         category: "ADMIN",
         action: "UNLOCK_ACCOUNT",
+        entity: "User",
+        entityId: targetUserId,
+      })
+
+      return updated
+    } else if (action === "clear-login-lockout") {
+      // Distinct from "account-unlock" above -- that clears a
+      // Suspended/Blocked *status*. This clears the separate
+      // User.lockedUntil set by AuthService.recordAdminLoginFailure after
+      // too many failed password attempts (see shared/utils/loginSecurity.ts).
+      // A locked-out admin otherwise just has to wait out
+      // ADMIN_LOGIN_LOCKOUT_DURATION_MINUTES; this lets a Super Admin lift
+      // it early once they've confirmed it was a legitimate lockout.
+      const updated = await prisma.user.update({
+        where: { id: targetUserId },
+        data: { lockedUntil: null },
+      })
+
+      EventBus.publish("AuditCreated", {
+        ...context,
+        operatorId: adminId,
+        operatorEmail: admin?.email,
+        category: "SECURITY",
+        action: "CLEAR_LOGIN_LOCKOUT",
         entity: "User",
         entityId: targetUserId,
       })
@@ -2735,6 +2760,50 @@ export class AdminService {
     })
 
     return this.getSecuritySettings()
+  }
+
+  // General, non-security platform settings (PlatformSettings singleton row).
+  // Currently just the "Operations Support Contacts" technical helpdesk
+  // email on the admin Help & Support page -- previously hardcoded straight
+  // into HelpSupport.tsx's JSX with no way to change it without a code
+  // deploy. Readable by any admin-tier role, writable by Admin/Super Admin
+  // (see admin.routes.ts) -- deliberately not Super-Admin-only like
+  // SecurityPolicy, since this isn't a security control.
+  async getPlatformSettings() {
+    const settings = await prisma.platformSettings.findUnique({ where: { id: "singleton" } })
+    return {
+      // Falls back to the same address transactional emails already use
+      // (env.SUPPORT_EMAIL, then SES_FROM) so the card never renders empty
+      // before any admin has touched this setting.
+      supportContactEmail: settings?.supportContactEmail || env.SUPPORT_EMAIL || env.SES_FROM || "",
+    }
+  }
+
+  async updatePlatformSettings(
+    adminId: string,
+    data: { supportContactEmail: string },
+    context?: ServiceContext
+  ) {
+    const previous = await this.getPlatformSettings()
+
+    await prisma.platformSettings.upsert({
+      where: { id: "singleton" },
+      update: { supportContactEmail: data.supportContactEmail, updatedById: adminId },
+      create: { id: "singleton", supportContactEmail: data.supportContactEmail, updatedById: adminId },
+    })
+
+    EventBus.publish("AuditCreated", {
+      ...context,
+      operatorId: adminId,
+      category: "ADMIN",
+      action: "UPDATE_PLATFORM_SETTINGS",
+      entity: "PlatformSettings",
+      entityId: "singleton",
+      oldValue: previous,
+      newValue: data,
+    })
+
+    return this.getPlatformSettings()
   }
 
   async getAdminNotifications(adminId: string) {

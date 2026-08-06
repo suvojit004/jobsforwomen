@@ -649,10 +649,16 @@ export function Settings() {
             </button>
           </div>
 
+          {/* Was previously a decorative, undisclosed claim backed only by
+              the generic IP-keyed authRateLimiter every auth endpoint gets
+              -- no failed-login counter, no lockout logic, nothing
+              admin-specific. Now real: see AuthService.login()'s
+              isAdminTier branch and shared/utils/loginSecurity.ts. */}
           <div className="p-3.5 border border-teal-200/40 rounded-xl bg-teal-50/20 dark:border-teal-900/10 dark:bg-teal-950/5 flex gap-2">
             <ShieldAlert className="size-4 text-teal-500 shrink-0 mt-0.5" />
             <p className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 leading-normal">
-              Admin sessions are tracked by IP audit registries. Suspicious access patterns trigger instant lockouts.
+              Admin-tier accounts lock for 30 minutes after 5 failed login attempts within 15 minutes. Repeated
+              failures against admin accounts from one network are blocked too.
             </p>
           </div>
         </DashboardCard>

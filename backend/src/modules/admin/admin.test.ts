@@ -1105,6 +1105,48 @@ describe("Admin Module Integration Tests (Phase 7)", () => {
     })
   })
 
+  // The real thing behind the "Admin sessions are tracked by IP audit
+  // registries. Suspicious access patterns trigger instant lockouts" claim
+  // on Administrative Settings -- see AuthService.login()'s isAdminTier
+  // branch and shared/utils/loginSecurity.ts for the counters themselves
+  // (unit-tested separately). This covers the Super Admin/Admin "lift it
+  // early" escape hatch, distinct from the pre-existing "account-unlock"
+  // action which clears a Suspended/Blocked status, not a login lockout.
+  describe("POST /admins/users/:id/action/clear-login-lockout", () => {
+    it("clears a target user's lockedUntil and logs a SECURITY audit event", async () => {
+      mockPrisma.user.update.mockResolvedValue({ id: "locked-user-id", lockedUntil: null })
+      const publishSpy = jest.spyOn(EventBus, "publish")
+
+      const res = await request(app)
+        .post("/api/v1/admins/users/locked-user-id/action/clear-login-lockout")
+        .set("Authorization", `Bearer ${superAdminToken}`)
+
+      expect(res.status).toBe(200)
+      expect(mockPrisma.user.update).toHaveBeenCalledWith({
+        where: { id: "locked-user-id" },
+        data: { lockedUntil: null },
+      })
+      expect(publishSpy).toHaveBeenCalledWith(
+        "AuditCreated",
+        expect.objectContaining({
+          category: "SECURITY",
+          action: "CLEAR_LOGIN_LOCKOUT",
+          entity: "User",
+          entityId: "locked-user-id",
+        })
+      )
+    })
+
+    it("rejects a Moderator (below the USER_MGMT_ROLES bar for this action)", async () => {
+      const res = await request(app)
+        .post("/api/v1/admins/users/locked-user-id/action/clear-login-lockout")
+        .set("Authorization", `Bearer ${moderatorToken}`)
+
+      expect(res.status).toBe(403)
+      expect(mockPrisma.user.update).not.toHaveBeenCalled()
+    })
+  })
+
   describe("enforceAdminSessionTimeout middleware", () => {
     it("force-expires a session once it has been inactive longer than the configured timeout", async () => {
       mockRedis.get.mockImplementation(async (key: string) => {

@@ -8,14 +8,16 @@ import {
 } from "../rbac/rbac.middleware"
 import { adminRateLimiter } from "../../shared/middleware/rateLimit.middleware"
 import { enforceAdminSessionTimeout, enforceTwoFactorPolicy } from "../../shared/middleware/securityPolicy.middleware"
+import { ADMIN_TIER_ROLES } from "../../shared/constants/roles"
 
 const router = Router()
 const controller = new AdminController()
 
 // Every route below requires an admin-tier role -- the service layer fetches
 // `admin`/`adminId` only for audit attribution, it doesn't itself verify
-// role, so this route-level gate is the actual enforcement point.
-const ADMIN_TIER_ROLES = ["Admin", "Super Admin", "Moderator", "Support Executive"]
+// role, so this route-level gate is the actual enforcement point. (List now
+// lives in shared/constants/roles.ts -- also used by AuthService's login
+// lockout scoping and enforceTwoFactorPolicy, so the two copies can't drift.)
 
 // Enforce authentication & active check for all administration endpoints
 router.use(authenticateToken)
@@ -128,6 +130,15 @@ router.delete("/feature-flags/:id", requireSuperAdmin, controller.deleteFeatureF
 // it, same gating pattern as Feature Flags above.
 router.get("/security-settings", controller.getSecuritySettings)
 router.put("/security-settings", requireSuperAdmin, controller.updateSecuritySettings)
+
+// General, non-security platform settings (currently just the "Operations
+// Support Contacts" technical helpdesk email on the admin Help & Support
+// page -- previously hardcoded in HelpSupport.tsx with no way to change it
+// without a code deploy). Every admin-tier role can view it; unlike
+// security-settings above, Admin (not just Super Admin) can also change it,
+// same USER_MGMT_ROLES bar as the User Management section.
+router.get("/platform-settings", controller.getPlatformSettings)
+router.put("/platform-settings", requireRole(USER_MGMT_ROLES), controller.updatePlatformSettings)
 
 // Personal preferences and notifications for Admin
 router.get("/settings", controller.getAdminSettings)

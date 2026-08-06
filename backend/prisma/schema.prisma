@@ -101,6 +101,15 @@ model User {
   // confirmTwoFactorEnrollment).
   twoFactorEnabled Boolean    @default(false)
   twoFactorSecret  String?
+  // Durable admin-tier account lockout, set by AuthService.login() once
+  // Redis-tracked failed attempts (see shared/utils/loginSecurity.ts) cross
+  // ADMIN_LOGIN_LOCKOUT_THRESHOLD within the sliding window. Null/past =
+  // not locked. This is the real thing behind the "Admin sessions are
+  // tracked by IP audit registries. Suspicious access patterns trigger
+  // instant lockouts" claim on Administrative Settings, which previously
+  // had nothing admin-specific backing it at all -- just the generic,
+  // IP-keyed authRateLimiter every auth endpoint gets.
+  lockedUntil      DateTime?
   createdAt        DateTime   @default(now())
   updatedAt        DateTime   @updatedAt
   preferences      Json? // Appearance, privacy, email notification settings
@@ -120,6 +129,7 @@ model User {
   oauthAccounts    OAuthAccount[]
   jobReports       JobReport[]
   updatedSecurityPolicies SecurityPolicy[]
+  updatedPlatformSettings PlatformSettings[]
 
   // Invitations
   createdInvitations Invitation[] @relation("Inviter")
@@ -580,6 +590,25 @@ model SecurityPolicy {
   // enrollment endpoints (under /auth/2fa/enroll/*), so this can't lock
   // anyone out permanently.
   forceTwoFactorForAdmins Boolean @default(false)
+
+  updatedById String?
+  updatedBy   User?    @relation(fields: [updatedById], references: [id], onDelete: SetNull)
+  updatedAt   DateTime @updatedAt
+}
+
+// Singleton row (fixed id "singleton") holding general, non-security
+// platform settings. First (and currently only) field: the "Operations
+// Support Contacts" technical helpdesk email shown on the admin Help &
+// Support page, which used to be hardcoded straight into HelpSupport.tsx's
+// JSX with no way to change it without a code deploy. Both Admin and Super
+// Admin can edit it (see admin.routes.ts) -- deliberately not restricted to
+// Super Admin only like SecurityPolicy, since this isn't a security control.
+model PlatformSettings {
+  id String @id @default("singleton")
+
+  // Falls back to env.SUPPORT_EMAIL / SES_FROM in the API layer when unset,
+  // so the card never renders empty before an admin has ever touched this.
+  supportContactEmail String?
 
   updatedById String?
   updatedBy   User?    @relation(fields: [updatedById], references: [id], onDelete: SetNull)

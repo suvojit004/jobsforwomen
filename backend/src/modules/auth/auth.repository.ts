@@ -230,6 +230,16 @@ export class AuthRepository {
     })
   }
 
+  // Admin-tier login lockout (see AuthService.recordAdminLoginFailure /
+  // shared/utils/loginSecurity.ts). `null` clears an existing lock -- used
+  // by admin.service.ts's "clear-login-lockout" Super Admin action.
+  async setLockedUntil(userId: string, lockedUntil: Date | null) {
+    return prisma.user.update({
+      where: { id: userId },
+      data: { lockedUntil },
+    })
+  }
+
   // 2FA enrollment is two steps: this stores the (encrypted) secret without
   // flipping twoFactorEnabled -- the account isn't protected by it yet, only
   // "pending confirmation" that the user can actually produce valid codes
