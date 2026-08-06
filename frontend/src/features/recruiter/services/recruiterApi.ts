@@ -404,6 +404,15 @@ export const RecruiterApi = {
     return res?.data || {}
   },
 
+  // Same shared /auth/change-password endpoint candidateApi/AdminApi use --
+  // session-gated only, not role-gated, so nothing new needed backend-side.
+  // The "Change Credentials Password" control on the Security card
+  // previously had no working button at all (disabled, labeled "Configure").
+  async changePassword(currentPassword: string, newPassword: string) {
+    const res = await apiClient.put("/api/v1/auth/change-password", { currentPassword, newPassword })
+    return res?.data
+  },
+
   async getNotifications() {
     const res = await apiClient.get("/api/v1/recruiters/notifications")
     return res?.data?.notifications || res?.data || []

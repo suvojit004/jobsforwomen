@@ -13,12 +13,14 @@ import {
   ShieldCheck,
   Save,
   Lock,
+  Check,
 } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { DashboardCard } from "@/components/shared/DashboardCard"
 import { RecruiterApi } from "../services/recruiterApi"
 import { useAuth } from "@/contexts/AuthContext"
+import { isValidPassword, PASSWORD_HELP_TEXT } from "@/utils/validators"
 
 const settingsSchema = z.object({
   name: z.string().min(2, "Name must be at least 2 characters."),
@@ -50,6 +52,18 @@ export function Settings() {
   const [disabling, setDisabling] = useState(false)
   const [disablePassword, setDisablePassword] = useState("")
   const [disableSubmitting, setDisableSubmitting] = useState(false)
+
+  // Change Credentials Password -- real now. Was a disabled, non-functional
+  // "Configure" button with no backend wiring at all (the shared
+  // /auth/change-password endpoint already accepts any authenticated user,
+  // so nothing needed to change server-side).
+  const [changingPassword, setChangingPassword] = useState(false)
+  const [currentPassword, setCurrentPassword] = useState("")
+  const [newPassword, setNewPassword] = useState("")
+  const [confirmNewPassword, setConfirmNewPassword] = useState("")
+  const [passwordSubmitting, setPasswordSubmitting] = useState(false)
+  const [passwordError, setPasswordError] = useState("")
+  const [passwordSuccess, setPasswordSuccess] = useState(false)
 
   const {
     register,
@@ -186,6 +200,34 @@ export function Settings() {
       toast.error(err?.message || "Failed to disable two-factor authentication.")
     } finally {
       setDisableSubmitting(false)
+    }
+  }
+
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setPasswordError("")
+    if (!currentPassword || !newPassword) return
+    if (newPassword !== confirmNewPassword) {
+      setPasswordError("New password and confirmation do not match.")
+      return
+    }
+    if (!isValidPassword(newPassword)) {
+      setPasswordError(PASSWORD_HELP_TEXT)
+      return
+    }
+    setPasswordSubmitting(true)
+    try {
+      await RecruiterApi.changePassword(currentPassword, newPassword)
+      setPasswordSuccess(true)
+      setCurrentPassword("")
+      setNewPassword("")
+      setConfirmNewPassword("")
+      setChangingPassword(false)
+      setTimeout(() => setPasswordSuccess(false), 3000)
+    } catch (err: any) {
+      setPasswordError(err?.message || "Failed to change password. Please check your current password.")
+    } finally {
+      setPasswordSubmitting(false)
     }
   }
 
@@ -347,26 +389,102 @@ export function Settings() {
           Security & Authentication
         </h3>
 
-        {/* Change Credentials Password -- still not wired up (no
-            RecruiterApi.changePassword / backend endpoint for recruiters
-            exists yet); left disabled rather than silently accepting and
-            discarding input. Separate from the 2FA fix below. */}
-        <div className="flex items-center justify-between py-1.5 border border-slate-100 dark:border-slate-850 p-3.5 rounded-xl">
-          <div className="space-y-0.5">
-            <p className="text-xs font-black text-slate-900 dark:text-white">Change Credentials Password</p>
-            <p className="text-[10px] text-slate-450 font-semibold leading-normal">
-              Update account passwords. Last modified: 3 weeks ago.
-            </p>
-          </div>
-          <Button
-            type="button"
-            variant="outline"
-            disabled
-            className="h-8 text-[10px] font-bold gap-1 pointer-events-none"
-          >
-            <Lock className="size-3" />
-            Configure
-          </Button>
+        {/* Change Credentials Password -- real now. See
+            RecruiterApi.changePassword / handleChangePassword above. */}
+        <div className="border border-slate-100 dark:border-slate-850 rounded-xl p-3.5 space-y-3.5">
+          {changingPassword ? (
+            <form onSubmit={handleChangePassword} className="space-y-3">
+              <div className="grid gap-3 sm:grid-cols-3">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500">
+                    Current Password
+                  </label>
+                  <input
+                    type="password"
+                    value={currentPassword}
+                    onChange={(e) => setCurrentPassword(e.target.value)}
+                    required
+                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6B2C91]/30 dark:border-slate-800 dark:bg-slate-900 dark:text-white"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500">
+                    New Password
+                  </label>
+                  <input
+                    type="password"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    required
+                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6B2C91]/30 dark:border-slate-800 dark:bg-slate-900 dark:text-white"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500">
+                    Confirm Password
+                  </label>
+                  <input
+                    type="password"
+                    value={confirmNewPassword}
+                    onChange={(e) => setConfirmNewPassword(e.target.value)}
+                    required
+                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6B2C91]/30 dark:border-slate-800 dark:bg-slate-900 dark:text-white"
+                  />
+                </div>
+              </div>
+              <p className="text-[10px] text-slate-400 dark:text-slate-500">{PASSWORD_HELP_TEXT}</p>
+              {passwordError && <p className="text-[10px] font-bold text-red-500">{passwordError}</p>}
+              <div className="flex gap-2">
+                <Button
+                  type="submit"
+                  disabled={passwordSubmitting}
+                  className="h-8 text-xs font-black bg-[#6B2C91] hover:bg-[#5a237b] text-white"
+                >
+                  {passwordSubmitting ? "Updating..." : "Update Password"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setChangingPassword(false)
+                    setCurrentPassword("")
+                    setNewPassword("")
+                    setConfirmNewPassword("")
+                    setPasswordError("")
+                  }}
+                  className="h-8 text-xs font-bold"
+                >
+                  Cancel
+                </Button>
+              </div>
+            </form>
+          ) : (
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <p className="text-xs font-black text-slate-900 dark:text-white">Change Credentials Password</p>
+                <p className="text-[10px] text-slate-450 font-semibold leading-normal">
+                  Update your account password.
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                {passwordSuccess && (
+                  <span className="text-[10px] text-emerald-600 font-extrabold flex items-center gap-1">
+                    <Check className="size-3.5 stroke-[3]" />
+                    Updated!
+                  </span>
+                )}
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setChangingPassword(true)}
+                  className="h-8 text-[10px] font-bold gap-1"
+                >
+                  <Lock className="size-3" />
+                  Configure
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Two-Factor Authentication -- real (TOTP, RFC 6238), optional and
