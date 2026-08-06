@@ -87,6 +87,29 @@ export const candidateApi = {
     return res?.data
   },
 
+  // Real TOTP-based Two-Factor Authentication (RFC 6238) -- same shared
+  // /auth/2fa/* endpoints AdminApi uses (session-gated only, not role-gated),
+  // now offered here as an optional, self-service security setting.
+  // Replaces the old "Two-Factor Authentication" checkbox on the Security
+  // tab, which only wrote an unused `twoFactorEnabled` key into the
+  // candidate's free-form settings JSON blob (see candidate.service.ts's
+  // getSettings/updateSettings) -- no login code path ever read it, so
+  // toggling it did nothing.
+  async start2FAEnrollment() {
+    const res = await apiClient.post("/api/v1/auth/2fa/enroll/start", {})
+    return res?.data || {}
+  },
+
+  async confirm2FAEnrollment(code: string) {
+    const res = await apiClient.post("/api/v1/auth/2fa/enroll/confirm", { code })
+    return res?.data || {}
+  },
+
+  async disable2FA(password: string) {
+    const res = await apiClient.post("/api/v1/auth/2fa/disable", { password })
+    return res?.data || {}
+  },
+
   async deleteAccount(password: string) {
     const res = await apiClient.delete("/api/v1/auth/account", { password })
     return res?.data

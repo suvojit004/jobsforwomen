@@ -10,6 +10,7 @@ import {
   Bell,
   CheckCircle,
   Shield,
+  ShieldCheck,
   Save,
   Lock,
 } from "lucide-react"
@@ -17,6 +18,7 @@ import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { DashboardCard } from "@/components/shared/DashboardCard"
 import { RecruiterApi } from "../services/recruiterApi"
+import { useAuth } from "@/contexts/AuthContext"
 
 const settingsSchema = z.object({
   name: z.string().min(2, "Name must be at least 2 characters."),
@@ -32,8 +34,22 @@ const settingsSchema = z.object({
 type SettingsFormValues = z.infer<typeof settingsSchema>
 
 export function Settings() {
+  const { user, refreshSession } = useAuth()
   const [successMsg, setSuccessMsg] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
+
+  // Two-Factor Authentication -- real (TOTP, RFC 6238), optional and
+  // self-service. The "Security & Authentication" card previously had
+  // nothing here at all besides a disabled "Change Credentials Password"
+  // button. See RecruiterApi.start2FAEnrollment/confirm2FAEnrollment/disable2FA.
+  const [enrolling, setEnrolling] = useState(false)
+  const [enrollSecret, setEnrollSecret] = useState("")
+  const [enrollOtpauthUri, setEnrollOtpauthUri] = useState("")
+  const [enrollCode, setEnrollCode] = useState("")
+  const [enrollSubmitting, setEnrollSubmitting] = useState(false)
+  const [disabling, setDisabling] = useState(false)
+  const [disablePassword, setDisablePassword] = useState("")
+  const [disableSubmitting, setDisableSubmitting] = useState(false)
 
   const {
     register,
@@ -104,6 +120,72 @@ export function Settings() {
     } catch (err: any) {
       console.error("Failed to update settings", err)
       toast.error(err?.message || "Couldn't save account settings. Please try again.")
+    }
+  }
+
+  const handleStartEnrollment = async () => {
+    setEnrollSubmitting(true)
+    try {
+      const result = await RecruiterApi.start2FAEnrollment()
+      setEnrollSecret(result.secret || "")
+      setEnrollOtpauthUri(result.otpauthUri || "")
+      setEnrolling(true)
+    } catch (err: any) {
+      console.error("Failed to start 2FA enrollment", err)
+      toast.error(err?.message || "Failed to start two-factor enrollment.")
+    } finally {
+      setEnrollSubmitting(false)
+    }
+  }
+
+  const handleConfirmEnrollment = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!/^\d{6}$/.test(enrollCode.trim())) {
+      toast.error("Enter the 6-digit code from your authenticator app.")
+      return
+    }
+    setEnrollSubmitting(true)
+    try {
+      await RecruiterApi.confirm2FAEnrollment(enrollCode.trim())
+      toast.success("Two-factor authentication enabled.")
+      setEnrolling(false)
+      setEnrollSecret("")
+      setEnrollOtpauthUri("")
+      setEnrollCode("")
+      await refreshSession()
+    } catch (err: any) {
+      console.error("Failed to confirm 2FA enrollment", err)
+      toast.error(err?.message || "Invalid code. Please try again.")
+    } finally {
+      setEnrollSubmitting(false)
+    }
+  }
+
+  const handleCancelEnrollment = () => {
+    setEnrolling(false)
+    setEnrollSecret("")
+    setEnrollOtpauthUri("")
+    setEnrollCode("")
+  }
+
+  const handleConfirmDisable = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!disablePassword) {
+      toast.error("Enter your current password.")
+      return
+    }
+    setDisableSubmitting(true)
+    try {
+      await RecruiterApi.disable2FA(disablePassword)
+      toast.success("Two-factor authentication disabled.")
+      setDisabling(false)
+      setDisablePassword("")
+      await refreshSession()
+    } catch (err: any) {
+      console.error("Failed to disable 2FA", err)
+      toast.error(err?.message || "Failed to disable two-factor authentication.")
+    } finally {
+      setDisableSubmitting(false)
     }
   }
 
@@ -254,44 +336,169 @@ export function Settings() {
           </div>
         </DashboardCard>
 
-        {/* Security / Admin settings Mock */}
-        <DashboardCard className="p-6 space-y-4">
-          <h3 className="text-xs font-black text-slate-900 uppercase dark:text-white border-b border-slate-100 pb-2 dark:border-slate-800 flex items-center gap-1.5">
-            <Shield className="size-4 text-emerald-500" />
-            Security & Authentication
-          </h3>
+      </form>
 
-          <div className="flex items-center justify-between py-1.5 border border-slate-100 dark:border-slate-850 p-3.5 rounded-xl">
-            <div className="space-y-0.5">
-              <p className="text-xs font-black text-slate-900 dark:text-white">Change Credentials Password</p>
-              <p className="text-[10px] text-slate-450 font-semibold leading-normal">
-                Update account passwords. Last modified: 3 weeks ago.
-              </p>
-            </div>
-            <Button
-              type="button"
-              variant="outline"
-              disabled
-              className="h-8 text-[10px] font-bold gap-1 pointer-events-none"
-            >
-              <Lock className="size-3" />
-              Configure
-            </Button>
+      {/* Security & Authentication -- kept outside the form above since it
+          has its own independent submit flows (2FA enroll/disable), and a
+          <form> can't be nested inside another <form>. */}
+      <DashboardCard className="p-6 space-y-4">
+        <h3 className="text-xs font-black text-slate-900 uppercase dark:text-white border-b border-slate-100 pb-2 dark:border-slate-800 flex items-center gap-1.5">
+          <Shield className="size-4 text-emerald-500" />
+          Security & Authentication
+        </h3>
+
+        {/* Change Credentials Password -- still not wired up (no
+            RecruiterApi.changePassword / backend endpoint for recruiters
+            exists yet); left disabled rather than silently accepting and
+            discarding input. Separate from the 2FA fix below. */}
+        <div className="flex items-center justify-between py-1.5 border border-slate-100 dark:border-slate-850 p-3.5 rounded-xl">
+          <div className="space-y-0.5">
+            <p className="text-xs font-black text-slate-900 dark:text-white">Change Credentials Password</p>
+            <p className="text-[10px] text-slate-450 font-semibold leading-normal">
+              Update account passwords. Last modified: 3 weeks ago.
+            </p>
           </div>
-        </DashboardCard>
-
-        {/* Action Panel */}
-        <div className="flex justify-end gap-3 pt-2">
           <Button
-            type="submit"
-            disabled={isSubmitting}
-            className="bg-[#6B2C91] hover:bg-[#5a237b] text-white font-extrabold text-xs h-10 px-5 gap-1.5 cursor-pointer dark:bg-pink-600 dark:hover:bg-pink-700"
+            type="button"
+            variant="outline"
+            disabled
+            className="h-8 text-[10px] font-bold gap-1 pointer-events-none"
           >
-            <Save className="size-4" />
-            {isSubmitting ? "Saving preferences..." : "Save Account Settings"}
+            <Lock className="size-3" />
+            Configure
           </Button>
         </div>
-      </form>
+
+        {/* Two-Factor Authentication -- real (TOTP, RFC 6238), optional and
+            self-service. See RecruiterApi.start2FAEnrollment/
+            confirm2FAEnrollment/disable2FA. */}
+        <div className="border border-slate-100 dark:border-slate-850 rounded-xl p-3.5 space-y-3.5">
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-black text-slate-900 dark:text-white">Two-Factor Authentication</p>
+            {user?.twoFactorEnabled && !disabling && (
+              <span className="flex items-center gap-1 text-[10px] font-black text-emerald-600 dark:text-emerald-400">
+                <ShieldCheck className="size-3.5" />
+                Enabled
+              </span>
+            )}
+          </div>
+
+          {user?.twoFactorEnabled ? (
+            disabling ? (
+              <form onSubmit={handleConfirmDisable} className="space-y-3">
+                <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                  Enter your current password to disable two-factor authentication.
+                </p>
+                <input
+                  type="password"
+                  placeholder="Current password"
+                  value={disablePassword}
+                  onChange={(e) => setDisablePassword(e.target.value)}
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6B2C91]/30 dark:border-slate-800 dark:bg-slate-900 dark:text-white"
+                />
+                <div className="flex gap-2">
+                  <Button
+                    type="submit"
+                    disabled={disableSubmitting}
+                    className="h-8 text-xs font-black bg-red-600 hover:bg-red-700 text-white"
+                  >
+                    {disableSubmitting ? "Disabling..." : "Confirm Disable"}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      setDisabling(false)
+                      setDisablePassword("")
+                    }}
+                    className="h-8 text-xs font-bold"
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </form>
+            ) : (
+              <div className="flex items-center justify-between">
+                <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 max-w-[70%]">
+                  Your account is protected by an authenticator app code at every login.
+                </p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setDisabling(true)}
+                  className="h-8 text-xs font-bold border-red-200 text-red-600 hover:bg-red-50 dark:border-red-900 dark:text-red-400"
+                >
+                  Disable
+                </Button>
+              </div>
+            )
+          ) : enrolling ? (
+            <form onSubmit={handleConfirmEnrollment} className="space-y-3">
+              <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                Scan this with your authenticator app (Google Authenticator, Authy, 1Password, etc.), or enter the
+                secret manually, then confirm with the 6-digit code it shows.
+              </p>
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-900 space-y-1.5">
+                <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase">Manual entry secret</p>
+                <p className="text-xs font-mono font-bold text-slate-900 dark:text-white break-all">{enrollSecret}</p>
+                <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase pt-1">otpauth URI</p>
+                <p className="text-[10px] font-mono text-slate-500 dark:text-slate-400 break-all">{enrollOtpauthUri}</p>
+              </div>
+              <input
+                type="text"
+                inputMode="numeric"
+                maxLength={6}
+                placeholder="123456"
+                value={enrollCode}
+                onChange={(e) => setEnrollCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-center text-sm font-bold tracking-[0.4em] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6B2C91]/30 dark:border-slate-800 dark:bg-slate-900 dark:text-white"
+              />
+              <div className="flex gap-2">
+                <Button
+                  type="submit"
+                  disabled={enrollSubmitting}
+                  className="h-8 text-xs font-black bg-[#6B2C91] hover:bg-[#5a237b] text-white"
+                >
+                  {enrollSubmitting ? "Confirming..." : "Confirm & Enable"}
+                </Button>
+                <Button type="button" variant="outline" onClick={handleCancelEnrollment} className="h-8 text-xs font-bold">
+                  Cancel
+                </Button>
+              </div>
+            </form>
+          ) : (
+            <div className="flex items-center justify-between">
+              <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 max-w-[70%]">
+                Add an authenticator app code as an optional second step at login, for extra safety on your account.
+              </p>
+              <Button
+                type="button"
+                onClick={handleStartEnrollment}
+                disabled={enrollSubmitting}
+                className="h-8 text-xs font-black bg-[#6B2C91] hover:bg-[#5a237b] text-white"
+              >
+                {enrollSubmitting ? "Starting..." : "Enable 2FA"}
+              </Button>
+            </div>
+          )}
+        </div>
+      </DashboardCard>
+
+      {/* Action Panel -- outside the form (moved alongside Security &
+          Authentication above), so this button triggers the form's submit
+          handler directly instead of relying on being a form-nested
+          type="submit". */}
+      <div className="flex justify-end gap-3 pt-2">
+        <Button
+          type="button"
+          onClick={handleSubmit(onSubmit)}
+          disabled={isSubmitting}
+          className="bg-[#6B2C91] hover:bg-[#5a237b] text-white font-extrabold text-xs h-10 px-5 gap-1.5 cursor-pointer dark:bg-pink-600 dark:hover:bg-pink-700"
+        >
+          <Save className="size-4" />
+          {isSubmitting ? "Saving preferences..." : "Save Account Settings"}
+        </Button>
+      </div>
     </div>
   )
 }

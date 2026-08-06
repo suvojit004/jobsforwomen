@@ -728,7 +728,10 @@ export class CandidateService {
       emailStatusUpdate: true,
       emailInterviews: true,
       emailPlatformNews: false,
-      twoFactorEnabled: false,
+      // twoFactorEnabled used to live here as a plain settings-blob key with
+      // no real effect on login -- see candidate.validator.ts's
+      // updateCandidateSettingsSchema for why it was removed. Real 2FA is
+      // the actual User.twoFactorEnabled column now.
       // Read by queue.ts's compileDailyDigests/compileWeeklyDigests
       // (`prefs.dailyDigestEnabled !== false`) -- default true so existing
       // candidates keep receiving digests until they explicitly opt out.

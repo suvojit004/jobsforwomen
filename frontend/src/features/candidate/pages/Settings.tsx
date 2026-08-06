@@ -19,11 +19,13 @@ import { DashboardCard } from "@/components/dashboard/DashboardCard"
 import { candidateApi } from "../services/candidateApi"
 import { cn } from "@/lib/utils"
 import { isValidPhone, isValidPassword, PASSWORD_HELP_TEXT } from "@/utils/validators"
+import { useAuth } from "@/contexts/AuthContext"
 
 type TabType = "account" | "appearance" | "security" | "notifications" | "privacy"
 
 export function Settings() {
   const { theme, setTheme } = useTheme()
+  const { user, refreshSession } = useAuth()
   const [activeTab, setActiveTab] = useState<TabType>("account")
 
   const [isLoading, setIsLoading] = useState(true)
@@ -39,9 +41,21 @@ export function Settings() {
   const [currentPassword, setCurrentPassword] = useState("")
   const [newPassword, setNewPassword] = useState("")
   const [confirmPassword, setConfirmPassword] = useState("")
-  const [twoFactor, setTwoFactor] = useState(false)
   const [passwordSuccess, setPasswordSuccess] = useState(false)
   const [passwordError, setPasswordError] = useState("")
+
+  // Two-Factor Authentication -- real now (TOTP, RFC 6238), optional and
+  // self-service like the password fields above. Was previously a checkbox
+  // that only wrote an unused key into the settings preferences blob; see
+  // candidateApi.start2FAEnrollment/confirm2FAEnrollment/disable2FA.
+  const [enrolling, setEnrolling] = useState(false)
+  const [enrollSecret, setEnrollSecret] = useState("")
+  const [enrollOtpauthUri, setEnrollOtpauthUri] = useState("")
+  const [enrollCode, setEnrollCode] = useState("")
+  const [enrollSubmitting, setEnrollSubmitting] = useState(false)
+  const [disabling, setDisabling] = useState(false)
+  const [disablePassword, setDisablePassword] = useState("")
+  const [disableSubmitting, setDisableSubmitting] = useState(false)
 
   // Notification states
   const [emailNewJobs, setEmailNewJobs] = useState(true)
@@ -84,7 +98,6 @@ export function Settings() {
           // predate these two keys doesn't see them flip to "off" on load.
           setDailyDigest(setts.dailyDigestEnabled ?? true)
           setWeeklyDigest(setts.weeklyDigestEnabled ?? true)
-          setTwoFactor(!!setts.twoFactorEnabled)
           setProfileVisibility(setts.profileVisibility || "Public")
         }
       } catch (err: any) {
@@ -147,20 +160,69 @@ export function Settings() {
     }
   }
 
-  // 2FA is displayed inside the Security tab's password-change form, but that
-  // form's password fields are `required` -- so a user who only wants to
-  // toggle 2FA (without also changing their password) could never actually
-  // submit it. Persist the toggle immediately on change instead of waiting
-  // for that form's submit.
-  const handleToggleTwoFactor = async (checked: boolean) => {
-    const previous = twoFactor
-    setTwoFactor(checked)
+  const handleStartEnrollment = async () => {
+    setEnrollSubmitting(true)
     try {
-      await candidateApi.updateSettings({ twoFactorEnabled: checked })
+      const result = await candidateApi.start2FAEnrollment()
+      setEnrollSecret(result.secret || "")
+      setEnrollOtpauthUri(result.otpauthUri || "")
+      setEnrolling(true)
     } catch (err: any) {
-      console.error("Failed to update two-factor authentication setting", err)
-      toast.error(err?.message || "Failed to update two-factor authentication setting.")
-      setTwoFactor(previous)
+      console.error("Failed to start 2FA enrollment", err)
+      toast.error(err?.message || "Failed to start two-factor enrollment.")
+    } finally {
+      setEnrollSubmitting(false)
+    }
+  }
+
+  const handleConfirmEnrollment = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!/^\d{6}$/.test(enrollCode.trim())) {
+      toast.error("Enter the 6-digit code from your authenticator app.")
+      return
+    }
+    setEnrollSubmitting(true)
+    try {
+      await candidateApi.confirm2FAEnrollment(enrollCode.trim())
+      toast.success("Two-factor authentication enabled.")
+      setEnrolling(false)
+      setEnrollSecret("")
+      setEnrollOtpauthUri("")
+      setEnrollCode("")
+      await refreshSession()
+    } catch (err: any) {
+      console.error("Failed to confirm 2FA enrollment", err)
+      toast.error(err?.message || "Invalid code. Please try again.")
+    } finally {
+      setEnrollSubmitting(false)
+    }
+  }
+
+  const handleCancelEnrollment = () => {
+    setEnrolling(false)
+    setEnrollSecret("")
+    setEnrollOtpauthUri("")
+    setEnrollCode("")
+  }
+
+  const handleConfirmDisable = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!disablePassword) {
+      toast.error("Enter your current password.")
+      return
+    }
+    setDisableSubmitting(true)
+    try {
+      await candidateApi.disable2FA(disablePassword)
+      toast.success("Two-factor authentication disabled.")
+      setDisabling(false)
+      setDisablePassword("")
+      await refreshSession()
+    } catch (err: any) {
+      console.error("Failed to disable 2FA", err)
+      toast.error(err?.message || "Failed to disable two-factor authentication.")
+    } finally {
+      setDisableSubmitting(false)
     }
   }
 
@@ -186,7 +248,6 @@ export function Settings() {
         emailPlatformNews,
         dailyDigestEnabled: dailyDigest,
         weeklyDigestEnabled: weeklyDigest,
-        twoFactorEnabled: twoFactor,
       })
       setNotifSuccess(true)
       setTimeout(() => setNotifSuccess(false), 3000)
@@ -411,79 +472,185 @@ export function Settings() {
 
           {/* Security Settings */}
           {activeTab === "security" && (
-            <DashboardCard className="p-5">
-              <h2 className="text-sm font-extrabold text-slate-950 dark:text-white mb-4">
-                Security & Authentication
-              </h2>
-              <form onSubmit={handlePasswordSubmit} className="space-y-4">
-                <div className="grid gap-4 sm:grid-cols-3">
-                  <div className="space-y-1.5">
-                    <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400">Current Password <span className="text-red-500">*</span></label>
-                    <input
-                      type="password"
-                      value={currentPassword}
-                      onChange={(e) => setCurrentPassword(e.target.value)}
-                      required
-                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6B2C91]/30 dark:border-slate-800 dark:bg-slate-900 dark:text-white"
-                    />
+            <div className="space-y-5">
+              <DashboardCard className="p-5">
+                <h2 className="text-sm font-extrabold text-slate-950 dark:text-white mb-4">
+                  Password
+                </h2>
+                <form onSubmit={handlePasswordSubmit} className="space-y-4">
+                  <div className="grid gap-4 sm:grid-cols-3">
+                    <div className="space-y-1.5">
+                      <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400">Current Password <span className="text-red-500">*</span></label>
+                      <input
+                        type="password"
+                        value={currentPassword}
+                        onChange={(e) => setCurrentPassword(e.target.value)}
+                        required
+                        className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6B2C91]/30 dark:border-slate-800 dark:bg-slate-900 dark:text-white"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400">New Password <span className="text-red-500">*</span></label>
+                      <input
+                        type="password"
+                        value={newPassword}
+                        onChange={(e) => setNewPassword(e.target.value)}
+                        required
+                        className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6B2C91]/30 dark:border-slate-800 dark:bg-slate-900 dark:text-white"
+                      />
+                      <p className="text-[10px] text-slate-400 dark:text-slate-500">{PASSWORD_HELP_TEXT}</p>
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400">Confirm Password <span className="text-red-500">*</span></label>
+                      <input
+                        type="password"
+                        value={confirmPassword}
+                        onChange={(e) => setConfirmPassword(e.target.value)}
+                        required
+                        className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6B2C91]/30 dark:border-slate-800 dark:bg-slate-900 dark:text-white"
+                      />
+                    </div>
                   </div>
-                  <div className="space-y-1.5">
-                    <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400">New Password <span className="text-red-500">*</span></label>
-                    <input
-                      type="password"
-                      value={newPassword}
-                      onChange={(e) => setNewPassword(e.target.value)}
-                      required
-                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6B2C91]/30 dark:border-slate-800 dark:bg-slate-900 dark:text-white"
-                    />
-                    <p className="text-[10px] text-slate-400 dark:text-slate-500">{PASSWORD_HELP_TEXT}</p>
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400">Confirm Password <span className="text-red-500">*</span></label>
-                    <input
-                      type="password"
-                      value={confirmPassword}
-                      onChange={(e) => setConfirmPassword(e.target.value)}
-                      required
-                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6B2C91]/30 dark:border-slate-800 dark:bg-slate-900 dark:text-white"
-                    />
-                  </div>
-                </div>
 
-                <div className="flex items-center justify-between py-3 border-y border-slate-100 dark:border-slate-800">
-                  <div className="space-y-0.5">
-                    <p className="text-xs font-extrabold text-slate-855 dark:text-slate-200">Two-Factor Authentication (2FA)</p>
-                    <p className="text-[11px] text-slate-500">Provide an SMS or app verification token when logging in.</p>
+                  <div className="flex items-center gap-3 pt-2">
+                    <Button
+                      type="submit"
+                      className="bg-[#6B2C91] text-white hover:bg-[#5a237b] h-9 px-6 font-extrabold text-xs dark:bg-pink-600 dark:hover:bg-pink-700"
+                    >
+                      Update Password
+                    </Button>
+                    {passwordSuccess && (
+                      <span className="text-xs text-emerald-600 font-extrabold flex items-center gap-1">
+                        <Check className="size-4 stroke-[3]" />
+                        Password updated!
+                      </span>
+                    )}
+                    {passwordError && (
+                      <span className="text-xs text-red-600 font-extrabold">
+                        {passwordError}
+                      </span>
+                    )}
                   </div>
-                  <input
-                    type="checkbox"
-                    checked={twoFactor}
-                    onChange={(e) => handleToggleTwoFactor(e.target.checked)}
-                    className="rounded border-slate-350 text-[#6B2C91] focus:ring-[#6B2C91] dark:border-slate-700 dark:bg-slate-950 shrink-0 cursor-pointer"
-                  />
-                </div>
+                </form>
+              </DashboardCard>
 
-                <div className="flex items-center gap-3 pt-2">
-                  <Button
-                    type="submit"
-                    className="bg-[#6B2C91] text-white hover:bg-[#5a237b] h-9 px-6 font-extrabold text-xs dark:bg-pink-600 dark:hover:bg-pink-700"
-                  >
-                    Update Password
-                  </Button>
-                  {passwordSuccess && (
-                    <span className="text-xs text-emerald-600 font-extrabold flex items-center gap-1">
-                      <Check className="size-4 stroke-[3]" />
-                      Password updated!
+              {/* Two-Factor Authentication -- real (TOTP, RFC 6238), optional
+                  and self-service. See candidateApi.start2FAEnrollment/
+                  confirm2FAEnrollment/disable2FA. */}
+              <DashboardCard className="p-5 space-y-4">
+                <div className="border-b border-slate-100 pb-3 dark:border-slate-800 flex items-center justify-between">
+                  <h2 className="text-sm font-extrabold text-slate-950 dark:text-white">
+                    Two-Factor Authentication
+                  </h2>
+                  {user?.twoFactorEnabled && !disabling && (
+                    <span className="flex items-center gap-1 text-[10px] font-black text-emerald-600 dark:text-emerald-400">
+                      <ShieldCheck className="size-3.5" />
+                      Enabled
                     </span>
                   )}
-                  {passwordError && (
-                    <span className="text-xs text-red-600 font-extrabold">
-                      {passwordError}
-                    </span>
-                  )}
                 </div>
-              </form>
-            </DashboardCard>
+
+                {user?.twoFactorEnabled ? (
+                  disabling ? (
+                    <form onSubmit={handleConfirmDisable} className="space-y-3">
+                      <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+                        Enter your current password to disable two-factor authentication.
+                      </p>
+                      <input
+                        type="password"
+                        placeholder="Current password"
+                        value={disablePassword}
+                        onChange={(e) => setDisablePassword(e.target.value)}
+                        className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6B2C91]/30 dark:border-slate-800 dark:bg-slate-900 dark:text-white"
+                      />
+                      <div className="flex gap-2">
+                        <Button
+                          type="submit"
+                          disabled={disableSubmitting}
+                          className="h-8 text-xs font-black bg-red-600 hover:bg-red-700 text-white"
+                        >
+                          {disableSubmitting ? "Disabling..." : "Confirm Disable"}
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => {
+                            setDisabling(false)
+                            setDisablePassword("")
+                          }}
+                          className="h-8 text-xs font-bold"
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    </form>
+                  ) : (
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 max-w-[70%]">
+                        Your account is protected by an authenticator app code at every login.
+                      </p>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => setDisabling(true)}
+                        className="h-8 text-xs font-bold border-red-200 text-red-600 hover:bg-red-50 dark:border-red-900 dark:text-red-400"
+                      >
+                        Disable
+                      </Button>
+                    </div>
+                  )
+                ) : enrolling ? (
+                  <form onSubmit={handleConfirmEnrollment} className="space-y-3">
+                    <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+                      Scan this with your authenticator app (Google Authenticator, Authy, 1Password, etc.), or enter
+                      the secret manually, then confirm with the 6-digit code it shows.
+                    </p>
+                    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-900 space-y-1.5">
+                      <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase">Manual entry secret</p>
+                      <p className="text-xs font-mono font-bold text-slate-900 dark:text-white break-all">{enrollSecret}</p>
+                      <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase pt-1">otpauth URI</p>
+                      <p className="text-[10px] font-mono text-slate-500 dark:text-slate-400 break-all">{enrollOtpauthUri}</p>
+                    </div>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      maxLength={6}
+                      placeholder="123456"
+                      value={enrollCode}
+                      onChange={(e) => setEnrollCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-center text-sm font-bold tracking-[0.4em] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6B2C91]/30 dark:border-slate-800 dark:bg-slate-900 dark:text-white"
+                    />
+                    <div className="flex gap-2">
+                      <Button
+                        type="submit"
+                        disabled={enrollSubmitting}
+                        className="h-8 text-xs font-black bg-[#6B2C91] hover:bg-[#5a237b] text-white"
+                      >
+                        {enrollSubmitting ? "Confirming..." : "Confirm & Enable"}
+                      </Button>
+                      <Button type="button" variant="outline" onClick={handleCancelEnrollment} className="h-8 text-xs font-bold">
+                        Cancel
+                      </Button>
+                    </div>
+                  </form>
+                ) : (
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 max-w-[70%]">
+                      Add an authenticator app code as an optional second step at login, for extra safety on your
+                      account.
+                    </p>
+                    <Button
+                      type="button"
+                      onClick={handleStartEnrollment}
+                      disabled={enrollSubmitting}
+                      className="h-8 text-xs font-black bg-[#6B2C91] hover:bg-[#5a237b] text-white"
+                    >
+                      {enrollSubmitting ? "Starting..." : "Enable 2FA"}
+                    </Button>
+                  </div>
+                )}
+              </DashboardCard>
+            </div>
           )}
 
           {/* Notifications Settings */}

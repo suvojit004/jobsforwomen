@@ -55,7 +55,12 @@ export const updateCandidateSettingsSchema = z.object({
   emailStatusUpdate: z.boolean().optional(),
   emailInterviews: z.boolean().optional(),
   emailPlatformNews: z.boolean().optional(),
-  twoFactorEnabled: z.boolean().optional(),
+  // twoFactorEnabled used to live here as a plain settings-blob key -- the
+  // Settings page's checkbox wrote it, but no login code path ever read it,
+  // so toggling it did nothing. Real 2FA is now the actual User.
+  // twoFactorEnabled column (TOTP, RFC 6238; see AuthService.login /
+  // shared/utils/twoFactor.ts), set only via /auth/2fa/enroll/confirm --
+  // removed here so this dead field can't be resurrected by accident.
   // Read by queue.ts's compileDailyDigests/compileWeeklyDigests (the
   // scheduled job-recommendation emails) -- checked with `!== false`, so
   // these must be settable to false or a candidate has no way to opt out.

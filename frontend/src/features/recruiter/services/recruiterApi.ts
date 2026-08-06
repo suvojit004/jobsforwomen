@@ -385,6 +385,25 @@ export const RecruiterApi = {
     return res?.data?.settings || res?.data
   },
 
+  // Real TOTP-based Two-Factor Authentication (RFC 6238) -- same shared
+  // /auth/2fa/* endpoints AdminApi uses (session-gated only, not role-gated),
+  // now offered here as an optional, self-service security setting. The
+  // "Security & Authentication" card previously had nothing here at all.
+  async start2FAEnrollment() {
+    const res = await apiClient.post("/api/v1/auth/2fa/enroll/start", {})
+    return res?.data || {}
+  },
+
+  async confirm2FAEnrollment(code: string) {
+    const res = await apiClient.post("/api/v1/auth/2fa/enroll/confirm", { code })
+    return res?.data || {}
+  },
+
+  async disable2FA(password: string) {
+    const res = await apiClient.post("/api/v1/auth/2fa/disable", { password })
+    return res?.data || {}
+  },
+
   async getNotifications() {
     const res = await apiClient.get("/api/v1/recruiters/notifications")
     return res?.data?.notifications || res?.data || []
