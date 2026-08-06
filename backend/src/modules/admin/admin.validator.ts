@@ -94,6 +94,14 @@ export const updateSecuritySettingsSchema = z
     message: "At least one security setting must be provided.",
   })
 
+// General, non-security platform settings (PlatformSettings singleton row).
+// Currently just the "Operations Support Contacts" technical helpdesk email
+// on the admin Help & Support page -- both Admin and Super Admin can change
+// it, see admin.routes.ts.
+export const updatePlatformSettingsSchema = z.object({
+  supportContactEmail: z.string().trim().email("Enter a valid support contact email address.").max(200),
+})
+
 // Admin Management listing filters
 export const listAdminsQuerySchema = z.object({
   search: z.string().trim().max(200).optional(),

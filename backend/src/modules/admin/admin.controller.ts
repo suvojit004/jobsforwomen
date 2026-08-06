@@ -19,6 +19,7 @@ import {
   listAdminsQuerySchema,
   updateAdminSettingsSchema,
   updateSecuritySettingsSchema,
+  updatePlatformSettingsSchema,
 } from "./admin.validator"
 import { CompanyStatus, UserStatus, PerkStatus } from "@prisma/client"
 
@@ -582,6 +583,27 @@ export class AdminController {
       const context = this.getContext(req)
       const settings = await this.service.updateSecuritySettings(adminId, validated, context)
       return sendSuccess(res, { settings }, "Security settings updated successfully.")
+    } catch (err: any) {
+      next(err)
+    }
+  }
+
+  getPlatformSettings = async (req: Request, res: Response, next: any) => {
+    try {
+      const settings = await this.service.getPlatformSettings()
+      return sendSuccess(res, { settings }, "Fetched platform settings successfully.")
+    } catch (err: any) {
+      next(err)
+    }
+  }
+
+  updatePlatformSettings = async (req: Request, res: Response, next: any) => {
+    try {
+      const validated = updatePlatformSettingsSchema.parse(req.body)
+      const adminId = req.user?.userId || ""
+      const context = this.getContext(req)
+      const settings = await this.service.updatePlatformSettings(adminId, validated, context)
+      return sendSuccess(res, { settings }, "Platform settings updated successfully.")
     } catch (err: any) {
       next(err)
     }

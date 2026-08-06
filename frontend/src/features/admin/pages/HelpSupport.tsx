@@ -1,15 +1,21 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import {
   CircleHelp,
   BookOpen,
   Mail,
   ChevronDown,
   ChevronUp,
+  Pencil,
+  Check,
+  X,
 } from "lucide-react"
+import { toast } from "sonner"
 import { useNavigate } from "react-router-dom"
 import { DashboardCard } from "@/components/shared/DashboardCard"
 import { ReportIssueForm } from "@/features/shared/support/ReportIssueForm"
 import { MyTicketsList } from "@/features/shared/support/MyTicketsList"
+import { AdminApi } from "../services/adminApi"
+import { useAuth } from "@/contexts/AuthContext"
 
 const TICKET_CATEGORIES = ["Technical Issue", "Perk Dispute", "Moderation Appeal", "Other Query"]
 
@@ -20,8 +26,70 @@ interface FaqItem {
 
 export function HelpSupport() {
   const navigate = useNavigate()
+  const { user } = useAuth()
+  // Was previously hardcoded straight into this page's JSX with no way to
+  // change it without a code deploy. Now backed by the PlatformSettings
+  // singleton row (see AdminService.getPlatformSettings/updatePlatformSettings)
+  // -- both Admin and Super Admin can edit it, unlike the Super-Admin-only
+  // Platform Security Policies on Administrative Settings.
+  const canEditSupportContact = !!(user?.roles?.includes("Admin") || user?.roles?.includes("Super Admin"))
   const [openFaq, setOpenFaq] = useState<number | null>(0)
   const [ticketsRefreshKey, setTicketsRefreshKey] = useState(0)
+
+  const [supportEmail, setSupportEmail] = useState("")
+  const [supportEmailLoading, setSupportEmailLoading] = useState(true)
+  const [editingSupportEmail, setEditingSupportEmail] = useState(false)
+  const [supportEmailDraft, setSupportEmailDraft] = useState("")
+  const [supportEmailSaving, setSupportEmailSaving] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const settings = await AdminApi.getPlatformSettings()
+        if (!cancelled) {
+          setSupportEmail(settings?.supportContactEmail || "")
+        }
+      } catch {
+        // Non-critical -- the card just renders without a contact if this
+        // fails, same as any other best-effort admin widget on this page.
+      } finally {
+        if (!cancelled) setSupportEmailLoading(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const startEditingSupportEmail = () => {
+    setSupportEmailDraft(supportEmail)
+    setEditingSupportEmail(true)
+  }
+
+  const cancelEditingSupportEmail = () => {
+    setEditingSupportEmail(false)
+    setSupportEmailDraft("")
+  }
+
+  const saveSupportEmail = async () => {
+    const trimmed = supportEmailDraft.trim()
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
+      toast.error("Enter a valid support contact email address.")
+      return
+    }
+    setSupportEmailSaving(true)
+    try {
+      const settings = await AdminApi.updatePlatformSettings({ supportContactEmail: trimmed })
+      setSupportEmail(settings?.supportContactEmail || trimmed)
+      setEditingSupportEmail(false)
+      toast.success("Support contact email updated.")
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || "Failed to update the support contact email.")
+    } finally {
+      setSupportEmailSaving(false)
+    }
+  }
 
   const faqs: FaqItem[] = [
     {
@@ -165,17 +233,64 @@ export function HelpSupport() {
 
           {/* Core Support Contacts */}
           <DashboardCard className="p-5 space-y-4">
-            <h3 className="text-xs font-black text-slate-900 uppercase tracking-widest dark:text-white border-b border-slate-100 pb-3 dark:border-slate-800">
-              Operations Support Contacts
-            </h3>
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3 dark:border-slate-800">
+              <h3 className="text-xs font-black text-slate-900 uppercase tracking-widest dark:text-white">
+                Operations Support Contacts
+              </h3>
+              {canEditSupportContact && !editingSupportEmail && !supportEmailLoading && (
+                <button
+                  type="button"
+                  onClick={startEditingSupportEmail}
+                  className="text-slate-400 hover:text-[#6B2C91] dark:hover:text-pink-300 transition-colors"
+                  aria-label="Edit technical helpdesk email"
+                >
+                  <Pencil className="size-3.5" />
+                </button>
+              )}
+            </div>
             <div className="space-y-3.5 text-xs font-semibold">
               <div className="flex items-center gap-2.5">
                 <Mail className="size-4 text-[#6B2C91] dark:text-pink-300 shrink-0" />
-                <div>
+                <div className="flex-1 min-w-0">
                   <p className="text-[9px] font-black uppercase text-slate-400">Technical Helpdesk</p>
-                  <a href="mailto:ops-support@jobsforwomen.info" className="text-slate-850 dark:text-white hover:underline">
-                    ops-support@jobsforwomen.info
-                  </a>
+                  {editingSupportEmail ? (
+                    <div className="flex items-center gap-1.5 mt-1">
+                      <input
+                        type="email"
+                        value={supportEmailDraft}
+                        onChange={(e) => setSupportEmailDraft(e.target.value)}
+                        disabled={supportEmailSaving}
+                        autoFocus
+                        className="flex-1 min-w-0 text-xs font-semibold text-slate-850 dark:text-white bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-md px-2 py-1 focus:outline-none focus:ring-1 focus:ring-[#6B2C91]"
+                      />
+                      <button
+                        type="button"
+                        onClick={saveSupportEmail}
+                        disabled={supportEmailSaving}
+                        className="text-emerald-600 hover:text-emerald-700 shrink-0 disabled:opacity-50"
+                        aria-label="Save"
+                      >
+                        <Check className="size-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={cancelEditingSupportEmail}
+                        disabled={supportEmailSaving}
+                        className="text-slate-400 hover:text-slate-600 shrink-0 disabled:opacity-50"
+                        aria-label="Cancel"
+                      >
+                        <X className="size-4" />
+                      </button>
+                    </div>
+                  ) : supportEmailLoading ? (
+                    <p className="text-slate-400">Loading…</p>
+                  ) : supportEmail ? (
+                    <a href={`mailto:${supportEmail}`} className="text-slate-850 dark:text-white hover:underline break-all">
+                      {supportEmail}
+                    </a>
+                  ) : (
+                    <p className="text-slate-400">Not set</p>
+                  )}
                 </div>
               </div>
             </div>

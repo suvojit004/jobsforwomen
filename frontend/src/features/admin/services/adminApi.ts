@@ -173,6 +173,20 @@ export const AdminApi = {
     return res?.data?.settings || res?.data || {}
   },
 
+  // General, non-security platform settings -- currently just the
+  // "Operations Support Contacts" technical helpdesk email on the Help &
+  // Support page. Readable by any admin-tier role, writable by Admin/Super
+  // Admin (backend 403s otherwise).
+  async getPlatformSettings() {
+    const res = await apiClient.get("/api/v1/admins/platform-settings")
+    return res?.data?.settings || res?.data || {}
+  },
+
+  async updatePlatformSettings(payload: { supportContactEmail: string }) {
+    const res = await apiClient.put("/api/v1/admins/platform-settings", payload)
+    return res?.data?.settings || res?.data || {}
+  },
+
   // Two-Factor Authentication -- these hit /auth/2fa/*, not /admins/*
   // (self-service account management, same as changePassword above calling
   // /auth/change-password), but are exposed from the Admin Settings page.

@@ -40,6 +40,7 @@ jest.mock("../../shared/database/db", () => {
     refreshToken: { deleteMany: jest.fn(), updateMany: jest.fn() },
     session: { updateMany: jest.fn(), update: jest.fn(), findUnique: jest.fn() },
     securityPolicy: { findUnique: jest.fn(), upsert: jest.fn() },
+    platformSettings: { findUnique: jest.fn(), upsert: jest.fn() },
     companyBenefit: { updateMany: jest.fn() },
     featureFlag: { create: jest.fn(), update: jest.fn(), findUnique: jest.fn(), findMany: jest.fn(), delete: jest.fn() },
     notification: { create: jest.fn(), findMany: jest.fn(), count: jest.fn() },
@@ -1144,6 +1145,80 @@ describe("Admin Module Integration Tests (Phase 7)", () => {
 
       expect(res.status).toBe(403)
       expect(mockPrisma.user.update).not.toHaveBeenCalled()
+    })
+  })
+
+  // "Operations Support Contacts" technical helpdesk email on the admin
+  // Help & Support page -- previously hardcoded in HelpSupport.tsx's JSX
+  // with no way to change it without a code deploy. See
+  // AdminService.getPlatformSettings/updatePlatformSettings.
+  describe("GET/PUT /admins/platform-settings", () => {
+    it("allows any admin-tier role to read the current support contact email", async () => {
+      mockPrisma.platformSettings.findUnique.mockResolvedValue({
+        id: "singleton",
+        supportContactEmail: "ops-support@jobsforwomen.info",
+      })
+
+      const res = await request(app)
+        .get("/api/v1/admins/platform-settings")
+        .set("Authorization", `Bearer ${moderatorToken}`)
+
+      expect(res.status).toBe(200)
+      expect(res.body.data.settings.supportContactEmail).toBe("ops-support@jobsforwomen.info")
+    })
+
+    it("falls back to env.SUPPORT_EMAIL when no row has been saved yet", async () => {
+      mockPrisma.platformSettings.findUnique.mockResolvedValue(null)
+
+      const res = await request(app)
+        .get("/api/v1/admins/platform-settings")
+        .set("Authorization", `Bearer ${moderatorToken}`)
+
+      expect(res.status).toBe(200)
+      expect(res.body.data.settings.supportContactEmail).toBe(env.SUPPORT_EMAIL || env.SES_FROM || "")
+    })
+
+    it("rejects a Moderator trying to change the support contact email", async () => {
+      const res = await request(app)
+        .put("/api/v1/admins/platform-settings")
+        .set("Authorization", `Bearer ${moderatorToken}`)
+        .send({ supportContactEmail: "new-support@jobsforwomen.info" })
+
+      expect(res.status).toBe(403)
+      expect(mockPrisma.platformSettings.upsert).not.toHaveBeenCalled()
+    })
+
+    it("rejects an invalid email address", async () => {
+      const res = await request(app)
+        .put("/api/v1/admins/platform-settings")
+        .set("Authorization", `Bearer ${superAdminToken}`)
+        .send({ supportContactEmail: "not-an-email" })
+
+      expect(res.status).toBe(400)
+      expect(mockPrisma.platformSettings.upsert).not.toHaveBeenCalled()
+    })
+
+    it("lets a Super Admin update the support contact email", async () => {
+      mockPrisma.platformSettings.findUnique.mockResolvedValue({
+        id: "singleton",
+        supportContactEmail: "old-support@jobsforwomen.info",
+      })
+      mockPrisma.platformSettings.upsert.mockResolvedValue({
+        id: "singleton",
+        supportContactEmail: "new-support@jobsforwomen.info",
+      })
+
+      const res = await request(app)
+        .put("/api/v1/admins/platform-settings")
+        .set("Authorization", `Bearer ${superAdminToken}`)
+        .send({ supportContactEmail: "new-support@jobsforwomen.info" })
+
+      expect(res.status).toBe(200)
+      expect(mockPrisma.platformSettings.upsert).toHaveBeenCalledWith({
+        where: { id: "singleton" },
+        update: { supportContactEmail: "new-support@jobsforwomen.info", updatedById: "super-admin-id" },
+        create: { id: "singleton", supportContactEmail: "new-support@jobsforwomen.info", updatedById: "super-admin-id" },
+      })
     })
   })
 
