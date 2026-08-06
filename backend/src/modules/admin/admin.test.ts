@@ -1309,6 +1309,10 @@ describe("Admin Module Integration Tests (Phase 7)", () => {
   })
 
   describe("enforceTwoFactorPolicy middleware (Force Two-Factor)", () => {
+    // Probe route is /admins/notifications, not /admins/security-settings --
+    // security-settings is deliberately exempt from this middleware (see the
+    // dedicated describe block below), so it can no longer be used to prove
+    // the policy blocks anything.
     it("blocks an admin-tier account without 2FA enabled once the policy is turned on", async () => {
       mockRedis.get.mockImplementation(async (key: string) =>
         key === "security:policy"
@@ -1318,7 +1322,7 @@ describe("Admin Module Integration Tests (Phase 7)", () => {
       // moderatorToken (beforeEach) carries no twoFactorEnabled claim at
       // all -- same as "not enrolled", the safe default.
       const res = await request(app)
-        .get("/api/v1/admins/security-settings")
+        .get("/api/v1/admins/notifications")
         .set("Authorization", `Bearer ${moderatorToken}`)
 
       expect(res.status).toBe(403)
@@ -1343,7 +1347,7 @@ describe("Admin Module Integration Tests (Phase 7)", () => {
       )
 
       const res = await request(app)
-        .get("/api/v1/admins/security-settings")
+        .get("/api/v1/admins/notifications")
         .set("Authorization", `Bearer ${tokenWith2FA}`)
 
       expect(res.status).toBe(200)
@@ -1357,10 +1361,74 @@ describe("Admin Module Integration Tests (Phase 7)", () => {
       )
 
       const res = await request(app)
+        .get("/api/v1/admins/notifications")
+        .set("Authorization", `Bearer ${moderatorToken}`)
+
+      expect(res.status).toBe(200)
+    })
+  })
+
+  // Regression coverage for a real self-lockout bug: a Super Admin who turns
+  // Force 2FA on without having enrolled their own account first (or whose
+  // current token predates enrollment) would otherwise get 403'd by
+  // enforceTwoFactorPolicy on every subsequent /admins/* request -- including
+  // the request to turn Force 2FA back off, since GET/PUT /security-settings
+  // used to sit behind that same global middleware. Recoverable only via
+  // direct database access. Fixed by registering these two routes before
+  // router.use(enforceTwoFactorPolicy) in admin.routes.ts.
+  describe("Force 2FA self-lockout escape hatch (GET/PUT /security-settings)", () => {
+    it("still allows reading security-settings even when this exact account would be blocked everywhere else", async () => {
+      mockRedis.get.mockImplementation(async (key: string) =>
+        key === "security:policy"
+          ? JSON.stringify({ adminSessionTimeoutMinutes: null, forceTwoFactorForAdmins: true })
+          : null
+      )
+      mockPrisma.securityPolicy.findUnique.mockResolvedValue({
+        id: "singleton",
+        adminSessionTimeoutMinutes: null,
+        forceTwoFactorForAdmins: true,
+      })
+
+      // moderatorToken carries no twoFactorEnabled claim -- would 403 on
+      // any other /admins/* route per the tests above.
+      const blockedElsewhere = await request(app)
+        .get("/api/v1/admins/notifications")
+        .set("Authorization", `Bearer ${moderatorToken}`)
+      expect(blockedElsewhere.status).toBe(403)
+
+      const res = await request(app)
         .get("/api/v1/admins/security-settings")
         .set("Authorization", `Bearer ${moderatorToken}`)
 
       expect(res.status).toBe(200)
+      expect(res.body.data.settings.forceTwoFactorForAdmins).toBe(true)
+    })
+
+    it("still allows a Super Admin to turn Force 2FA back off while it would otherwise block them", async () => {
+      mockRedis.get.mockImplementation(async (key: string) =>
+        key === "security:policy"
+          ? JSON.stringify({ adminSessionTimeoutMinutes: null, forceTwoFactorForAdmins: true })
+          : null
+      )
+      mockPrisma.securityPolicy.findUnique.mockResolvedValue({
+        id: "singleton",
+        adminSessionTimeoutMinutes: null,
+        forceTwoFactorForAdmins: true,
+      })
+      mockPrisma.securityPolicy.upsert.mockResolvedValue({ id: "singleton", forceTwoFactorForAdmins: false })
+
+      // superAdminToken (beforeEach) also carries no twoFactorEnabled claim.
+      const res = await request(app)
+        .put("/api/v1/admins/security-settings")
+        .set("Authorization", `Bearer ${superAdminToken}`)
+        .send({ forceTwoFactorForAdmins: false })
+
+      expect(res.status).toBe(200)
+      expect(mockPrisma.securityPolicy.upsert).toHaveBeenCalledWith({
+        where: { id: "singleton" },
+        update: { forceTwoFactorForAdmins: false, updatedById: "super-admin-id" },
+        create: { id: "singleton", adminSessionTimeoutMinutes: null, forceTwoFactorForAdmins: false, updatedById: "super-admin-id" },
+      })
     })
   })
 })

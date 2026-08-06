@@ -31,10 +31,28 @@ router.use(adminRateLimiter)
 // (see Administrative Settings > Platform Security Policies). Both no-op
 // when their policy is unset/disabled -- see securityPolicy.middleware.ts.
 router.use(enforceAdminSessionTimeout)
+
+// Platform-wide admin security policy (Inactivity Session Timeout, Force
+// Two-Factor) -- every admin-tier role can view it, only Super Admin can
+// change it. Deliberately registered BEFORE router.use(enforceTwoFactorPolicy)
+// below, not after: if a Super Admin turns Force 2FA on without having
+// enrolled their own account first (or their current token predates
+// enrollment), the very next /admins/* request -- including the request to
+// turn Force 2FA back off -- would otherwise 403 under that same policy,
+// permanently locking every admin out of the one screen that could undo it,
+// recoverable only via direct database access. This route always stays
+// reachable so a Super Admin can never brick themselves this way. Still
+// behind requireActiveUser/requireRole/adminRateLimiter/
+// enforceAdminSessionTimeout above -- only the 2FA-policy gate is skipped
+// for these two routes specifically.
+router.get("/security-settings", controller.getSecuritySettings)
+router.put("/security-settings", requireSuperAdmin, controller.updateSecuritySettings)
+
 // Deliberately after enforceAdminSessionTimeout (an expired session should
-// 401 before a 2FA-policy 403) and applies to every /admins/* route --
-// enrollment itself lives under /auth/2fa/* (session-gated only, not
-// admin-tier-gated), so an unenrolled admin can always reach it to comply.
+// 401 before a 2FA-policy 403) and applies to every /admins/* route below
+// this point -- enrollment itself lives under /auth/2fa/* (session-gated
+// only, not admin-tier-gated), so an unenrolled admin can always reach it
+// to comply.
 router.use(enforceTwoFactorPolicy)
 
 // General Admin Search & Dashboard metrics (Admin, Super Admin, Moderator, Support)
@@ -125,11 +143,8 @@ router.post("/feature-flags", requireSuperAdmin, controller.createFeatureFlag)
 router.put("/feature-flags/:id", requireSuperAdmin, controller.updateFeatureFlag)
 router.delete("/feature-flags/:id", requireSuperAdmin, controller.deleteFeatureFlag)
 
-// Platform-wide admin security policy (currently just the Inactivity Session
-// Timeout) -- every admin-tier role can view it, only Super Admin can change
-// it, same gating pattern as Feature Flags above.
-router.get("/security-settings", controller.getSecuritySettings)
-router.put("/security-settings", requireSuperAdmin, controller.updateSecuritySettings)
+// (security-settings routes moved above router.use(enforceTwoFactorPolicy) --
+// see the comment there for why.)
 
 // General, non-security platform settings (currently just the "Operations
 // Support Contacts" technical helpdesk email on the admin Help & Support
