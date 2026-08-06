@@ -44,7 +44,7 @@ jest.mock("../../shared/database/db", () => {
     companyBenefit: { updateMany: jest.fn() },
     featureFlag: { create: jest.fn(), update: jest.fn(), findUnique: jest.fn(), findMany: jest.fn(), delete: jest.fn() },
     notification: { create: jest.fn(), findMany: jest.fn(), count: jest.fn() },
-    auditLog: { create: jest.fn(), findMany: jest.fn(), count: jest.fn(), groupBy: jest.fn() },
+    auditLog: { create: jest.fn(), findMany: jest.fn(), count: jest.fn(), groupBy: jest.fn(), deleteMany: jest.fn() },
     $transaction: jest.fn().mockImplementation(async (callback) => await callback(localPrismaMock)),
     $queryRaw: jest.fn().mockResolvedValue([{ 1: 1 }]),
   }
@@ -968,6 +968,89 @@ describe("Admin Module Integration Tests (Phase 7)", () => {
       expect(res.body.data.pagination).toEqual(
         expect.objectContaining({ currentPage: 2, totalItems: 45, totalPages: 3 })
       )
+    })
+  })
+
+  // "Export CSV" / "Delete All Logs" buttons on Platform Activity Logs.
+  // Export is a full, unfiltered dump (GET /admins/audits/export); Delete
+  // wipes every AuditLog row (DELETE /admins/audits) and writes exactly one
+  // new row recording the purge itself.
+  describe("GET /admins/audits/export", () => {
+    it("streams a CSV attachment built from every AuditLog row, ignoring pagination", async () => {
+      mockPrisma.auditLog.findMany.mockResolvedValue([
+        {
+          timestamp: new Date("2026-01-15T10:00:00Z"),
+          operatorEmail: "admin@jfw.info",
+          operatorId: "admin-1",
+          category: "ADMIN",
+          action: "USER_LOGIN",
+          entity: null,
+          entityId: null,
+          ipAddress: "10.0.0.1",
+          browser: "Chrome",
+          device: "Desktop",
+          oldValue: null,
+          newValue: null,
+        },
+      ])
+
+      const res = await request(app)
+        .get("/api/v1/admins/audits/export")
+        .set("Authorization", `Bearer ${superAdminToken}`)
+
+      expect(res.status).toBe(200)
+      expect(res.headers["content-type"]).toContain("text/csv")
+      expect(res.headers["content-disposition"]).toContain("attachment")
+      expect(res.text).toContain("admin@jfw.info")
+      expect(res.text).toContain("USER_LOGIN")
+      // No skip/take -- the export is always the full table, not whatever
+      // page happens to be open on the Activity Logs screen.
+      expect(mockPrisma.auditLog.findMany).toHaveBeenCalledWith({ orderBy: { timestamp: "desc" } })
+    })
+
+    it("rejects a Moderator (below the USER_MGMT_ROLES bar for bulk export)", async () => {
+      const res = await request(app)
+        .get("/api/v1/admins/audits/export")
+        .set("Authorization", `Bearer ${moderatorToken}`)
+
+      expect(res.status).toBe(403)
+    })
+  })
+
+  describe("DELETE /admins/audits", () => {
+    it("wipes every AuditLog row and writes exactly one new row recording the purge", async () => {
+      mockPrisma.auditLog.deleteMany.mockResolvedValue({ count: 137 })
+      const publishSpy = jest.spyOn(EventBus, "publish")
+
+      const res = await request(app)
+        .delete("/api/v1/admins/audits")
+        .set("Authorization", `Bearer ${superAdminToken}`)
+
+      expect(res.status).toBe(200)
+      expect(mockPrisma.auditLog.deleteMany).toHaveBeenCalledWith({})
+      expect(res.body.data.deletedCount).toBe(137)
+      expect(publishSpy).toHaveBeenCalledWith(
+        "AuditCreated",
+        expect.objectContaining({
+          action: "PURGE_AUDIT_LOGS",
+          entity: "AuditLog",
+          newValue: { deletedCount: 137 },
+        })
+      )
+    })
+
+    it("rejects a non-Super-Admin (Admin included) -- stricter than export's USER_MGMT_ROLES bar", async () => {
+      const adminToken = jwt.sign(
+        { userId: "plain-admin-id", email: "plain-admin@jfw.info", roles: ["Admin"], permissions: ["manage:admin"] },
+        env.JWT_ACCESS_SECRET
+      )
+
+      const res = await request(app)
+        .delete("/api/v1/admins/audits")
+        .set("Authorization", `Bearer ${adminToken}`)
+
+      expect(res.status).toBe(403)
+      expect(mockPrisma.auditLog.deleteMany).not.toHaveBeenCalled()
     })
   })
 

@@ -385,6 +385,31 @@ export class AdminController {
     }
   }
 
+  // Full, unfiltered CSV download of the entire audit trail -- deliberately
+  // ignores any page/search/category query params the Activity Logs page
+  // might otherwise be sending, since "Export" always means the whole table.
+  exportAuditLogs = async (req: Request, res: Response, next: any) => {
+    try {
+      const result = await this.service.exportAuditLogsCsv()
+      res.setHeader("Content-Type", result.mimetype)
+      res.setHeader("Content-Disposition", `attachment; filename=${result.filename}`)
+      return res.send(Buffer.from(result.content, "base64"))
+    } catch (err: any) {
+      next(err)
+    }
+  }
+
+  deleteAuditLogs = async (req: Request, res: Response, next: any) => {
+    try {
+      const adminId = req.user?.userId || ""
+      const context = this.getContext(req)
+      const result = await this.service.deleteAllAuditLogs(adminId, context)
+      return sendSuccess(res, result, `Purged ${result.deletedCount} activity log record(s).`)
+    } catch (err: any) {
+      next(err)
+    }
+  }
+
   getRBACData = async (req: Request, res: Response, next: any) => {
     try {
       const result = await this.service.getRBACData()

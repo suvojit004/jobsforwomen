@@ -2091,6 +2091,80 @@ export class AdminService {
     }
   }
 
+  // Full, unfiltered CSV export of the ENTIRE audit trail (every AuditLog
+  // row, no pagination/date-range/category filtering) -- the "Export" button
+  // on Platform Activity Logs. Reuses the same toCsv/csvEscape helpers as
+  // the Reports & Analytics exports above. Also called automatically by
+  // deleteAllAuditLogs below (via the frontend's export-then-delete flow) so
+  // a purge never happens without a copy existing first.
+  async exportAuditLogsCsv() {
+    const logs = await prisma.auditLog.findMany({ orderBy: { timestamp: "desc" } })
+
+    const headers = [
+      "Timestamp",
+      "Operator Email",
+      "Operator ID",
+      "Category",
+      "Action",
+      "Entity",
+      "Entity ID",
+      "IP Address",
+      "Browser",
+      "Device",
+      "Old Value",
+      "New Value",
+    ]
+    const rows = logs.map((l) => [
+      l.timestamp.toISOString(),
+      l.operatorEmail || "",
+      l.operatorId || "",
+      l.category,
+      l.action,
+      l.entity || "",
+      l.entityId || "",
+      l.ipAddress || "",
+      l.browser || "",
+      l.device || "",
+      l.oldValue ? JSON.stringify(l.oldValue) : "",
+      l.newValue ? JSON.stringify(l.newValue) : "",
+    ])
+    const csvContent = this.toCsv(headers, rows)
+    const filename = `activity-logs-${new Date().toISOString().slice(0, 10)}.csv`
+
+    return {
+      mimetype: "text/csv",
+      filename,
+      content: Buffer.from(csvContent, "utf-8").toString("base64"),
+    }
+  }
+
+  // Destructive -- wipes the ENTIRE audit trail. Super-Admin-only (see
+  // admin.routes.ts); the frontend is responsible for making sure an export
+  // actually happened first (ActivityLogs.tsx auto-triggers Export before
+  // calling this if the admin hasn't already clicked it in the current
+  // session), but this method itself doesn't re-verify that -- it trusts the
+  // caller, the same way every other destructive admin action in this file
+  // does. One new AuditLog row is written immediately after the purge,
+  // recording who did it and how many rows were removed -- otherwise a
+  // purge would be the one action in this entire audit system that leaves
+  // no trace of itself.
+  async deleteAllAuditLogs(adminId: string, context?: ServiceContext) {
+    const admin = await prisma.user.findUnique({ where: { id: adminId } })
+    const result = await prisma.auditLog.deleteMany({})
+
+    EventBus.publish("AuditCreated", {
+      ...context,
+      operatorId: adminId,
+      operatorEmail: admin?.email,
+      category: "ADMIN",
+      action: "PURGE_AUDIT_LOGS",
+      entity: "AuditLog",
+      newValue: { deletedCount: result.count },
+    })
+
+    return { deletedCount: result.count }
+  }
+
   // ==========================================
   // ROLE AND PERMISSION CRUD OPERATIONS
   // ==========================================

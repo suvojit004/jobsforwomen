@@ -46,6 +46,16 @@ export const AdminApi = {
     }
   },
 
+  // Destructive -- wipes the entire audit trail (GET /admins/audits/export
+  // for the CSV download itself is fetched directly in ActivityLogs.tsx,
+  // same manual-fetch-plus-blob pattern ReportsAnalytics.tsx uses, since it
+  // needs the raw file bytes rather than a JSON envelope). Super Admin only;
+  // the backend 403s otherwise.
+  async deleteAllAuditLogs() {
+    const res = await apiClient.delete("/api/v1/admins/audits")
+    return res?.data
+  },
+
   async getCompanies() {
     const res = await apiClient.get("/api/v1/admins/companies")
     return res?.data?.companies || res?.data || []

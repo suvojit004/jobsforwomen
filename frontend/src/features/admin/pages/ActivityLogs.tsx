@@ -1,12 +1,14 @@
 import { useState, useEffect, useRef } from "react"
 import { toast } from "sonner"
-import { Search, FileText, ChevronLeft, ChevronRight } from "lucide-react"
+import { Search, FileText, ChevronLeft, ChevronRight, Download, Trash2 } from "lucide-react"
 import { DataTable } from "@/components/shared/DataTable"
 import type { ColumnDef } from "@/components/shared/DataTable"
 import { Input } from "@/components/ui/input"
 import { DashboardCard } from "@/components/shared/DashboardCard"
 import { Button } from "@/components/ui/button"
 import { AdminApi } from "../services/adminApi"
+import { useAuth } from "@/contexts/AuthContext"
+import apiClient from "@/api/client"
 
 interface AdminAuditLog {
   id: string
@@ -34,6 +36,14 @@ const PAGE_SIZE = 20
 const SEARCH_DEBOUNCE_MS = 400
 
 export function ActivityLogs() {
+  const { user } = useAuth()
+  // Matches the backend gates on GET /admins/audits/export (USER_MGMT_ROLES)
+  // and DELETE /admins/audits (requireSuperAdmin) -- see admin.routes.ts.
+  // Purging the audit trail is a stricter bar than exporting it: this is the
+  // platform's own security record, not just PII-bearing data.
+  const canExport = !!(user?.roles?.includes("Admin") || user?.roles?.includes("Super Admin"))
+  const canDelete = !!user?.roles?.includes("Super Admin")
+
   const [logs, setLogs] = useState<AdminAuditLog[]>([])
   const [searchInput, setSearchInput] = useState("")
   const [debouncedSearch, setDebouncedSearch] = useState("")
@@ -43,6 +53,19 @@ export function ActivityLogs() {
   const [totalItems, setTotalItems] = useState(0)
   const [loading, setLoading] = useState(true)
   const requestIdRef = useRef(0)
+
+  // Export/Delete -- "Export" always downloads the FULL, unfiltered audit
+  // trail (not just whatever page/category/search is currently on screen).
+  // hasExported tracks whether that's happened at least once in this page
+  // view, so "Delete All Logs" can guarantee a copy exists first without
+  // making the admin export twice if they already did.
+  const [exporting, setExporting] = useState(false)
+  const [hasExported, setHasExported] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  // Bumped after a successful delete to force the fetch effect below to
+  // re-run even when `page` is already 1 (setting state to its current
+  // value doesn't trigger a re-render/effect on its own).
+  const [refreshKey, setRefreshKey] = useState(0)
 
   // Debounce the search box: only commit to `debouncedSearch` (which
   // actually triggers a fetch) after the admin stops typing for a moment.
@@ -109,7 +132,89 @@ export function ActivityLogs() {
       }
     }
     loadLogs()
-  }, [page, debouncedSearch, activeCategory])
+  }, [page, debouncedSearch, activeCategory, refreshKey])
+
+  // Downloads the ENTIRE audit trail as CSV -- deliberately ignores the
+  // current search/category/page filters, same "Export" always means "the
+  // whole table" behavior as the Reports & Analytics CSV exports. Returns
+  // whether it actually succeeded, so handleDeleteAll can know whether it's
+  // safe to proceed.
+  const handleExport = async (): Promise<boolean> => {
+    setExporting(true)
+    try {
+      const token = localStorage.getItem("jwt_token")
+      const res = await fetch(`${apiClient.defaults.baseURL}/api/v1/admins/audits/export`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        credentials: "include",
+      })
+      if (!res.ok) {
+        throw new Error(`HTTP error! Status: ${res.status}`)
+      }
+      const blob = await res.blob()
+      const disposition = res.headers.get("Content-Disposition") || ""
+      const match = disposition.match(/filename=([^;]+)/)
+      const downloadName = match ? match[1].trim() : "activity-logs.csv"
+
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = downloadName
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+
+      setHasExported(true)
+      toast.success("Activity log exported.")
+      return true
+    } catch (err: any) {
+      console.error("Failed to export activity logs", err)
+      toast.error(err?.message || "Failed to export activity logs.")
+      return false
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  // Wipes the entire audit trail. Always ensures a CSV export exists first
+  // -- if the admin hasn't clicked Export yet this page view, this triggers
+  // and waits for that download before deleting anything, rather than ever
+  // deleting without a copy in hand. Confirmation dialog matches this
+  // codebase's existing admin-panel convention for destructive actions
+  // (window.confirm -- see UserModeration.tsx's handleDeleteUser/
+  // handleDeleteCompany) rather than introducing a new typed-confirmation
+  // pattern just for this screen.
+  const handleDeleteAll = async () => {
+    const confirmed = window.confirm(
+      `This will permanently delete the ENTIRE activity log (${totalItems} record${totalItems === 1 ? "" : "s"}). This cannot be undone. Continue?`
+    )
+    if (!confirmed) return
+
+    if (!hasExported) {
+      const exported = await handleExport()
+      if (!exported) {
+        toast.error("Export failed -- logs were not deleted. Please try again.")
+        return
+      }
+    }
+
+    setDeleting(true)
+    try {
+      const result = await AdminApi.deleteAllAuditLogs()
+      toast.success(`Purged ${result?.deletedCount ?? 0} activity log record(s).`)
+      setHasExported(false)
+      setPage(1)
+      // Forces the fetch effect to re-run even if `page` was already 1 (see
+      // refreshKey's declaration above) -- the table should now show just
+      // the one new "PURGE_AUDIT_LOGS" row the deletion itself creates.
+      setRefreshKey((k) => k + 1)
+    } catch (err: any) {
+      console.error("Failed to delete activity logs", err)
+      toast.error(err?.message || "Failed to delete activity logs.")
+    } finally {
+      setDeleting(false)
+    }
+  }
 
   const columns: ColumnDef<AdminAuditLog>[] = [
     {
@@ -173,14 +278,49 @@ export function ActivityLogs() {
   return (
     <div className="space-y-6 select-none animate-fadeIn">
       {/* Header Banner */}
-      <div>
-        <h1 className="text-2xl font-black tracking-normal text-slate-950 dark:text-white flex items-center gap-2">
-          <FileText className="size-6 text-[#6B2C91] dark:text-pink-300" />
-          Platform Activity Logs
-        </h1>
-        <p className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">
-          Traceable, audit logs of moderator operations, user blocks, corporate certifications, and flags changes.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-black tracking-normal text-slate-950 dark:text-white flex items-center gap-2">
+            <FileText className="size-6 text-[#6B2C91] dark:text-pink-300" />
+            Platform Activity Logs
+          </h1>
+          <p className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">
+            Traceable, audit logs of moderator operations, user blocks, corporate certifications, and flags changes.
+          </p>
+        </div>
+
+        {/* Export -- Admin/Super Admin (matches GET /admins/audits/export's
+            requireRole(USER_MGMT_ROLES) gate). Delete -- Super Admin only
+            (matches DELETE /admins/audits's requireSuperAdmin gate), since
+            purging the platform's own audit trail is a stricter action than
+            just downloading a copy of it. */}
+        <div className="flex items-center gap-2 shrink-0">
+          {canExport && (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleExport}
+              disabled={exporting}
+              className="h-9 text-xs font-bold gap-1.5"
+            >
+              <Download className="size-3.5" />
+              {exporting ? "Exporting..." : "Export CSV"}
+            </Button>
+          )}
+          {canDelete && (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleDeleteAll}
+              disabled={deleting || exporting || totalItems === 0}
+              title={totalItems === 0 ? "No records to delete" : "Permanently deletes the entire activity log"}
+              className="h-9 text-xs font-bold gap-1.5 border-red-200 text-red-600 hover:bg-red-50 dark:border-red-900 dark:text-red-400"
+            >
+              <Trash2 className="size-3.5" />
+              {deleting ? "Deleting..." : "Delete All Logs"}
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Filter Options & Search */}

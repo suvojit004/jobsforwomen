@@ -78,12 +78,24 @@ router.get(
   (req, res, next) => (req.query.export === "csv" ? requireReportsExportRole(req, res, next) : next()),
   controller.getReports
 )
-router.get("/audits", controller.getAuditLogs)
-
 // Admin, Super Admin only -- declared here (rather than down by the User
 // Management section below, where it originally lived) since
-// suspend/unsuspend/delete on companies now need it too.
+// suspend/unsuspend/delete on companies now need it too, and now also
+// audits/export just below.
 const USER_MGMT_ROLES = ["Admin", "Super Admin"]
+
+router.get("/audits", controller.getAuditLogs)
+// Full unfiltered CSV export of the entire audit trail -- restricted to
+// Admin/Super Admin (not Moderator/Support Executive), same bar as the
+// Reports & Analytics CSV exports, since a full audit dump includes every
+// operator's email and IP address across the platform's history.
+router.get("/audits/export", requireRole(USER_MGMT_ROLES), controller.exportAuditLogs)
+// Destructive -- wipes the entire audit trail. Super-Admin-only, stricter
+// than the Admin/Super Admin bar above: this is the platform's own security
+// record, not just PII-bearing data, so the bar for deleting it outright is
+// the same tier as RBAC and Admin Management (requireSuperAdmin) rather than
+// USER_MGMT_ROLES.
+router.delete("/audits", requireSuperAdmin, controller.deleteAuditLogs)
 
 // Recruiter / Company Verification (Admin, Super Admin, Moderator)
 router.get("/companies", controller.listCompanies)
