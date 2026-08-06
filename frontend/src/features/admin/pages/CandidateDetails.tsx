@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react"
 import { toast } from "sonner"
-import { useSearchParams } from "react-router-dom"
+import { useSearchParams, useNavigate, useLocation } from "react-router-dom"
 import {
   Mail,
   Phone,
@@ -13,6 +13,7 @@ import {
   Languages,
   Wallet,
   CalendarClock,
+  ArrowLeft,
 } from "lucide-react"
 import { DashboardCard } from "@/components/shared/DashboardCard"
 import { AdminApi } from "../services/adminApi"
@@ -72,10 +73,26 @@ export function CandidateDetails() {
   // CompanyDetails.tsx's ?companyId=. There's no standalone nav entry or
   // candidate picker on this page anymore; it always needs an id.
   const [searchParams] = useSearchParams()
+  const navigate = useNavigate()
+  const location = useLocation()
   const [candidates, setCandidates] = useState<AdminCandidate[]>([])
   const [selectedCandidateId, setSelectedCandidateId] = useState("")
   const [loading, setLoading] = useState(true)
   const [previewDoc, setPreviewDoc] = useState<PreviewableDocument | null>(null)
+
+  // Always deep-linked, always reached from UserModeration.tsx's Candidates
+  // tab (goToCandidateDetails) -- navigate(-1) returns there directly.
+  // location.key === "default" means this tab has no in-app history (a
+  // bookmarked/directly-typed URL, or a fresh page load) -- navigate(-1)
+  // would then leave the app entirely, so fall back to the one place this
+  // page is ever linked from instead.
+  const handleBack = () => {
+    if (location.key !== "default") {
+      navigate(-1)
+    } else {
+      navigate("/admin/users")
+    }
+  }
 
   useEffect(() => {
     const loadCandidates = async () => {
@@ -134,6 +151,14 @@ export function CandidateDetails() {
     <div className="space-y-6 select-none animate-fadeIn">
       {/* Header Banner */}
       <div className="border-b border-slate-100 pb-4 dark:border-slate-850">
+        <button
+          type="button"
+          onClick={handleBack}
+          className="flex items-center gap-1 text-xs font-bold text-slate-500 hover:text-[#6B2C91] dark:text-slate-400 dark:hover:text-pink-300 mb-2"
+        >
+          <ArrowLeft className="size-3.5" />
+          Back
+        </button>
         <h1 className="text-2xl font-black tracking-normal text-slate-950 dark:text-white">
           Candidate Profile Directory
         </h1>

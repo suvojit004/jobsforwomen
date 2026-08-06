@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react"
 import { toast } from "sonner"
-import { useSearchParams } from "react-router-dom"
+import { useSearchParams, useNavigate, useLocation } from "react-router-dom"
 import {
   Mail,
   MapPin,
@@ -11,6 +11,7 @@ import {
   CheckCircle,
   HelpCircle,
   FileCheck,
+  ArrowLeft,
 } from "lucide-react"
 import { DashboardCard } from "@/components/shared/DashboardCard"
 import { AdminApi } from "../services/adminApi"
@@ -74,11 +75,28 @@ export function CompanyDetails() {
   // Companies tab on User Account Moderation. There's no standalone nav
   // entry or company picker on this page anymore; it always needs an id.
   const [searchParams] = useSearchParams()
+  const navigate = useNavigate()
+  const location = useLocation()
   const [companies, setCompanies] = useState<AdminCompany[]>([])
   const [selectedCompanyId, setSelectedCompanyId] = useState("")
   const [allJobs, setAllJobs] = useState<AdminJob[]>([])
   const [loading, setLoading] = useState(true)
   const [previewDoc, setPreviewDoc] = useState<PreviewableDocument | null>(null)
+
+  // Reached from two different places (CompanyApprovals.tsx or
+  // UserModeration.tsx's Companies tab), so there's no single "the" origin
+  // to hardcode -- navigate(-1) returns to whichever one was actually used.
+  // location.key === "default" means this tab has no in-app history (a
+  // bookmarked/directly-typed URL, or a fresh page load) -- navigate(-1)
+  // would then leave the app entirely, so fall back to the more general of
+  // the two origin pages instead.
+  const handleBack = () => {
+    if (location.key !== "default") {
+      navigate(-1)
+    } else {
+      navigate("/admin/users")
+    }
+  }
 
   useEffect(() => {
     const loadDetails = async () => {
@@ -167,6 +185,14 @@ export function CompanyDetails() {
     <div className="space-y-6 select-none animate-fadeIn">
       {/* Header Banner */}
       <div className="border-b border-slate-100 pb-4 dark:border-slate-850">
+        <button
+          type="button"
+          onClick={handleBack}
+          className="flex items-center gap-1 text-xs font-bold text-slate-500 hover:text-[#6B2C91] dark:text-slate-400 dark:hover:text-pink-300 mb-2"
+        >
+          <ArrowLeft className="size-3.5" />
+          Back
+        </button>
         <h1 className="text-2xl font-black tracking-normal text-slate-950 dark:text-white">
           Corporate Partners Directory
         </h1>
