@@ -7,6 +7,8 @@ import {
   Mail,
   Zap,
   RefreshCw,
+  Users,
+  UploadCloud,
 } from "lucide-react"
 import { DashboardCard } from "@/components/shared/DashboardCard"
 import { Button } from "@/components/ui/button"
@@ -261,6 +263,128 @@ export function SystemHealth() {
           </div>
         </DashboardCard>
       )}
+
+      {/* Real-time socket connections + notification throughput -- computed
+          server-side (socketMetrics in shared/socket/socket.ts) but never
+          rendered anywhere on this page before, even though the backend
+          was already tracking it live. messagesSec (chat's per-second
+          message rate) has been removed entirely rather than kept as a
+          placeholder -- real-time chat was isolated and removed from the
+          app, so nothing increments it anymore and it would only ever
+          read 0. */}
+      {health?.sockets && (
+        <DashboardCard className="p-5 space-y-4">
+          <div className="border-b border-slate-100 pb-3 dark:border-slate-800">
+            <h4 className="text-xs font-black text-slate-900 uppercase dark:text-white flex items-center gap-1.5">
+              <Users className="size-3.5 text-[#6B2C91] dark:text-pink-300" />
+              Real-time Connections
+            </h4>
+          </div>
+          <div className="grid gap-6 md:grid-cols-4 text-xs">
+            <div className="p-4 border border-slate-150 rounded-xl dark:border-slate-850 space-y-2">
+              <h5 className="font-bold text-slate-900 dark:text-white">
+                Candidates Online
+                <MetricTag isCounter={false} />
+              </h5>
+              <p className="text-lg font-black text-slate-900 dark:text-white">{health.sockets.connectedCandidates ?? 0}</p>
+            </div>
+            <div className="p-4 border border-slate-150 rounded-xl dark:border-slate-850 space-y-2">
+              <h5 className="font-bold text-slate-900 dark:text-white">
+                Recruiters Online
+                <MetricTag isCounter={false} />
+              </h5>
+              <p className="text-lg font-black text-slate-900 dark:text-white">{health.sockets.connectedRecruiters ?? 0}</p>
+            </div>
+            <div className="p-4 border border-slate-150 rounded-xl dark:border-slate-850 space-y-2">
+              <h5 className="font-bold text-slate-900 dark:text-white">
+                Admins Online
+                <MetricTag isCounter={false} />
+              </h5>
+              <p className="text-lg font-black text-slate-900 dark:text-white">{health.sockets.connectedAdmins ?? 0}</p>
+            </div>
+            <div className="p-4 border border-slate-150 rounded-xl dark:border-slate-850 space-y-2">
+              <h5 className="font-bold text-slate-900 dark:text-white">
+                Notifications / sec
+                <MetricTag isCounter={false} />
+              </h5>
+              <p className="text-lg font-black text-slate-900 dark:text-white">{health.sockets.notificationsSec ?? 0}</p>
+            </div>
+          </div>
+        </DashboardCard>
+      )}
+
+      {/* Email delivery + storage operation counters -- also real (email.ts's
+          emailMetrics, fileStorage.ts's storageMetrics), also already
+          returned by the API, also never rendered here before now. */}
+      <div className="grid gap-4 md:grid-cols-2">
+        {health?.emailDelivery && (
+          <DashboardCard className="p-5 space-y-4">
+            <div className="border-b border-slate-100 pb-3 dark:border-slate-800">
+              <h4 className="text-xs font-black text-slate-900 uppercase dark:text-white flex items-center gap-1.5">
+                <Mail className="size-3.5 text-[#6B2C91] dark:text-pink-300" />
+                Email Delivery
+              </h4>
+            </div>
+            <div className="grid gap-4 grid-cols-2 text-xs">
+              <div className="p-4 border border-slate-150 rounded-xl dark:border-slate-850 space-y-2">
+                <h5 className="font-bold text-slate-900 dark:text-white">
+                  Sent
+                  <MetricTag isCounter={true} />
+                </h5>
+                <p className="text-lg font-black text-slate-900 dark:text-white">{health.emailDelivery.sent ?? 0}</p>
+              </div>
+              <div className="p-4 border border-pink-150 rounded-xl dark:border-pink-900/40 space-y-2 bg-pink-50/30 dark:bg-pink-950/10">
+                <h5 className="font-bold text-slate-900 dark:text-white">
+                  Failed
+                  <MetricTag isCounter={true} />
+                </h5>
+                <p className="text-lg font-black text-pink-600 dark:text-pink-300">{health.emailDelivery.failed ?? 0}</p>
+              </div>
+            </div>
+          </DashboardCard>
+        )}
+
+        {health?.storageMetrics && (
+          <DashboardCard className="p-5 space-y-4">
+            <div className="border-b border-slate-100 pb-3 dark:border-slate-800">
+              <h4 className="text-xs font-black text-slate-900 uppercase dark:text-white flex items-center gap-1.5">
+                <UploadCloud className="size-3.5 text-[#6B2C91] dark:text-pink-300" />
+                Storage Operations
+              </h4>
+            </div>
+            <div className="grid gap-4 grid-cols-2 text-xs">
+              <div className="p-4 border border-slate-150 rounded-xl dark:border-slate-850 space-y-2">
+                <h5 className="font-bold text-slate-900 dark:text-white">
+                  Uploads
+                  <MetricTag isCounter={true} />
+                </h5>
+                <p className="text-lg font-black text-slate-900 dark:text-white">{health.storageMetrics.uploadCount ?? 0}</p>
+              </div>
+              <div className="p-4 border border-slate-150 rounded-xl dark:border-slate-850 space-y-2">
+                <h5 className="font-bold text-slate-900 dark:text-white">
+                  Deletes
+                  <MetricTag isCounter={true} />
+                </h5>
+                <p className="text-lg font-black text-slate-900 dark:text-white">{health.storageMetrics.deleteCount ?? 0}</p>
+              </div>
+              <div className="p-4 border border-slate-150 rounded-xl dark:border-slate-850 space-y-2">
+                <h5 className="font-bold text-slate-900 dark:text-white">
+                  Avg Latency
+                  <MetricTag isCounter={true} />
+                </h5>
+                <p className="text-lg font-black text-slate-900 dark:text-white">{health.storageMetrics.averageLatencyMs ?? 0} ms</p>
+              </div>
+              <div className="p-4 border border-slate-150 rounded-xl dark:border-slate-850 space-y-2">
+                <h5 className="font-bold text-slate-900 dark:text-white">
+                  Retries
+                  <MetricTag isCounter={true} />
+                </h5>
+                <p className="text-lg font-black text-slate-900 dark:text-white">{health.storageMetrics.retryCount ?? 0}</p>
+              </div>
+            </div>
+          </DashboardCard>
+        )}
+      </div>
 
       {/* Process Resource Usage */}
       {health && (

@@ -21,7 +21,6 @@ export const socketMetrics = {
   connectedCandidates: 0,
   connectedRecruiters: 0,
   connectedAdmins: 0,
-  messagesSec: 0,
   notificationsSec: 0,
   totalEventsProcessed: 0,
 }
@@ -29,7 +28,6 @@ export const socketMetrics = {
 // Reset rate limits statistics periodically
 if (process.env.NODE_ENV !== "test") {
   setInterval(() => {
-    socketMetrics.messagesSec = 0
     socketMetrics.notificationsSec = 0
   }, 1000)
 }

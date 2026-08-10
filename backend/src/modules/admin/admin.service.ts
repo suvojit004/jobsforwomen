@@ -113,7 +113,6 @@ export class AdminService {
         connectedCandidates: socketMetrics.connectedCandidates,
         connectedRecruiters: socketMetrics.connectedRecruiters,
         connectedAdmins: socketMetrics.connectedAdmins,
-        messagesSec: socketMetrics.messagesSec,
         notificationsSec: socketMetrics.notificationsSec,
       },
       emailDelivery: {
@@ -153,7 +152,6 @@ export class AdminService {
           "sockets.connectedCandidates",
           "sockets.connectedRecruiters",
           "sockets.connectedAdmins",
-          "sockets.messagesSec",
           "sockets.notificationsSec",
         ],
         processLifetimeCounter: [
