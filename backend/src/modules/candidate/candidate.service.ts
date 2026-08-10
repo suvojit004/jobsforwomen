@@ -6,6 +6,7 @@ import { ApplicationStatus, JobStatus, UserStatus } from "@prisma/client"
 import { NotificationService } from "../../shared/services/notification.service"
 import { ConversationService } from "../../shared/services/conversation.service"
 import { RECRUITER_SUMMARY_SELECT, shapeRecruiterSummary } from "../../shared/utils/recruiterSummary"
+import { AppError } from "../../shared/middleware/errorHandler"
 
 export interface ServiceContext {
   operatorId?: string
@@ -447,6 +448,23 @@ export class CandidateService {
 
     if (app.candidate.userId !== userId) {
       throw new Error("Forbidden: Access denied")
+    }
+
+    // Once an offer has been extended (or accepted, or the application is
+    // already closed out), withdrawing no longer makes sense -- the
+    // recruiter has already committed real effort/decisions at that stage.
+    // Block it here rather than relying on the frontend to hide the button,
+    // since the route has no other status guard.
+    const NON_WITHDRAWABLE_STATUSES: (typeof app.status)[] = [
+      ApplicationStatus.OfferReleased,
+      ApplicationStatus.Hired,
+      ApplicationStatus.Rejected,
+    ]
+    if (NON_WITHDRAWABLE_STATUSES.includes(app.status)) {
+      throw new AppError(
+        `This application can no longer be withdrawn (current status: ${app.status}).`,
+        409
+      )
     }
 
     const updated = await prisma.application.update({

@@ -31,7 +31,7 @@ export function Help() {
     },
     {
       question: "Can I withdraw an application after submitting it?",
-      answer: "No, applications can't be withdrawn once submitted. If you need one removed, contact the recruiter directly or reach out through Report an Issue below.",
+      answer: "Yes. Open the application from 'My Applications' and click 'Withdraw Application' in the details panel. This is available up until an offer is released -- once you're at the Offer Released or Selected stage, withdrawal is disabled and you'll need to contact the recruiter directly. Withdrawing is permanent and the recruiter will be notified.",
     },
   ]
 

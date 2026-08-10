@@ -1,26 +1,58 @@
 import { useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { toast } from "sonner"
-import { Check, Clock, User, Calendar, FileText, X, MessageCircle, Gift } from "lucide-react"
+import { Check, Clock, User, Calendar, FileText, X, MessageCircle, Gift, Undo2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { DashboardCard } from "@/components/dashboard/DashboardCard"
 import { CompanyLogo } from "@/components/shared/CompanyLogo"
 import type { Application } from "@/types/dashboard"
 import { cn } from "@/lib/utils"
 import { candidateApi } from "../../services/candidateApi"
+import { CandidateJobsApi } from "../../services/jobsApi"
 import { DocumentPreviewModal } from "@/components/shared/DocumentPreviewModal"
 
 type ApplicationTimelineProps = {
   application: Application
   onClose?: () => void
+  // Called after a successful withdrawal so the parent list/selection can be
+  // updated in place without a full refetch.
+  onWithdrawn?: (applicationId: string) => void
 }
 
-export function ApplicationTimeline({ application, onClose }: ApplicationTimelineProps) {
+// Once an application reaches one of these stages, withdrawing no longer
+// makes sense (offer already extended/accepted, or it's already closed out)
+// -- mirrors candidate.service.ts's withdrawApplication() guard on the
+// backend, which is the actual source of truth/enforcement.
+const NON_WITHDRAWABLE_STATUSES = ["Offer Released", "Selected", "Rejected"]
+
+export function ApplicationTimeline({ application, onClose, onWithdrawn }: ApplicationTimelineProps) {
   // Stepper state computation based on status
   const status = application.status
   const navigate = useNavigate()
   const [messaging, setMessaging] = useState(false)
   const [previewingOffer, setPreviewingOffer] = useState(false)
+  const [withdrawing, setWithdrawing] = useState(false)
+  const canWithdraw = !NON_WITHDRAWABLE_STATUSES.includes(status)
+
+  const handleWithdraw = async () => {
+    if (
+      !window.confirm(
+        "Withdraw this application? This is permanent and the recruiter will be notified."
+      )
+    ) {
+      return
+    }
+    try {
+      setWithdrawing(true)
+      await CandidateJobsApi.withdrawApplication(application.id)
+      toast.success("Application withdrawn.")
+      onWithdrawn?.(application.id)
+    } catch (err: any) {
+      toast.error(err?.message || "Couldn't withdraw the application.")
+    } finally {
+      setWithdrawing(false)
+    }
+  }
 
   // there was previously no way to start a
   // conversation with the recruiter from anywhere in the Candidate module --
@@ -338,6 +370,22 @@ export function ApplicationTimeline({ application, onClose }: ApplicationTimelin
             </div>
           </div>
         </div>
+
+        {canWithdraw && (
+          <>
+            <hr className="border-slate-100 dark:border-slate-800" />
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleWithdraw}
+              disabled={withdrawing}
+              className="w-full h-8 gap-1.5 text-xs font-bold border-red-200 text-red-600 hover:bg-red-50 dark:border-red-900 dark:text-red-400"
+            >
+              <Undo2 className="size-3.5" />
+              {withdrawing ? "Withdrawing..." : "Withdraw Application"}
+            </Button>
+          </>
+        )}
       </div>
 
       <DocumentPreviewModal

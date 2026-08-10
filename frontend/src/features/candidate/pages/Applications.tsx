@@ -70,6 +70,18 @@ export function Applications() {
     setMobileShowTimeline(true)
   }
 
+  // Reflect a successful withdrawal locally (status -> Rejected) so the list,
+  // the selected-application panel, and the drawer all stay in sync without
+  // a full refetch.
+  const handleWithdrawn = (applicationId: string) => {
+    setApplications((prev) =>
+      prev.map((app) => (app.id === applicationId ? { ...app, status: "Rejected" } : app))
+    )
+    setSelectedApp((prev) =>
+      prev && prev.id === applicationId ? { ...prev, status: "Rejected" } : prev
+    )
+  }
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 8 }}
@@ -103,6 +115,7 @@ export function Applications() {
               <ApplicationTimeline
                 application={selectedApp}
                 onClose={() => setMobileShowTimeline(false)}
+                onWithdrawn={handleWithdrawn}
               />
             </div>
           ) : (
@@ -274,7 +287,7 @@ export function Applications() {
               <div className="hidden lg:block lg:col-span-4 h-full">
                 {selectedApp ? (
                   <div className="sticky top-20">
-                    <ApplicationTimeline application={selectedApp} />
+                    <ApplicationTimeline application={selectedApp} onWithdrawn={handleWithdrawn} />
                   </div>
                 ) : (
                   <div className="h-48 flex items-center justify-center border border-dashed border-slate-200 rounded-xl dark:border-slate-800 text-slate-400">
@@ -298,6 +311,7 @@ export function Applications() {
                 <ApplicationTimeline
                   application={selectedApp}
                   onClose={() => setIsDrawerOpen(false)}
+                  onWithdrawn={handleWithdrawn}
                 />
               )}
             </SheetContent>
