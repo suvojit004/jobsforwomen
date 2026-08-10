@@ -166,11 +166,13 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
 
   // Live updates: the bell previously only refreshed on login/identity change,
   // so a notification created while the user was already browsing wouldn't
-  // show up until the next reload. The backend already emits a "notification"
-  // socket event on every real Notification row it creates (see
-  // notification.listener.ts) -- chat also reuses that same event name for a
-  // lightweight "a new message arrived" ping (type === "message"), which we
-  // deliberately ignore here since chat has its own inbox.
+  // show up until the next reload. The backend emits a "notification" socket
+  // event on every real Notification row it creates (see
+  // notification.listener.ts). The `type === "message"` guard below is now
+  // vestigial -- real-time chat (which used to reuse this same event name for
+  // a lightweight "a new message arrived" ping with its own inbox) was
+  // isolated and removed from the app, so nothing publishes that type
+  // anymore. Left in place since it's harmless and cheap to keep.
   useEffect(() => {
     if (!isAuthenticated || !user) return
 
