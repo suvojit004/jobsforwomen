@@ -1,7 +1,7 @@
 import { Router } from "express"
 import { SupportController } from "./support.controller"
 import { authenticateToken, requireRole } from "../../shared/middleware/auth.middleware"
-import { requireActiveUser } from "../rbac/rbac.middleware"
+import { requireActiveUser, requirePermission } from "../rbac/rbac.middleware"
 
 const router = Router()
 const controller = new SupportController()
@@ -26,7 +26,16 @@ router.get("/mine", controller.listMyTickets)
 // routes (the route-level gate below only restricts the mutating endpoint).
 router.get("/", requireRole(ADMIN_TIER_ROLES), controller.listAllTickets)
 router.get("/:id", controller.getTicketById) // service layer enforces owner-or-admin-tier
-router.put("/:id/status", requireRole(TICKET_MANAGER_ROLES), controller.updateTicketStatus)
+// LAYER: manage:support-tickets is seeded to exactly Support Executive,
+// Admin, and Super Admin -- an exact match for TICKET_MANAGER_ROLES today
+// (Moderator is deliberately excluded from both), so this is a zero-
+// regression change that now genuinely follows the RBAC Matrix.
+router.put(
+  "/:id/status",
+  requireRole(TICKET_MANAGER_ROLES),
+  requirePermission(["manage:support-tickets"]),
+  controller.updateTicketStatus
+)
 // Owner-or-manager, not a fixed role list (the owner can be any role) --
 // service layer enforces it, same pattern as getTicketById above.
 router.post("/:id/comments", controller.addComment)

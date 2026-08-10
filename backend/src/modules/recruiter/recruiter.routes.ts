@@ -5,6 +5,7 @@ import {
   requireActiveUser,
   requireApprovedCompany,
   requireOwnership,
+  requirePermission,
 } from "../rbac/rbac.middleware"
 import { uploadLogoMiddleware, uploadPerkDocumentMiddleware, uploadGalleryPhotoMiddleware, uploadOfferLetterMiddleware } from "../../shared/middleware/upload.middleware"
 import { recruiterRateLimiter, uploadRateLimiter } from "../../shared/middleware/rateLimit.middleware"
@@ -54,15 +55,28 @@ router.get("/approvals", requireApprovedCompany, controller.getApprovalTracker)
 router.get("/settings", controller.getSettings)
 router.put("/settings", controller.updateSettings)
 
-// Job Management (Requires approved company)
-router.get("/jobs", requireApprovedCompany, controller.getJobs)
-router.get("/jobs/:id", requireApprovedCompany, requireOwnership("Job"), controller.getJobById)
-router.post("/jobs", requireApprovedCompany, controller.postJob)
-router.put("/jobs/:id", requireApprovedCompany, requireOwnership("Job"), controller.updateJob)
-router.post("/jobs/:id/duplicate", requireApprovedCompany, requireOwnership("Job"), controller.duplicateJob)
-router.post("/jobs/:id/archive", requireApprovedCompany, requireOwnership("Job"), controller.archiveJob)
-router.post("/jobs/:id/lifecycle/:action", requireApprovedCompany, requireOwnership("Job"), controller.lifecycleJob)
-router.delete("/jobs/:id", requireApprovedCompany, requireOwnership("Job"), controller.deleteJob)
+// Job Management (Requires approved company).
+// This whole router previously had no role/permission gate at all beyond
+// authentication -- POST/PUT/DELETE /jobs relied entirely on
+// requireApprovedCompany (a no-op for any non-Recruiter, since it just
+// bypasses -- see rbac.middleware.ts) and requireOwnership (which has
+// nothing to check yet on create). Any authenticated, active user could
+// technically reach these. create/read/update/delete:job are seeded to
+// exactly Recruiter (+ Admin/Super Admin, who don't route through here in
+// practice), so wiring them in is a real, zero-regression hardening for the
+// mutating routes. GET is left with read:job too for consistency, though
+// note Candidate also holds read:job (for browsing public listings on the
+// candidate side) -- this doesn't add protection against a Candidate
+// specifically reaching a recruiter's own job list, that gap is a
+// limitation of the current permission model, not something introduced here.
+router.get("/jobs", requireApprovedCompany, requirePermission(["read:job"]), controller.getJobs)
+router.get("/jobs/:id", requireApprovedCompany, requirePermission(["read:job"]), requireOwnership("Job"), controller.getJobById)
+router.post("/jobs", requireApprovedCompany, requirePermission(["create:job"]), controller.postJob)
+router.put("/jobs/:id", requireApprovedCompany, requirePermission(["update:job"]), requireOwnership("Job"), controller.updateJob)
+router.post("/jobs/:id/duplicate", requireApprovedCompany, requirePermission(["create:job"]), requireOwnership("Job"), controller.duplicateJob)
+router.post("/jobs/:id/archive", requireApprovedCompany, requirePermission(["update:job"]), requireOwnership("Job"), controller.archiveJob)
+router.post("/jobs/:id/lifecycle/:action", requireApprovedCompany, requirePermission(["update:job"]), requireOwnership("Job"), controller.lifecycleJob)
+router.delete("/jobs/:id", requireApprovedCompany, requirePermission(["delete:job"]), requireOwnership("Job"), controller.deleteJob)
 
 // Applicants Pipeline Management (Requires approved company)
 router.get("/applications", requireApprovedCompany, controller.getCompanyApplications)

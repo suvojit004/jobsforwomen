@@ -84,13 +84,15 @@ describe("Recruiter Module Integration Tests (Phase 6)", () => {
       env.JWT_ACCESS_SECRET
     )
 
-    // Mock Redis checking for JWT credentials
+    // Mock Redis checking for JWT credentials. Recruiter is seeded (see
+    // backend/src/database/seed.ts rbacMappings) with exactly
+    // create/read/update/delete:job -- the job routes below now genuinely
+    // check these via requirePermission(), so both tokens need the real
+    // seeded permission names here, not the placeholder "post:job"/
+    // "manage:applicants" strings this mock used before that check existed.
     mockRedis.get.mockImplementation(async (key: string) => {
-      if (key.includes("rec-approved-id")) {
-        return JSON.stringify(["post:job", "manage:applicants"])
-      }
-      if (key.includes("rec-pending-id")) {
-        return JSON.stringify(["post:job"])
+      if (key.includes("rec-approved-id") || key.includes("rec-pending-id")) {
+        return JSON.stringify(["create:job", "read:job", "update:job", "delete:job"])
       }
       return null
     })

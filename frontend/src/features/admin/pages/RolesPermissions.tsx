@@ -25,16 +25,18 @@ const BASE_ROLE_NAMES = new Set(["Candidate", "Recruiter"])
 
 // Human-readable label + description for every seeded permission, plus
 // whether the backend actually checks it via requirePermission() at request
-// time. Most of these are currently DATA ONLY: stored on Role/RolePermission
-// and toggleable right here, but the real route-level gates
-// (admin.routes.ts) check the caller's role NAME directly
-// (requireRole/requireSuperAdmin), never this permission table. Only
-// manage:roles and manage:permissions actually gate real endpoints (the RBAC
-// CRUD routes under /api/v1/rbac); manage:users gates just the
-// role-assignment endpoints there, not general account suspend/delete.
-// Disclosing this honestly (rather than implying every toggle changes live
-// behavior) matches this app's existing convention for flagging inert
-// controls -- see FeatureConfigs.tsx's "Not Implemented" badge.
+// time. Every permission below is now wired into at least one real route
+// (admin.routes.ts / recruiter.routes.ts / support.routes.ts) -- either
+// REPLACING a coarse role-name gate outright (job read/moderate, company
+// view/verify, role/permission CRUD, a recruiter's own job CRUD, support
+// ticket status), or LAYERED as an additional AND-condition alongside an
+// existing, more specific role gate for destructive/sensitive actions
+// (suspend/delete a user or company, assign a role, flip a feature flag,
+// export the full reports CSV) so today's explicit role boundaries can only
+// get narrower, never wider, than before. manage:notifications is the one
+// exception -- disclosed honestly below rather than force-mapped onto an
+// admin's own personal notification inbox, which every admin-tier role
+// needs regardless of any permission.
 interface PermissionMeta {
   label: string
   description: string
@@ -47,85 +49,85 @@ const PERMISSION_META: Record<string, PermissionMeta> = {
   "create:job": {
     label: "Create Jobs",
     description: "Post new job listings on behalf of a company.",
-    enforced: false,
-    enforcedNote: "Not checked by any route -- job endpoints are gated by role name (Moderator/Admin/Super Admin), not this permission.",
+    enforced: true,
+    enforcedNote: "Gates POST /recruiters/jobs and .../jobs/:id/duplicate.",
     category: "Job Lifecycle",
   },
   "read:job": {
     label: "View Jobs",
     description: "View job listings and their details.",
-    enforced: false,
-    enforcedNote: "Not checked by any route -- job endpoints are gated by role name (Moderator/Admin/Super Admin), not this permission.",
+    enforced: true,
+    enforcedNote: "Gates GET /recruiters/jobs, GET .../jobs/:id, and the admin job-moderation list (GET /admins/jobs). Note: Candidate also holds this permission (for browsing public listings), so it doesn't by itself stop a Candidate account from reaching a recruiter's own job list -- ownership checks handle that.",
     category: "Job Lifecycle",
   },
   "update:job": {
     label: "Edit Jobs",
     description: "Modify an existing job listing.",
-    enforced: false,
-    enforcedNote: "Not checked by any route -- job endpoints are gated by role name (Moderator/Admin/Super Admin), not this permission.",
+    enforced: true,
+    enforcedNote: "Gates PUT /recruiters/jobs/:id, .../jobs/:id/archive, and .../jobs/:id/lifecycle/:action.",
     category: "Job Lifecycle",
   },
   "delete:job": {
     label: "Delete Jobs",
     description: "Permanently remove a job listing.",
-    enforced: false,
-    enforcedNote: "Not checked by any route -- job endpoints are gated by role name (Moderator/Admin/Super Admin), not this permission.",
+    enforced: true,
+    enforcedNote: "Gates DELETE /recruiters/jobs/:id.",
     category: "Job Lifecycle",
   },
   "approve:job": {
     label: "Approve Jobs",
     description: "Approve a pending job submission for publishing.",
-    enforced: false,
-    enforcedNote: "Not checked by any route -- POST /jobs/:id/moderate is gated by role name (Moderator/Admin/Super Admin), not this permission.",
+    enforced: true,
+    enforcedNote: "Gates POST /admins/jobs/:id/moderate (together with reject:job -- this single endpoint handles both actions).",
     category: "Job Lifecycle",
   },
   "reject:job": {
     label: "Reject Jobs",
     description: "Reject a pending job submission.",
-    enforced: false,
-    enforcedNote: "Not checked by any route -- POST /jobs/:id/moderate is gated by role name (Moderator/Admin/Super Admin), not this permission.",
+    enforced: true,
+    enforcedNote: "Gates POST /admins/jobs/:id/moderate (together with approve:job -- this single endpoint handles both actions).",
     category: "Job Lifecycle",
   },
   "manage:users": {
     label: "Manage Users",
-    description: "Assign roles to a user account and view their effective permissions.",
+    description: "Suspend/delete a user account, trigger administrative account actions, and (together with Super Admin) assign roles to a user.",
     enforced: true,
-    enforcedNote: "Gates POST /rbac/users/:id/roles and GET .../effective only -- suspending or deleting an account checks role name directly, not this permission.",
+    enforcedNote: "Gates PUT /admins/users/:id/status, DELETE /admins/users/:id, POST .../action/:action, and (layered with Super Admin) POST .../users/:id/roles.",
     category: "People",
   },
   "manage:companies": {
     label: "Manage Companies",
-    description: "Verify, suspend, or moderate recruiter companies.",
-    enforced: false,
-    enforcedNote: "Not checked by any route -- company moderation endpoints are gated by role name, not this permission.",
+    description: "View, verify, suspend, or delete recruiter companies.",
+    enforced: true,
+    enforcedNote: "Gates GET/verify on /admins/companies outright, and (layered with Admin/Super Admin) suspend/unsuspend/delete.",
     category: "People",
   },
   "manage:reports": {
     label: "Manage Reports",
-    description: "View and act on reported jobs and platform analytics.",
-    enforced: false,
-    enforcedNote: "Not checked by any route yet.",
+    description: "Export the full Reports & Analytics CSV.",
+    enforced: true,
+    enforcedNote: "Layered with Admin/Super Admin on the CSV export path of GET /admins/reports. The plain JSON summary (for the trend chart) stays open to every admin-tier role regardless of this permission.",
     category: "Platform Operations",
   },
   "manage:notifications": {
     label: "Manage Notifications",
     description: "Configure platform-wide notification behavior.",
     enforced: false,
-    enforcedNote: "Not checked by any route yet.",
+    enforcedNote: "No real route currently maps to this -- the only notification endpoints in the app are each admin's own personal inbox (view/mark-read/delete their own notifications), which every admin-tier role needs regardless of any permission. Left honestly unenforced rather than gated onto something it doesn't actually mean.",
     category: "Platform Operations",
   },
   "manage:features": {
     label: "Manage Feature Flags",
     description: "Toggle platform feature flags on or off.",
-    enforced: false,
-    enforcedNote: "Not checked by any route -- feature-flag endpoints require Super Admin directly, not this permission.",
+    enforced: true,
+    enforcedNote: "Layered with Super Admin on all feature-flag mutation routes -- stays Super-Admin-only in practice; this permission can only narrow that boundary further, not widen it.",
     category: "Platform Operations",
   },
   "manage:roles": {
     label: "Manage Roles",
     description: "Create, edit, or delete roles and assign permissions to them.",
     enforced: true,
-    enforcedNote: "Gates every Role CRUD and permission-assignment endpoint under /api/v1/rbac.",
+    enforcedNote: "Gates create/update/delete on /admins/rbac/roles -- including the exact endpoint this page's toggles call (PUT /admins/rbac/roles/:id).",
     category: "Platform Operations",
   },
   "manage:permissions": {
@@ -133,6 +135,13 @@ const PERMISSION_META: Record<string, PermissionMeta> = {
     description: "Create, edit, or delete permission definitions.",
     enforced: true,
     enforcedNote: "Gates every Permission CRUD endpoint under /api/v1/rbac.",
+    category: "Platform Operations",
+  },
+  "manage:support-tickets": {
+    label: "Manage Support Tickets",
+    description: "Change a support ticket's status (open/in progress/resolved).",
+    enforced: true,
+    enforcedNote: "Layered with Support Executive/Admin/Super Admin on PUT /support-tickets/:id/status.",
     category: "Platform Operations",
   },
 }

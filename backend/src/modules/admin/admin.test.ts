@@ -136,8 +136,29 @@ describe("Admin Module Integration Tests (Phase 7)", () => {
       env.JWT_ACCESS_SECRET
     )
 
+    // Role -> permissions, mirroring backend/src/database/seed.ts's
+    // rbacMappings exactly. This used to be a single flat ["manage:admin"]
+    // for every key -- harmless while no route actually called
+    // requirePermission(), but admin.routes.ts now genuinely gates job
+    // moderation, company management, user management, role/permission CRUD,
+    // reports export, and feature flags through requirePermission(), so the
+    // mocked cache has to return each token's real seeded permission set.
+    const ROLE_PERMISSIONS: Record<string, string[]> = {
+      "super-admin-id": [
+        "create:job", "read:job", "update:job", "delete:job", "approve:job", "reject:job",
+        "manage:users", "manage:companies", "manage:reports", "manage:notifications",
+        "manage:features", "manage:support-tickets", "manage:roles", "manage:permissions",
+      ],
+      "moderator-id": ["read:job", "approve:job", "reject:job", "manage:companies"],
+      "plain-admin-id": [
+        "create:job", "read:job", "update:job", "delete:job", "approve:job", "reject:job",
+        "manage:users", "manage:companies", "manage:reports", "manage:notifications",
+        "manage:features", "manage:support-tickets",
+      ],
+    }
     mockRedis.get.mockImplementation(async (key: string) => {
-      return JSON.stringify(["manage:admin"])
+      const roleKey = Object.keys(ROLE_PERMISSIONS).find((id) => key.includes(id))
+      return JSON.stringify(roleKey ? ROLE_PERMISSIONS[roleKey] : [])
     })
 
     mockPrisma.user.findUnique.mockImplementation(async (args: any) => {
@@ -151,6 +172,10 @@ describe("Admin Module Integration Tests (Phase 7)", () => {
 
   describe("Super Admin Safeguards & Protections", () => {
     it("should prevent non-Super Admin from creating new roles", async () => {
+      // This route moved from requireSuperAdmin to requirePermission(["manage:roles"])
+      // this session (manage:roles is seeded to exactly Super Admin, so the
+      // real-world boundary is unchanged) -- the 403 now comes from the
+      // permission check, not a role-name check, so the message differs.
       const res = await request(app)
         .post("/api/v1/admins/rbac/roles")
         .set("Authorization", `Bearer ${moderatorToken}`)
@@ -160,7 +185,7 @@ describe("Admin Module Integration Tests (Phase 7)", () => {
         })
 
       expect(res.status).toBe(403)
-      expect(res.body.message).toContain("Super Admin role required")
+      expect(res.body.message).toContain("Insufficient privileges")
     })
 
     it("should allow Super Admin to configure platform feature flags", async () => {
