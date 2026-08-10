@@ -2,8 +2,9 @@
 // addJob() (Final Implementation Pass, Part 3 verification). The flag was
 // already real, DB-persisted, and wired into this exact chokepoint in a
 // prior pass -- this file is new because no test previously existed to
-// prove that enforcement, only the ConversationService/chat_enabled side
-// had regression coverage (see conversation.service.test.ts).
+// prove that enforcement. (chat_enabled had its own regression coverage via
+// ConversationService before real-time chat was isolated and removed from
+// the app.)
 
 jest.mock("../database/db", () => {
   const localPrismaMock = {

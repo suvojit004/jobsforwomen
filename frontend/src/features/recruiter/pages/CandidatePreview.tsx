@@ -13,7 +13,6 @@ import {
   XCircle,
   X,
   Gift,
-  MessageCircle,
   Star,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -120,25 +119,6 @@ export function CandidatePreview() {
     setPreviewDoc({ url: profile.offerLetterUrl, originalFilename: `${profile.name} - Offer Letter` })
   }
 
-  // the Messages page could only ever list
-  // conversations that already existed -- there was no button anywhere
-  // that could create the first one. This creates (or resumes) the
-  // conversation tied to this application and hands off to the real
-  // Messages inbox with it pre-selected.
-  const [messaging, setMessaging] = useState(false)
-  const handleMessageCandidate = async () => {
-    if (!profile) return
-    try {
-      setMessaging(true)
-      const conversation = await RecruiterApi.startConversation(profile.id)
-      navigate(`/recruiter/messages?conversation=${conversation.id}`)
-    } catch (err: any) {
-      toast.error(err?.message || "Couldn't start a conversation with this candidate.")
-    } finally {
-      setMessaging(false)
-    }
-  }
-
   if (isLoading) {
     return <div className="p-8 text-center text-sm font-bold text-[#6B2C91]">Loading candidate details...</div>
   }
@@ -197,15 +177,6 @@ export function CandidatePreview() {
               long labels like "No Resume Uploaded") could force this row,
               and the page, wider than a narrow mobile viewport. */}
           <div className="flex flex-wrap items-center gap-2 shrink-0">
-            <Button
-              variant="outline"
-              onClick={handleMessageCandidate}
-              disabled={messaging}
-              className="h-9 font-bold text-xs gap-1.5 cursor-pointer"
-            >
-              <MessageCircle className="size-4" />
-              {messaging ? "Opening..." : "Message Candidate"}
-            </Button>
             <Button
               variant="outline"
               onClick={handleDownloadResume}

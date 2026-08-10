@@ -1,13 +1,11 @@
 import { useState } from "react"
-import { useNavigate } from "react-router-dom"
 import { toast } from "sonner"
-import { Check, Clock, User, Calendar, FileText, X, MessageCircle, Gift, Undo2 } from "lucide-react"
+import { Check, Clock, User, Calendar, FileText, X, Gift, Undo2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { DashboardCard } from "@/components/dashboard/DashboardCard"
 import { CompanyLogo } from "@/components/shared/CompanyLogo"
 import type { Application } from "@/types/dashboard"
 import { cn } from "@/lib/utils"
-import { candidateApi } from "../../services/candidateApi"
 import { CandidateJobsApi } from "../../services/jobsApi"
 import { DocumentPreviewModal } from "@/components/shared/DocumentPreviewModal"
 
@@ -28,8 +26,6 @@ const NON_WITHDRAWABLE_STATUSES = ["Offer Released", "Selected", "Rejected"]
 export function ApplicationTimeline({ application, onClose, onWithdrawn }: ApplicationTimelineProps) {
   // Stepper state computation based on status
   const status = application.status
-  const navigate = useNavigate()
-  const [messaging, setMessaging] = useState(false)
   const [previewingOffer, setPreviewingOffer] = useState(false)
   const [withdrawing, setWithdrawing] = useState(false)
   const canWithdraw = !NON_WITHDRAWABLE_STATUSES.includes(status)
@@ -51,21 +47,6 @@ export function ApplicationTimeline({ application, onClose, onWithdrawn }: Appli
       toast.error(err?.message || "Couldn't withdraw the application.")
     } finally {
       setWithdrawing(false)
-    }
-  }
-
-  // there was previously no way to start a
-  // conversation with the recruiter from anywhere in the Candidate module --
-  // see candidateApi.startConversation for the full explanation.
-  const handleMessageRecruiter = async () => {
-    try {
-      setMessaging(true)
-      const conversation = await candidateApi.startConversation(application.id)
-      navigate(`/candidate/messages?conversation=${conversation.id}`)
-    } catch (err: any) {
-      toast.error(err?.message || "Couldn't start a conversation with the recruiter.")
-    } finally {
-      setMessaging(false)
     }
   }
 
@@ -231,50 +212,37 @@ export function ApplicationTimeline({ application, onClose, onWithdrawn }: Appli
               had one. No dedicated recruiter photo column exists in the
               schema, so the avatar is initials-based rather than a stored
               image. */}
-          <div className="flex items-center justify-between gap-3 text-xs">
-            <div className="flex items-center gap-3 min-w-0">
-              {application.recruiter ? (
-                <div className="size-9 rounded-full bg-gradient-to-br from-[#6B2C91] to-pink-600 text-white flex items-center justify-center shrink-0 font-black text-xs">
-                  {application.recruiter.name
-                    .split(" ")
-                    .filter(Boolean)
-                    .slice(0, 2)
-                    .map((part) => part[0]?.toUpperCase())
-                    .join("") || "R"}
-                </div>
-              ) : (
-                <div className="size-9 rounded-lg bg-violet-50 text-[#6B2C91] dark:bg-violet-500/20 dark:text-pink-100 flex items-center justify-center shrink-0">
-                  <User className="size-4" />
-                </div>
-              )}
-              <div className="min-w-0">
-                <p className="font-bold text-slate-500 dark:text-slate-400">Assigned Recruiter</p>
-                {application.recruiter ? (
-                  <>
-                    <p className="font-extrabold text-slate-900 dark:text-white truncate">
-                      {application.recruiter.name}
-                    </p>
-                    <p className="text-[10px] font-semibold text-slate-450 dark:text-slate-500 truncate">
-                      {application.recruiter.jobTitle}
-                      {application.recruiter.email ? ` · ${application.recruiter.email}` : ""}
-                    </p>
-                  </>
-                ) : (
-                  <p className="font-extrabold text-slate-900 dark:text-white">Not Assigned</p>
-                )}
+          <div className="flex items-center gap-3 text-xs">
+            {application.recruiter ? (
+              <div className="size-9 rounded-full bg-gradient-to-br from-[#6B2C91] to-pink-600 text-white flex items-center justify-center shrink-0 font-black text-xs">
+                {application.recruiter.name
+                  .split(" ")
+                  .filter(Boolean)
+                  .slice(0, 2)
+                  .map((part) => part[0]?.toUpperCase())
+                  .join("") || "R"}
               </div>
+            ) : (
+              <div className="size-9 rounded-lg bg-violet-50 text-[#6B2C91] dark:bg-violet-500/20 dark:text-pink-100 flex items-center justify-center shrink-0">
+                <User className="size-4" />
+              </div>
+            )}
+            <div className="min-w-0">
+              <p className="font-bold text-slate-500 dark:text-slate-400">Assigned Recruiter</p>
+              {application.recruiter ? (
+                <>
+                  <p className="font-extrabold text-slate-900 dark:text-white truncate">
+                    {application.recruiter.name}
+                  </p>
+                  <p className="text-[10px] font-semibold text-slate-450 dark:text-slate-500 truncate">
+                    {application.recruiter.jobTitle}
+                    {application.recruiter.email ? ` · ${application.recruiter.email}` : ""}
+                  </p>
+                </>
+              ) : (
+                <p className="font-extrabold text-slate-900 dark:text-white">Not Assigned</p>
+              )}
             </div>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={handleMessageRecruiter}
-              disabled={messaging || !application.recruiter}
-              className="h-7 gap-1 text-[11px] font-bold shrink-0"
-            >
-              <MessageCircle className="size-3.5" />
-              {messaging ? "Opening..." : "Message"}
-            </Button>
           </div>
 
           {/* Interview -- Issue 1: show the full structured detail the

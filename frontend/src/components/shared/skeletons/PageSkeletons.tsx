@@ -153,23 +153,3 @@ export function TablePageSkeleton({ rows = 6 }: { rows?: number }) {
     </div>
   )
 }
-
-// Full-page composite for an inbox-style page (conversation list + empty
-// chat pane).
-export function InboxPageSkeleton() {
-  return (
-    <div className="h-[calc(100vh-140px)] flex flex-col space-y-4">
-      <PageHeaderSkeleton />
-      <div className="flex-1 min-h-0 grid md:grid-cols-12 gap-5">
-        <div className="md:col-span-4">
-          <ListSkeleton rows={7} />
-        </div>
-        <div className="hidden md:block md:col-span-8">
-          <DashboardCard className="h-full flex items-center justify-center">
-            <Skeleton className="size-10 rounded-full" />
-          </DashboardCard>
-        </div>
-      </div>
-    </div>
-  )
-}

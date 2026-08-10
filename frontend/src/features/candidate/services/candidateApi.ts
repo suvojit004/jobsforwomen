@@ -53,35 +53,6 @@ export const candidateApi = {
     return res?.data
   },
 
-  async getConversations() {
-    const res = await apiClient.get("/api/v1/candidates/conversations")
-    return res?.data?.conversations || res?.data || []
-  },
-
-  async getMessages(conversationId: string) {
-    const res = await apiClient.get(`/api/v1/candidates/conversations/${conversationId}/messages`)
-    return res?.data?.messages || res?.data || []
-  },
-
-  async sendMessage(conversationId: string, content: string) {
-    const res = await apiClient.post(`/api/v1/candidates/conversations/${conversationId}/messages`, { content })
-    return res?.data
-  },
-
-  async markConversationAsRead(conversationId: string) {
-    const res = await apiClient.put(`/api/v1/candidates/conversations/${conversationId}/read`, {})
-    return res?.data
-  },
-
-  // there was previously no way to create a
-  // conversation from the Candidate side at all -- Messages.tsx could only
-  // ever list conversations that already existed. This finds-or-creates the
-  // conversation tied to a specific job application.
-  async startConversation(applicationId: string) {
-    const res = await apiClient.post(`/api/v1/candidates/applications/${applicationId}/conversation`, {})
-    return res?.data?.conversation || res?.data
-  },
-
   async changePassword(currentPassword: string, newPassword: string) {
     const res = await apiClient.put("/api/v1/auth/change-password", { currentPassword, newPassword })
     return res?.data

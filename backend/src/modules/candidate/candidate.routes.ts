@@ -50,12 +50,6 @@ router.put("/notifications/read-all", controller.markAllNotificationsRead)
 router.put("/notifications/:id/read", controller.markNotificationRead)
 router.delete("/notifications/:id", controller.deleteNotification)
 
-// Chat Interactions
-router.get("/conversations", controller.getConversations)
-router.get("/conversations/:id/messages", controller.getMessages)
-router.post("/conversations/:id/messages", controller.sendMessage)
-router.put("/conversations/:id/read", controller.markConversationAsRead)
-
 // Jobs Discovery & Reporting -- search/browse gets the higher "search" tier
 // instead of the standard candidate tier (legitimate paging/filtering fires
 // many requests quickly).
@@ -72,6 +66,5 @@ router.get("/applications", controller.getApplications)
 router.get("/applications/:id", requireOwnership("Application"), controller.getApplicationDetails)
 router.post("/jobs/:jobId/apply", requireVerifiedEmail, requireProfileCompleted, controller.applyToJob)
 router.post("/applications/:id/withdraw", requireOwnership("Application"), controller.withdrawApplication)
-router.post("/applications/:id/conversation", requireOwnership("Application"), controller.startConversation)
 
 export default router

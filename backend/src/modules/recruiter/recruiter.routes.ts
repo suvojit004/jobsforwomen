@@ -69,7 +69,6 @@ router.get("/applications", requireApprovedCompany, controller.getCompanyApplica
 router.put("/applications/:id/status", requireApprovedCompany, requireOwnership("Application"), controller.progressApplicant)
 router.post("/applications/:id/interview", requireApprovedCompany, requireOwnership("Application"), controller.scheduleInterview)
 router.post("/applications/:id/offer", requireApprovedCompany, requireOwnership("Application"), uploadRateLimiter, uploadOfferLetterMiddleware, controller.releaseOffer)
-router.post("/applications/:id/conversation", requireApprovedCompany, requireOwnership("Application"), controller.startConversation)
 // Team management (Requires approved company)
 router.get("/team", requireApprovedCompany, controller.getTeam)
 router.post("/team/invite", requireApprovedCompany, controller.inviteColleague)
@@ -80,11 +79,5 @@ router.get("/notifications", controller.getNotifications)
 router.put("/notifications/read-all", controller.markAllNotificationsRead)
 router.put("/notifications/:id/read", controller.markNotificationRead)
 router.delete("/notifications/:id", controller.deleteNotification)
-
-// Conversations (Chat)
-router.get("/conversations", controller.getConversations)
-router.get("/conversations/:id/messages", controller.getMessages)
-router.post("/conversations/:id/messages", controller.sendMessage)
-router.put("/conversations/:id/read", controller.markConversationAsRead)
 
 export default router

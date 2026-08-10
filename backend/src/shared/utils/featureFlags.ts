@@ -1,9 +1,12 @@
 import prisma from "../database/db"
 import { logger } from "./logger"
 
-// Single real enforcement chokepoint for FeatureFlag rows: ConversationService
-// (chat_enabled) and the BullMQ "email" queue (email_automation) both call
-// isFeatureEnabled() before doing real work.
+// Single real enforcement chokepoint for FeatureFlag rows: the BullMQ
+// "email" queue (email_automation) calls isFeatureEnabled() before doing
+// real work. (chat_enabled used to be enforced here too via
+// ConversationService, before real-time chat was isolated and removed from
+// the app; the FeatureFlag row itself is left dormant rather than deleted --
+// see seed.ts.)
 //
 // In-memory TTL cache instead of a new Redis namespace -- only 6 flag rows
 // that change rarely, so this avoids hitting Postgres on every check.

@@ -5,7 +5,6 @@ import { createAdapter } from "@socket.io/redis-adapter"
 import env from "../config/env"
 import { logger } from "../utils/logger"
 import redis from "../utils/redis"
-import prisma from "../database/db"
 
 export let io: Server
 
@@ -154,7 +153,7 @@ export function initSocket(server: HttpServer) {
     // Join personal user room
     socket.join(`user:${user.userId}`)
 
-    // 1. Rate limiting middleware per socket connection (max 15 events / 5 seconds)
+    // Rate limiting middleware per socket connection (max 15 events / 5 seconds)
     let userEventsCount = 0
     socket.use((packet, next) => {
       userEventsCount++
@@ -168,71 +167,6 @@ export function initSocket(server: HttpServer) {
         return next(new Error("Rate limit exceeded"))
       }
       next()
-    })
-
-    // 2. Typing Indicators within Conversations Room
-    //
-    // NOTE: rooms are scoped per-namespace in Socket.IO, but a conversation's
-    // two participants are frequently connected on *different* namespaces
-    // (a Candidate on /candidate, a Recruiter on /recruiter). socket.to(room)
-    // only reaches sockets in the same namespace, so a candidate typing would
-    // never reach the recruiter on the other end. Broadcast across all three
-    // namespaces instead, excluding the sender's own socket.
-    socket.on("typing", (data: { conversationId: string; isTyping: boolean }) => {
-      socketMetrics.messagesSec++
-      const room = `conversation:${data.conversationId}`
-      // conversationId must travel with the payload -- a client can be joined
-      // to more than one conversation room at once (it never explicitly
-      // leaves old rooms), so without this the receiver can't tell which
-      // conversation a "typing" event actually belongs to.
-      const payload = { conversationId: data.conversationId, userId: user.userId, isTyping: data.isTyping }
-      io.of("/candidate").to(room).except(socket.id).emit("typing", payload)
-      io.of("/recruiter").to(room).except(socket.id).emit("typing", payload)
-      io.of("/admin").to(room).except(socket.id).emit("typing", payload)
-    })
-
-    // 3. Message Read Acknowledgements (Read receipts)
-    socket.on("message:read", (data: { conversationId: string; messageId: string }) => {
-      socketMetrics.messagesSec++
-      const room = `conversation:${data.conversationId}`
-      const payload = { conversationId: data.conversationId, userId: user.userId, messageId: data.messageId }
-      io.of("/candidate").to(room).except(socket.id).emit("message:read", payload)
-      io.of("/recruiter").to(room).except(socket.id).emit("message:read", payload)
-      io.of("/admin").to(room).except(socket.id).emit("message:read", payload)
-    })
-
-    // Explicit room departure so a socket doesn't stay subscribed to stale
-    // conversation rooms (and their typing/read-receipt events) after the
-    // client navigates to a different conversation.
-    socket.on("leave:conversation", (data: { conversationId: string }) => {
-      socket.leave(`conversation:${data.conversationId}`)
-      logger.debug(`[SocketIO] Socket ${socket.id} left conversation room: ${data.conversationId}`)
-    })
-
-    // 4. Safe room subscription join
-    // Previously this joined ANY conversationId the client sent with no check
-    // at all -- any authenticated socket could join any conversation's room
-    // and receive its typing/read-receipt events just by guessing an ID. Now
-    // verifies real participation first.
-    socket.on("join:conversation", async (data: { conversationId: string }) => {
-      try {
-        const participant = await prisma.conversationParticipant.findUnique({
-          where: {
-            conversationId_userId: { conversationId: data.conversationId, userId: user.userId },
-          },
-        })
-        if (!participant) {
-          logger.warn(
-            `[SocketIO] Rejected join:conversation -- user ${user.email} is not a participant of ${data.conversationId}`
-          )
-          socket.emit("error", { message: "Not authorized to join this conversation" })
-          return
-        }
-        socket.join(`conversation:${data.conversationId}`)
-        logger.debug(`[SocketIO] Socket ${socket.id} joined conversation room: ${data.conversationId}`)
-      } catch (err: any) {
-        logger.error(`[SocketIO] join:conversation check failed: ${err.message}`)
-      }
     })
 
     // Handle clean disconnect

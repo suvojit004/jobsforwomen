@@ -5,7 +5,6 @@ import {
   CircleHelp,
   Home,
   LogOut,
-  MessageSquare,
   Settings,
   UserRound,
 } from "lucide-react"
@@ -35,7 +34,6 @@ const sidebarItems: SidebarItem[] = [
   // placeholder this codebase has been repeatedly audited to remove --
   // better to show no badge at all than a fabricated one.
   { label: "Notifications", icon: Bell, href: "/notifications" },
-  { label: "Messages", icon: MessageSquare, href: "/messages" },
   { label: "Settings", icon: Settings, href: "/settings" },
   { label: "Help", icon: CircleHelp, href: "/help" },
   { label: "Logout", icon: LogOut, href: "/logout" },

@@ -1,6 +1,5 @@
 import { useState, useEffect } from "react"
 import {
-  MessageSquare,
   Mail,
   Network,
 } from "lucide-react"
@@ -9,14 +8,14 @@ import { Button } from "@/components/ui/button"
 import { AdminApi } from "../services/adminApi"
 
 // Displays and edits the real, database-persisted FeatureFlag rows
-// (chat_enabled, email_automation) with the payload shape the backend's
-// Zod schema expects (`{ value }`), and doesn't touch the separate
-// client-only @/config/features localStorage store.
+// (email_automation) with the payload shape the backend's Zod schema
+// expects (`{ value }`), and doesn't touch the separate client-only
+// @/config/features localStorage store.
 //
-// push_notifications, advanced_analytics, experimental_sockets, and
-// mfa_enforced used to be seeded and shown here too, always as permanently
-// disabled "Not Implemented" rows -- nothing in the codebase ever branched
-// on them. They've been removed from seeding and are filtered out of
+// push_notifications, advanced_analytics, experimental_sockets,
+// mfa_enforced, and chat_enabled (real-time chat was isolated and removed
+// from the app entirely) used to be seeded and shown here too. They've all
+// been removed from seeding and are filtered out of
 // AdminService.getFeatureFlags() server-side, so they no longer come back
 // from the API at all; there's nothing left here to special-case for them.
 
@@ -32,12 +31,6 @@ const FLAG_META: Record<
   string,
   { name: string; icon: React.ComponentType<{ className?: string }>; enforced: string; implemented: boolean }
 > = {
-  chat_enabled: {
-    name: "Real-time Chat",
-    icon: MessageSquare,
-    enforced: "Enforced: when off, starting a new conversation or sending a message returns 403 from the API. Existing message history remains readable.",
-    implemented: true,
-  },
   email_automation: {
     name: "Automated Email Delivery",
     icon: Mail,

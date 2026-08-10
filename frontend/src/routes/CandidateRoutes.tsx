@@ -9,7 +9,6 @@ const JobDetails = lazy(() => import("@/features/candidate/pages/JobDetails").th
 const SavedJobs = lazy(() => import("@/features/candidate/pages/SavedJobs").then(m => ({ default: m.SavedJobs })))
 const Applications = lazy(() => import("@/features/candidate/pages/Applications").then(m => ({ default: m.Applications })))
 const Notifications = lazy(() => import("@/features/candidate/pages/Notifications").then(m => ({ default: m.Notifications })))
-const Messages = lazy(() => import("@/features/candidate/pages/Messages").then(m => ({ default: m.Messages })))
 const Settings = lazy(() => import("@/features/candidate/pages/Settings").then(m => ({ default: m.Settings })))
 const Help = lazy(() => import("@/features/candidate/pages/Help").then(m => ({ default: m.Help })))
 
@@ -25,7 +24,6 @@ export function CandidateRoutes() {
         <Route path="saved-jobs" element={<SavedJobs />} />
         <Route path="applications" element={<Applications />} />
         <Route path="notifications" element={<Notifications />} />
-        <Route path="messages" element={<Messages />} />
         <Route path="settings" element={<Settings />} />
         <Route path="help" element={<Help />} />
         <Route path="*" element={<Navigate to="/candidate/dashboard" replace />} />

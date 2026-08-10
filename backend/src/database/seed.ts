@@ -147,8 +147,13 @@ async function main() {
   // than kept as dead placeholders; see AdminService.getFeatureFlags for
   // the matching filter that hides any pre-existing rows for these keys on
   // databases seeded before this change.
+  //
+  // chat_enabled joined that same retired-key filter once the real-time
+  // chat feature was isolated and removed from the app -- the Conversation/
+  // Message/ConversationParticipant tables and any pre-existing FeatureFlag
+  // row are deliberately left in place (nothing left in the app reaches
+  // either), just no longer seeded or surfaced.
   const flags = [
-    { key: "chat_enabled", value: true, category: "Communication", description: "Enables realtime candidate-recruiter chat messages" },
     { key: "email_automation", value: true, category: "Communication", description: "Automates welcome and status updates mailing queues" },
   ]
   console.log("Seeding Feature Flags...")

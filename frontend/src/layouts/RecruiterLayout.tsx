@@ -15,7 +15,6 @@ import {
   FilePlus,
   BriefcaseBusiness,
   Users,
-  MessageSquare,
   Building,
   LineChart,
   Settings,
@@ -31,7 +30,6 @@ const recruiterMenuItems = [
   { label: "Post a Job", icon: FilePlus, href: "/recruiter/post-job" },
   { label: "My Jobs", icon: BriefcaseBusiness, href: "/recruiter/manage-jobs" },
   { label: "Applicants", icon: Users, href: "/recruiter/applicants" },
-  { label: "Messages", icon: MessageSquare, href: "/recruiter/messages" },
   { label: "Notifications", icon: Bell, href: "/recruiter/notifications" },
   { label: "Company Profile", icon: Building, href: "/recruiter/company" },
   { label: "Perks & Certifications", icon: Award, href: "/recruiter/perks" },
@@ -47,7 +45,6 @@ const recruiterMobileItems = [
   { label: "Dashboard", href: "/recruiter/dashboard", icon: Home },
   { label: "Jobs", href: "/recruiter/manage-jobs", icon: BriefcaseBusiness },
   { label: "Applicants", href: "/recruiter/applicants", icon: Users },
-  { label: "Messages", href: "/recruiter/messages", icon: MessageSquare },
   { label: "Menu", href: "/recruiter/settings", icon: Settings },
 ]
 

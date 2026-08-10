@@ -1574,6 +1574,11 @@ export class AdminService {
     "push_notifications",
     "advanced_analytics",
     "experimental_sockets",
+    // Real-time chat was isolated and removed from the app -- see
+    // seed.ts's Feature Flags section. The row is left dormant in the DB
+    // (no destructive migration) rather than deleted, same treatment as
+    // the flags above.
+    "chat_enabled",
     "mfa_enforced",
   ])
 

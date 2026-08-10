@@ -4,7 +4,6 @@ import { logger } from "../../shared/utils/logger"
 import EventBus from "../../shared/eventBus/eventBus"
 import { ApplicationStatus, JobStatus, UserStatus } from "@prisma/client"
 import { NotificationService } from "../../shared/services/notification.service"
-import { ConversationService } from "../../shared/services/conversation.service"
 import { RECRUITER_SUMMARY_SELECT, shapeRecruiterSummary } from "../../shared/utils/recruiterSummary"
 import { AppError } from "../../shared/middleware/errorHandler"
 
@@ -733,7 +732,6 @@ export class CandidateService {
       marketingEmails: true,
       applicationUpdates: true,
       newJobAlerts: true,
-      chatMessages: true,
       profileVisibility: "Public",
       showSalary: true,
       theme: "System",
@@ -779,25 +777,6 @@ export class CandidateService {
     })
 
     return newSettings
-  }
-
-  // ==========================================
-  // CONVERSATIONS & CHATS
-  // ==========================================
-  async getConversations(userId: string) {
-    return ConversationService.getConversations(userId)
-  }
-
-  async getMessages(conversationId: string, userId: string) {
-    return ConversationService.getMessages(conversationId, userId)
-  }
-
-  async sendMessage(conversationId: string, senderId: string, content: string) {
-    return ConversationService.sendMessage(conversationId, senderId, content)
-  }
-
-  async markConversationAsRead(conversationId: string, userId: string) {
-    return ConversationService.markConversationAsRead(conversationId, userId)
   }
 
   // ==========================================

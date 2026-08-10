@@ -42,7 +42,6 @@ export const updateCandidateSettingsSchema = z.object({
   marketingEmails: z.boolean().optional(),
   applicationUpdates: z.boolean().optional(),
   newJobAlerts: z.boolean().optional(),
-  chatMessages: z.boolean().optional(),
   profileVisibility: z.enum(["Public", "Private", "RecruitersOnly"]).optional(),
   showSalary: z.boolean().optional(),
   theme: z.enum(["Light", "Dark", "System"]).optional(),
@@ -70,8 +69,4 @@ export const updateCandidateSettingsSchema = z.object({
 
 export const reportJobSchema = z.object({
   reason: z.string().min(5, "Reason must be at least 5 characters").max(500),
-})
-
-export const sendMessageSchema = z.object({
-  content: z.string().min(1, "Message content cannot be empty").max(1000),
 })

@@ -12,7 +12,6 @@ const CompanyProfile = lazy(() => import("@/features/recruiter/pages/CompanyProf
 const Perks = lazy(() => import("@/features/recruiter/pages/Perks").then(m => ({ default: m.Perks })))
 const ApprovalRequests = lazy(() => import("@/features/recruiter/pages/ApprovalRequests").then(m => ({ default: m.ApprovalRequests })))
 const Analytics = lazy(() => import("@/features/recruiter/pages/Analytics").then(m => ({ default: m.Analytics })))
-const Messages = lazy(() => import("@/features/recruiter/pages/Messages").then(m => ({ default: m.Messages })))
 const Notifications = lazy(() => import("@/features/recruiter/pages/Notifications").then(m => ({ default: m.Notifications })))
 const Settings = lazy(() => import("@/features/recruiter/pages/Settings").then(m => ({ default: m.Settings })))
 const Help = lazy(() => import("@/features/recruiter/pages/Help").then(m => ({ default: m.Help })))
@@ -35,7 +34,6 @@ export function RecruiterRoutes() {
         <Route path="approvals" element={<ApprovalRequests />} />
         <Route path="team" element={<Team />} />
         <Route path="analytics" element={<Analytics />} />
-        <Route path="messages" element={<Messages />} />
         <Route path="notifications" element={<Notifications />} />
         <Route path="settings" element={<Settings />} />
         <Route path="help" element={<Help />} />

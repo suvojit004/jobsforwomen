@@ -16,7 +16,6 @@ import {
   BriefcaseBusiness,
   Bookmark,
   Bell,
-  MessageSquare,
   Settings,
   CircleHelp,
 } from "lucide-react"
@@ -28,7 +27,6 @@ const candidateMenuItems = [
   { label: "My Applications", icon: Bookmark, href: "/candidate/applications" },
   { label: "Saved Jobs", icon: Bookmark, href: "/candidate/saved-jobs" },
   { label: "Notifications", icon: Bell, href: "/candidate/notifications" },
-  { label: "Messages", icon: MessageSquare, href: "/candidate/messages" },
   { label: "Settings", icon: Settings, href: "/candidate/settings" },
   { label: "Help", icon: CircleHelp, href: "/candidate/help" },
 ]
@@ -37,7 +35,6 @@ const candidateMobileItems = [
   { label: "Home", href: "/candidate/dashboard", icon: Home },
   { label: "Jobs", href: "/candidate/jobs", icon: BriefcaseBusiness },
   { label: "Applications", href: "/candidate/applications", icon: Bookmark },
-  { label: "Messages", href: "/candidate/messages", icon: MessageSquare },
   { label: "Profile", href: "/candidate/profile", icon: UserRound },
 ]
 

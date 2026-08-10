@@ -4,7 +4,6 @@ import { sendSuccess, sendError } from "../../shared/utils/response"
 import { uploadFile, deleteFile } from "../../shared/utils/fileStorage"
 import { logger } from "../../shared/utils/logger"
 import { NotificationService } from "../../shared/services/notification.service"
-import { ConversationService } from "../../shared/services/conversation.service"
 import {
   onboardCompanySchema,
   createJobSchema,
@@ -295,41 +294,6 @@ export class RecruiterController {
     const userId = req.user?.userId || ""
     await NotificationService.deleteNotification(req.params.id as string, userId)
     return sendSuccess(res, null, "Notification deleted successfully.")
-  }
-
-  getConversations = async (req: Request, res: Response) => {
-    const userId = req.user?.userId || ""
-    const conversations = await ConversationService.getConversations(userId)
-    return sendSuccess(res, { conversations }, "Fetched conversations successfully.")
-  }
-
-  getMessages = async (req: Request, res: Response) => {
-    const userId = req.user?.userId || ""
-    const messages = await ConversationService.getMessages(req.params.id as string, userId)
-    return sendSuccess(res, { messages }, "Fetched messages successfully.")
-  }
-
-  sendMessage = async (req: Request, res: Response) => {
-    const userId = req.user?.userId || ""
-    const { content } = req.body
-    const result = await ConversationService.sendMessage(req.params.id as string, userId, content)
-    return sendSuccess(res, result, "Message sent successfully.")
-  }
-
-  markConversationAsRead = async (req: Request, res: Response) => {
-    const userId = req.user?.userId || ""
-    const result = await ConversationService.markConversationAsRead(req.params.id as string, userId)
-    return sendSuccess(res, result, "Conversation marked as read.")
-  }
-
-  // mirrors candidate.controller.ts's
-  // startConversation -- see ConversationService.getOrCreateForApplication.
-  // Lets a recruiter open (or resume) a chat with the candidate who applied
-  // to one of their jobs directly from the Applicants pipeline.
-  startConversation = async (req: Request, res: Response) => {
-    const userId = req.user?.userId || ""
-    const conversation = await ConversationService.getOrCreateForApplication(req.params.id as string, userId)
-    return sendSuccess(res, { conversation }, "Conversation ready.", 201)
   }
 
   uploadCompanyLogo = async (req: Request, res: Response, next: any) => {
