@@ -346,7 +346,7 @@ export function LandingPage() {
       <section id="faq" className="py-20">
         <div className="mx-auto max-w-4xl px-4 sm:px-6 lg:px-8 space-y-16">
           <div className="text-center space-y-4">
-            <h2 className="text-xs font-black uppercase tracking-widest text-[#6B2C91] dark:text-pink-400">FAQ</h2>
+            <h2 className="text-xs font-black uppercase tracking-widest text-[#6B2C91] dark:text-pink-400">FAQS</h2>
             <h3 className="text-3xl font-extrabold text-slate-900 dark:text-white">Frequently Asked Questions</h3>
           </div>
 
