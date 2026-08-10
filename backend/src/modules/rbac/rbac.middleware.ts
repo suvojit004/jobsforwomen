@@ -1,4 +1,4 @@
-import type { Request, Response, NextFunction } from "express"
+import type { Request, Response, NextFunction, RequestHandler } from "express"
 import prisma from "../../shared/database/db"
 import env from "../../shared/config/env"
 import { sendError } from "../../shared/utils/response"
@@ -318,4 +318,29 @@ export async function requireSuperAdmin(req: Request, res: Response, next: NextF
   }
 
   next()
+}
+
+/**
+ * Composes several Express middlewares so a route can require ALL of them to
+ * pass. Every middleware in this module either calls next() with no error on
+ * success, or sends its own 4xx/5xx response directly and never calls next()
+ * at all on failure -- so a bare short-circuiting sequence is all that's
+ * needed here, no error-first plumbing. Used to layer a real
+ * requirePermission() check alongside an existing, more specific role-name
+ * gate (e.g. requireSuperAdmin) without loosening it -- see admin.routes.ts
+ * and rbac.routes.ts for examples. Previously duplicated as a private local
+ * function inside admin.routes.ts; centralized here once rbac.routes.ts
+ * needed the same pattern for its own routes.
+ */
+export function requireAll(...middlewares: RequestHandler[]): RequestHandler {
+  return (req: Request, res: Response, next: NextFunction) => {
+    let i = 0
+    const run = (err?: any) => {
+      if (err) return next(err)
+      if (i >= middlewares.length) return next()
+      const mw = middlewares[i++]
+      mw(req, res, run)
+    }
+    run()
+  }
 }

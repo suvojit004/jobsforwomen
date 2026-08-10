@@ -42,6 +42,7 @@ jest.mock("../../shared/utils/redis", () => {
 import app from "../../app"
 import jwt from "jsonwebtoken"
 import env from "../../shared/config/env"
+import { UserStatus } from "@prisma/client"
 import { PermissionCacheManager } from "../../shared/utils/permissionCache"
 import prisma from "../../shared/database/db"
 import redis from "../../shared/utils/redis"
@@ -76,6 +77,15 @@ describe("Role-Based Access Control Integration Tests (Phase 4)", () => {
       }
       return null
     })
+
+    // This router now runs requireActiveUser on every request (previously
+    // it only checked permissions) -- default every user.findUnique lookup
+    // to an Active account so that check passes regardless of which id it's
+    // queried with, unless a test overrides it below for its own purposes.
+    mockPrisma.user.findUnique.mockImplementation(async (args: any) => ({
+      id: args.where.id,
+      status: UserStatus.Active,
+    }))
   })
 
   describe("RBAC Permissions CRUD APIs", () => {
@@ -93,14 +103,19 @@ describe("Role-Based Access Control Integration Tests (Phase 4)", () => {
       expect(res.body.data.roles).toHaveLength(1)
     })
 
-    it("should deny Candidate without manage:roles from retrieving roles", async () => {
+    it("should deny a Candidate (non-admin-tier) from retrieving roles", async () => {
+      // GET /roles is deliberately requireRole(ADMIN_TIER_ROLES), not
+      // requirePermission -- viewing the matrix has always been open to
+      // every admin-tier role (Moderator/Support Executive included, even
+      // though they don't hold manage:roles), so the 403 for a Candidate
+      // comes from the role-tier check, not a permission check.
       const res = await request(app)
         .get("/api/v1/rbac/roles")
         .set("Authorization", `Bearer ${candidateToken}`)
 
       expect(res.status).toBe(403)
       expect(res.body.success).toBe(false)
-      expect(res.body.message).toContain("Insufficient privileges")
+      expect(res.body.message).toContain("Insufficient role credentials")
     })
 
     it("should invalidate all permission caches upon assigning permissions to role", async () => {
@@ -163,7 +178,11 @@ describe("Role-Based Access Control Integration Tests (Phase 4)", () => {
 
   describe("Status Access Guards & Ownership", () => {
     it("should invalidate specific user cache when assign roles to user", async () => {
-      mockPrisma.user.findUnique.mockResolvedValue({ id: "user-1" })
+      // Covers both requireActiveUser's lookup on the operator (adminToken)
+      // and RbacService.assignRolesToUser's own lookup on the target user --
+      // the mock doesn't discriminate by id, so it needs to satisfy both:
+      // Active status for the former, a truthy record for the latter.
+      mockPrisma.user.findUnique.mockResolvedValue({ id: "user-1", status: UserStatus.Active })
       mockPrisma.userRole.findMany.mockResolvedValue([])
       mockPrisma.userRole.deleteMany.mockResolvedValue({ count: 1 })
       mockPrisma.userRole.createMany.mockResolvedValue({ count: 1 })

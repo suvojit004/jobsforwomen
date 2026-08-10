@@ -119,14 +119,14 @@ export const createFeatureFlagSchema = z.object({
 
 export const updateFeatureFlagSchema = createFeatureFlagSchema.partial().omit({ key: true })
 
-// RBAC Role Schema
-export const roleSchema = z.object({
-  name: z.string().min(2, "Role name must be at least 2 characters"),
-  description: z.string().optional(),
-  permissions: z.array(z.string()).min(1, "At least one permission is required"),
-})
-
-export const updateRoleSchema = roleSchema.partial().omit({ name: true })
+// RBAC role schemas (roleSchema/updateRoleSchema) used to live here for
+// admin.routes.ts's own Role CRUD endpoints. Those endpoints were removed
+// in favor of the real ones at /api/v1/rbac/* (see rbac.validator.ts's
+// createRoleSchema/updateRoleSchema) -- worth noting this old schema
+// required permissions.min(1) on create, which meant RolesPermissions.tsx's
+// "Add Role" button (which always sent an empty permissions array for a
+// brand-new role) would have failed validation on every use; the
+// replacement schema doesn't have that bug.
 
 // Activity Logs query params. Validates/coerces the query so each filter
 // change (category tab, search box) is a real, separately-paginated Prisma

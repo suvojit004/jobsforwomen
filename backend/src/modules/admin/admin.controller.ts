@@ -1,7 +1,6 @@
 import type { Request, Response } from "express"
 import { AdminService, ServiceContext } from "./admin.service"
-import { RbacService } from "../rbac/rbac.service"
-import { sendSuccess, sendError } from "../../shared/utils/response"
+import { sendSuccess } from "../../shared/utils/response"
 import { NotificationService } from "../../shared/services/notification.service"
 import {
   verifyCompanySchema,
@@ -11,8 +10,6 @@ import {
   inviteEmployeeSchema,
   createFeatureFlagSchema,
   updateFeatureFlagSchema,
-  roleSchema,
-  updateRoleSchema,
   auditLogsQuerySchema,
   reviewPerkRequestSchema,
   createAdminSchema,
@@ -25,7 +22,6 @@ import { CompanyStatus, UserStatus, PerkStatus } from "@prisma/client"
 
 export class AdminController {
   private service = new AdminService()
-  private rbacService = new RbacService()
 
   private getContext(req: Request): ServiceContext {
     const user = req.user
@@ -411,78 +407,12 @@ export class AdminController {
     }
   }
 
-  getRBACData = async (req: Request, res: Response, next: any) => {
-    try {
-      const result = await this.service.getRBACData()
-      return sendSuccess(res, result, "RBAC schema matrix data fetched successfully.")
-    } catch (err: any) {
-      next(err)
-    }
-  }
-
-  createRole = async (req: Request, res: Response, next: any) => {
-    try {
-      const validated = roleSchema.parse(req.body)
-      const adminId = req.user?.userId || ""
-      const context = this.getContext(req)
-      const result = await this.service.createRole(adminId, validated, context)
-      return sendSuccess(res, result, "Role profile created successfully.", 201)
-    } catch (err: any) {
-      next(err)
-    }
-  }
-
-  updateRole = async (req: Request, res: Response, next: any) => {
-    try {
-      const validated = updateRoleSchema.parse(req.body)
-      const adminId = req.user?.userId || ""
-      const context = this.getContext(req)
-      const result = await this.service.updateRole(
-        adminId,
-        req.params.id as string,
-        validated,
-        context
-      )
-      return sendSuccess(res, result, "Role permission matrix updated successfully.")
-    } catch (err: any) {
-      next(err)
-    }
-  }
-
-  deleteRole = async (req: Request, res: Response, next: any) => {
-    try {
-      const adminId = req.user?.userId || ""
-      const context = this.getContext(req)
-      await this.service.deleteRole(adminId, req.params.id as string, context)
-      return sendSuccess(res, null, "Role deleted successfully.")
-    } catch (err: any) {
-      next(err)
-    }
-  }
-
-  // this used to call AdminService.assignUserRoles,
-  // a bare deleteMany+createMany with no privilege-escalation or
-  // last-Super-Admin safety checks at all -- even though this specific route
-  // is already gated behind requireSuperAdmin, a Super Admin could still
-  // accidentally strip their own (or the platform's last) Super Admin role
-  // with zero recovery path. RbacService.assignRolesToUser (rbac.service.ts)
-  // is the hardened, reusable implementation the Admin Management spec asks
-  // for -- delegating to it here instead of keeping two parallel
-  // role-assignment code paths.
-  assignUserRoles = async (req: Request, res: Response, next: any) => {
-    try {
-      const { roleIds } = req.body
-      if (!roleIds || !Array.isArray(roleIds)) {
-        return sendError(res, "roleIds array is required", null, 400)
-      }
-      const adminId = req.user?.userId || ""
-      const context = this.getContext(req)
-      await this.rbacService.assignRolesToUser(req.params.id as string, roleIds, context, req.user?.roles || [])
-      return sendSuccess(res, null, "User roles reassigned successfully.")
-    } catch (err: any) {
-      next(err)
-    }
-  }
+  // getRBACData/createRole/updateRole/deleteRole/assignUserRoles used to
+  // live here, duplicating (with weaker guards in deleteRole's case) what
+  // rbac.service.ts already did properly at /api/v1/rbac/*. The frontend
+  // (RolesPermissions.tsx, AdminManagement.tsx) now calls that router
+  // directly, so this second implementation is gone rather than kept as
+  // unused dead code.
 
   globalSearch = async (req: Request, res: Response, next: any) => {
     try {

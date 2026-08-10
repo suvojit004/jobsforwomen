@@ -8,3 +8,12 @@
 // and other consumers expect a mutable string[] parameter, and a readonly
 // tuple isn't assignable to that.
 export const ADMIN_TIER_ROLES: string[] = ["Admin", "Super Admin", "Moderator", "Support Executive"]
+
+// Every role seed.ts creates on every run -- the platform's own
+// authorization model (route gates, invitation/onboarding flows) assumes
+// these exist. Never deletable through any admin-facing role-management
+// endpoint. Previously duplicated as a private `SYSTEM_ROLES` constant
+// inside admin.service.ts; centralized here since RbacService.deleteRole
+// (the endpoint that now actually serves role deletion, see rbac.routes.ts)
+// needs the same guard.
+export const SYSTEM_ROLES: string[] = ["Candidate", "Recruiter", "Moderator", "Admin", "Super Admin", "Support Executive"]

@@ -37,7 +37,7 @@ export class RbacController {
   createRole = async (req: Request, res: Response) => {
     const validated = createRoleSchema.parse(req.body)
     const context = this.getContext(req)
-    const role = await this.rbacService.createRole(validated.name, context)
+    const role = await this.rbacService.createRole(validated.name, context, validated.permissionNames)
     return sendSuccess(res, { role }, "Role created successfully.", 201)
   }
 
@@ -103,7 +103,7 @@ export class RbacController {
   assignPermissionsToRole = async (req: Request, res: Response) => {
     const validated = assignRolePermissionsSchema.parse(req.body)
     const context = this.getContext(req)
-    await this.rbacService.assignPermissionsToRole(req.params.id as string, validated.permissionIds, context)
+    await this.rbacService.assignPermissionsToRole(req.params.id as string, validated, context)
     return sendSuccess(res, null, "Role permissions updated successfully.")
   }
 

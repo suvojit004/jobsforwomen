@@ -2,6 +2,7 @@ import prisma from "../../shared/database/db"
 import { PermissionCacheManager } from "../../shared/utils/permissionCache"
 import { logger } from "../../shared/utils/logger"
 import EventBus from "../../shared/eventBus/eventBus"
+import { SYSTEM_ROLES } from "../../shared/constants/roles"
 
 export interface RequestContext {
   operatorId?: string
@@ -15,7 +16,7 @@ export class RbacService {
   // ==========================================
   // ROLES CRUD
   // ==========================================
-  async createRole(name: string, context?: RequestContext) {
+  async createRole(name: string, context?: RequestContext, permissionNames?: string[]) {
     const existing = await prisma.role.findUnique({ where: { name } })
     if (existing) {
       throw new Error(`Role name '${name}' already exists`)
@@ -23,14 +24,30 @@ export class RbacService {
 
     const role = await prisma.role.create({ data: { name } })
 
+    if (permissionNames && permissionNames.length > 0) {
+      const permissionRecords = await prisma.permission.findMany({
+        where: { name: { in: permissionNames } },
+      })
+      await prisma.rolePermission.createMany({
+        data: permissionRecords.map((p) => ({ roleId: role.id, permissionId: p.id })),
+      })
+    }
+
     EventBus.publish("AuditCreated", {
       ...context,
       category: "RBAC",
       action: "CREATE_ROLE",
       entity: "Role",
       entityId: role.id,
-      newValue: { name },
+      newValue: { name, permissionNames },
     })
+
+    // A freshly created role starts with no members, so there's nothing to
+    // invalidate for an empty permission set -- but if it was created with
+    // permissions already assigned, no cached user should matter either
+    // (nobody holds a role that didn't exist a moment ago). Skipped
+    // deliberately rather than an unconditional invalidateAll() on every
+    // role creation.
 
     return role
   }
@@ -101,6 +118,21 @@ export class RbacService {
     const role = await prisma.role.findUnique({ where: { id } })
     if (!role) {
       throw new Error("Role not found")
+    }
+
+    // The platform's own authorization model depends on these six roles --
+    // deleting any of them would break RBAC checks or the invitation/
+    // onboarding flows that assume they exist. Never deletable via any
+    // admin-facing endpoint.
+    if (SYSTEM_ROLES.includes(role.name)) {
+      throw new Error(`Cannot delete built-in system role "${role.name}". It is required for the platform's core authorization model.`)
+    }
+
+    // Guard against accidental lockout: refuse to delete a role that is
+    // still actively assigned to users -- force an explicit reassignment first.
+    const assignedCount = await prisma.userRole.count({ where: { roleId: id } })
+    if (assignedCount > 0) {
+      throw new Error(`Cannot delete role "${role.name}": it is currently assigned to ${assignedCount} user(s). Reassign or remove those role assignments first.`)
     }
 
     await prisma.role.delete({ where: { id } })
@@ -207,10 +239,25 @@ export class RbacService {
   // ==========================================
   // ROLE PERMISSIONS ASSIGNMENT
   // ==========================================
-  async assignPermissionsToRole(roleId: string, permissionIds: string[], context?: RequestContext) {
+  async assignPermissionsToRole(
+    roleId: string,
+    input: { permissionIds?: string[]; permissionNames?: string[] },
+    context?: RequestContext
+  ) {
     const role = await prisma.role.findUnique({ where: { id: roleId } })
     if (!role) {
       throw new Error("Role not found")
+    }
+
+    // Callers that only know permissions by name (the Roles & Permissions
+    // Matrix UI works entirely in permission names, never IDs) resolve here
+    // instead of having to look up IDs client-side first.
+    let permissionIds = input.permissionIds
+    if (!permissionIds) {
+      const records = await prisma.permission.findMany({
+        where: { name: { in: input.permissionNames || [] } },
+      })
+      permissionIds = records.map((p) => p.id)
     }
 
     // Get current mapping to log diff

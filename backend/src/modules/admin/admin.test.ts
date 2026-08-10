@@ -148,12 +148,15 @@ describe("Admin Module Integration Tests (Phase 7)", () => {
         "create:job", "read:job", "update:job", "delete:job", "approve:job", "reject:job",
         "manage:users", "manage:companies", "manage:reports", "manage:notifications",
         "manage:features", "manage:support-tickets", "manage:roles", "manage:permissions",
+        "verify:recruiters", "manage:invitations", "manage:platform-settings", "manage:perks",
+        "manage:admins",
       ],
-      "moderator-id": ["read:job", "approve:job", "reject:job", "manage:companies"],
+      "moderator-id": ["read:job", "approve:job", "reject:job", "manage:companies", "manage:perks"],
       "plain-admin-id": [
         "create:job", "read:job", "update:job", "delete:job", "approve:job", "reject:job",
         "manage:users", "manage:companies", "manage:reports", "manage:notifications",
         "manage:features", "manage:support-tickets",
+        "verify:recruiters", "manage:invitations", "manage:platform-settings", "manage:perks",
       ],
     }
     mockRedis.get.mockImplementation(async (key: string) => {
@@ -171,22 +174,10 @@ describe("Admin Module Integration Tests (Phase 7)", () => {
   })
 
   describe("Super Admin Safeguards & Protections", () => {
-    it("should prevent non-Super Admin from creating new roles", async () => {
-      // This route moved from requireSuperAdmin to requirePermission(["manage:roles"])
-      // this session (manage:roles is seeded to exactly Super Admin, so the
-      // real-world boundary is unchanged) -- the 403 now comes from the
-      // permission check, not a role-name check, so the message differs.
-      const res = await request(app)
-        .post("/api/v1/admins/rbac/roles")
-        .set("Authorization", `Bearer ${moderatorToken}`)
-        .send({
-          name: "Moderator Support",
-          permissions: ["post:job"],
-        })
-
-      expect(res.status).toBe(403)
-      expect(res.body.message).toContain("Insufficient privileges")
-    })
+    // Role CRUD (create/update/delete/permission-assignment) moved to
+    // /api/v1/rbac/* this session -- admin.routes.ts no longer has its own
+    // copy of these endpoints at all, so "non-Super-Admin can't create a
+    // role" is now covered in rbac.test.ts against the real route instead.
 
     it("should allow Super Admin to configure platform feature flags", async () => {
       mockPrisma.featureFlag.create.mockResolvedValue({

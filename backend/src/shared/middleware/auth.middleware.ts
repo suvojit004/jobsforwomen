@@ -38,18 +38,11 @@ export function requireRole(allowedRoles: string[]) {
   }
 }
 
-export function requirePermission(requiredPermissions: string[]) {
-  return (req: Request, res: Response, next: NextFunction) => {
-    if (!req.user) {
-      return sendError(res, "Authentication required", null, 401)
-    }
-
-    const hasPermission = requiredPermissions.every((p) => req.user!.permissions.includes(p))
-    if (!hasPermission) {
-      logger.warn(`User ${req.user.email} lacking required permissions: ${requiredPermissions.join(", ")}`)
-      return sendError(res, "Forbidden: Insufficient privileges", null, 403)
-    }
-
-    next()
-  }
-}
+// A requirePermission() used to live here too, checking req.user.permissions
+// (a static JWT claim that goes stale the moment a role's permissions
+// change server-side, until the holder logs in again). It was never
+// imported anywhere -- every route in this codebase uses the real,
+// Redis/DB-backed requirePermission() from ../../modules/rbac/rbac.middleware
+// instead, which re-checks the live permission table on every request via
+// PermissionCacheManager. Removed rather than left as unused dead code so
+// nothing can accidentally get wired to this stale-by-design path later.

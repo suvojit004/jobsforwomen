@@ -92,7 +92,7 @@ const PERMISSION_META: Record<string, PermissionMeta> = {
     label: "Manage Users",
     description: "Suspend/delete a user account, trigger administrative account actions, and (together with Super Admin) assign roles to a user.",
     enforced: true,
-    enforcedNote: "Gates PUT /admins/users/:id/status, DELETE /admins/users/:id, POST .../action/:action, and (layered with Super Admin) POST .../users/:id/roles.",
+    enforcedNote: "Gates PUT /admins/users/:id/status, DELETE /admins/users/:id, POST .../action/:action, and (layered with Super Admin) POST /api/v1/rbac/users/:id/roles.",
     category: "People",
   },
   "manage:companies": {
@@ -100,6 +100,34 @@ const PERMISSION_META: Record<string, PermissionMeta> = {
     description: "View, verify, suspend, or delete recruiter companies.",
     enforced: true,
     enforcedNote: "Gates GET/verify on /admins/companies outright, and (layered with Admin/Super Admin) suspend/unsuspend/delete.",
+    category: "People",
+  },
+  "verify:recruiters": {
+    label: "Verify Individual Recruiters",
+    description: "Manually verify a single recruiter account (separate from the company-level verification above).",
+    enforced: true,
+    enforcedNote: "Layered with Admin/Super Admin on PUT /admins/recruiters/:id/verify.",
+    category: "People",
+  },
+  "manage:perks": {
+    label: "Manage Perk Requests",
+    description: "Review and approve or reject company perk submissions.",
+    enforced: true,
+    enforcedNote: "Gates GET /admins/perks and POST /admins/perks/:id/review. Seeded to all four admin-tier roles today (matching the blanket admin-tier access this section always had), so this doesn't restrict anyone new yet -- it just makes that access genuinely follow the RBAC Matrix.",
+    category: "People",
+  },
+  "manage:invitations": {
+    label: "Manage Employee Invitations",
+    description: "Send, resend, cancel, or expire an invitation for a new admin-tier employee.",
+    enforced: true,
+    enforcedNote: "Layered with Admin/Super Admin on every /admins/invitations* route.",
+    category: "People",
+  },
+  "manage:admins": {
+    label: "Manage Admin Accounts",
+    description: "Create administrator accounts and revoke a single role from one, end to end.",
+    enforced: true,
+    enforcedNote: "Layered with Super Admin on every /admins/management/admins* route -- the most sensitive module on the admin surface, since it creates and edits other admin-tier accounts.",
     category: "People",
   },
   "manage:reports": {
@@ -127,7 +155,7 @@ const PERMISSION_META: Record<string, PermissionMeta> = {
     label: "Manage Roles",
     description: "Create, edit, or delete roles and assign permissions to them.",
     enforced: true,
-    enforcedNote: "Gates create/update/delete on /admins/rbac/roles -- including the exact endpoint this page's toggles call (PUT /admins/rbac/roles/:id).",
+    enforcedNote: "Gates create/update/delete on /api/v1/rbac/roles -- including the exact endpoint this page's toggles call (POST /api/v1/rbac/roles/:id/permissions).",
     category: "Platform Operations",
   },
   "manage:permissions": {
@@ -142,6 +170,13 @@ const PERMISSION_META: Record<string, PermissionMeta> = {
     description: "Change a support ticket's status (open/in progress/resolved).",
     enforced: true,
     enforcedNote: "Layered with Support Executive/Admin/Super Admin on PUT /support-tickets/:id/status.",
+    category: "Platform Operations",
+  },
+  "manage:platform-settings": {
+    label: "Manage Platform Settings",
+    description: "Change general, non-security platform settings (currently the Operations Support Contacts helpdesk email).",
+    enforced: true,
+    enforcedNote: "Layered with Admin/Super Admin on PUT /admins/platform-settings. Viewing stays open to every admin-tier role regardless of this permission.",
     category: "Platform Operations",
   },
 }

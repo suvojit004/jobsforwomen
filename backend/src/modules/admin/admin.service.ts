@@ -2190,151 +2190,17 @@ export class AdminService {
   // ==========================================
   // ROLE AND PERMISSION CRUD OPERATIONS
   // ==========================================
-  async getRBACData() {
-    const roles = await prisma.role.findMany({
-      include: {
-        permissions: { include: { permission: true } },
-      },
-    })
-    const permissions = await prisma.permission.findMany()
-
-    return { roles, permissions }
-  }
-
-  async createRole(adminId: string, data: any, context?: ServiceContext) {
-    const admin = await prisma.user.findUnique({ where: { id: adminId } })
-
-    // Create Role and its Permission mapping
-    const role = await prisma.role.create({
-      data: {
-        name: data.name,
-        description: data.description,
-      },
-    })
-
-    if (data.permissions && Array.isArray(data.permissions)) {
-      const permissionRecords = await prisma.permission.findMany({
-        where: { name: { in: data.permissions } },
-      })
-
-      await prisma.rolePermission.createMany({
-        data: permissionRecords.map((p) => ({
-          roleId: role.id,
-          permissionId: p.id,
-        })),
-      })
-    }
-
-    await PermissionCacheManager.invalidateAll()
-
-    EventBus.publish("AuditCreated", {
-      ...context,
-      operatorId: adminId,
-      operatorEmail: admin?.email,
-      category: "ADMIN",
-      action: "CREATE_ROLE",
-      entity: "Role",
-      entityId: role.id,
-      newValue: { name: role.name, permissions: data.permissions },
-    })
-
-    return role
-  }
-
-  async updateRole(adminId: string, roleId: string, data: any, context?: ServiceContext) {
-    const admin = await prisma.user.findUnique({ where: { id: adminId } })
-
-    const role = await prisma.role.findUnique({ where: { id: roleId } })
-    if (!role) {
-      throw new Error("Role profile not found")
-    }
-
-    const updated = await prisma.role.update({
-      where: { id: roleId },
-      data: {
-        description: data.description || undefined,
-      },
-    })
-
-    if (data.permissions && Array.isArray(data.permissions)) {
-      const permissionRecords = await prisma.permission.findMany({
-        where: { name: { in: data.permissions } },
-      })
-
-      await prisma.$transaction(async (tx) => {
-        await tx.rolePermission.deleteMany({ where: { roleId } })
-        await tx.rolePermission.createMany({
-          data: permissionRecords.map((p) => ({
-            roleId,
-            permissionId: p.id,
-          })),
-        })
-      })
-    }
-
-    await PermissionCacheManager.invalidateAll()
-
-    EventBus.publish("AuditCreated", {
-      ...context,
-      operatorId: adminId,
-      operatorEmail: admin?.email,
-      category: "ADMIN",
-      action: "UPDATE_ROLE",
-      entity: "Role",
-      entityId: roleId,
-      newValue: { permissions: data.permissions },
-    })
-
-    return updated
-  }
-
-  // Roles the platform's own authorization model depends on -- deleting any
-  // of these would break RBAC checks or the invitation/onboarding flows that
-  // assume they exist. Never deletable through the admin UI.
-  private static readonly SYSTEM_ROLES = ["Candidate", "Recruiter", "Moderator", "Admin", "Super Admin", "Support Executive"]
-
-  async deleteRole(adminId: string, roleId: string, context?: ServiceContext) {
-    const role = await prisma.role.findUnique({ where: { id: roleId } })
-    if (!role) {
-      throw new Error("Role not found")
-    }
-
-    if (AdminService.SYSTEM_ROLES.includes(role.name)) {
-      throw new Error(`Cannot delete built-in system role "${role.name}". It is required for the platform's core authorization model.`)
-    }
-
-    // Guard against accidental lockout: refuse to delete a role that is
-    // still actively assigned to users -- force an explicit reassignment first.
-    const assignedCount = await prisma.userRole.count({ where: { roleId } })
-    if (assignedCount > 0) {
-      throw new Error(`Cannot delete role "${role.name}": it is currently assigned to ${assignedCount} user(s). Reassign or remove those role assignments first.`)
-    }
-
-    const admin = await prisma.user.findUnique({ where: { id: adminId } })
-
-    await prisma.role.delete({ where: { id: roleId } })
-    await PermissionCacheManager.invalidateAll()
-
-    EventBus.publish("AuditCreated", {
-      ...context,
-      operatorId: adminId,
-      operatorEmail: admin?.email,
-      category: "ADMIN",
-      action: "DELETE_ROLE",
-      entity: "Role",
-      entityId: roleId,
-      oldValue: { name: role.name },
-    })
-
-    return { success: true }
-  }
-
-  // NOTE: role assignment for this route (POST /admins/users/:id/roles) is
-  // now handled by RbacService.assignRolesToUser (see admin.controller.ts's
-  // assignUserRoles handler) -- that version adds the privilege-escalation
-  // and last-Super-Admin guards this one never had. Kept removed rather than
-  // left as unused dead code so nothing can accidentally get re-wired to
-  // this unguarded path in the future.
+  // getRBACData/createRole/updateRole/deleteRole used to live here,
+  // duplicating rbac.service.ts's RbacService with weaker guards in
+  // deleteRole's case (no protection against deleting a built-in system
+  // role or one still assigned to users). RolesPermissions.tsx and
+  // AdminManagement.tsx now call /api/v1/rbac/* (RbacService) directly for
+  // all of this, so this copy is removed rather than kept as unused dead
+  // code that could silently regain the weaker guards if ever re-wired.
+  //
+  // NOTE: role assignment for POST /users/:id/roles is, for the same
+  // reason, also handled by RbacService.assignRolesToUser exclusively now
+  // (see rbac.routes.ts) rather than a second AdminService implementation.
 
   // ==========================================
   // GLOBAL ADMIN SEARCH

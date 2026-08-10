@@ -42,6 +42,19 @@ async function main() {
     { name: "manage:roles" },
     { name: "manage:permissions" },
     { name: "manage:support-tickets" },
+    // Five admin-tier route groups that previously had no permission
+    // describing them at all -- stuck on hardcoded role checks even though
+    // every other admin-tier action in the app is toggleable from the RBAC
+    // Matrix. Seeded below to exactly the roles that already pass each
+    // route's existing requireRole gate, so this is a zero-regression
+    // baseline; requirePermission is LAYERED alongside those role gates
+    // (admin.routes.ts), not a replacement, so nothing gains access it
+    // didn't already have.
+    { name: "verify:recruiters" },
+    { name: "manage:perks" },
+    { name: "manage:invitations" },
+    { name: "manage:admins" },
+    { name: "manage:platform-settings" },
   ]
   console.log("Seeding Permissions...")
   const permissionInstances: Record<string, any> = {}
@@ -59,16 +72,31 @@ async function main() {
   const rbacMappings: Record<string, string[]> = {
     "Candidate": ["read:job"],
     "Recruiter": ["create:job", "read:job", "update:job", "delete:job"],
-    "Moderator": ["read:job", "approve:job", "reject:job", "manage:companies"],
+    // manage:perks added alongside the existing three -- /perks* has no
+    // extra gate beyond the blanket admin-tier check today, so Moderator
+    // (like every admin-tier role) already reaches it.
+    "Moderator": ["read:job", "approve:job", "reject:job", "manage:companies", "manage:perks"],
     "Admin": [
       "create:job", "read:job", "update:job", "delete:job", "approve:job", "reject:job",
       "manage:users", "manage:companies", "manage:reports", "manage:notifications", "manage:features",
-      "manage:support-tickets"
+      "manage:support-tickets",
+      // Matches USER_MGMT_ROLES (Admin, Super Admin) on
+      // admin.routes.ts's recruiter-verify, invitations, and
+      // platform-settings routes -- Admin already passes those role gates
+      // today, so this doesn't grant anything new.
+      "verify:recruiters", "manage:invitations", "manage:platform-settings",
+      // /perks* has no extra gate beyond the blanket admin-tier check
+      // today, so Admin (like every admin-tier role) already reaches it.
+      "manage:perks",
     ],
     "Super Admin": [
       "create:job", "read:job", "update:job", "delete:job", "approve:job", "reject:job",
       "manage:users", "manage:companies", "manage:reports", "manage:notifications", "manage:features",
-      "manage:roles", "manage:permissions", "manage:support-tickets"
+      "manage:roles", "manage:permissions", "manage:support-tickets",
+      "verify:recruiters", "manage:invitations", "manage:platform-settings", "manage:perks",
+      // Admin Management (/admins/management/admins*) has always been
+      // requireSuperAdmin-only, end to end -- matches that exactly.
+      "manage:admins",
     ],
     // Previously entirely absent from this matrix -- Support Executive had
     // zero permissions in the RBAC table even though route-level requireRole
@@ -76,7 +104,11 @@ async function main() {
     // admin-tier endpoint. That's a real gap if this codebase ever tightens
     // any of those routes from requireRole to requirePermission, so give it
     // the one permission that actually describes its job.
-    "Support Executive": ["read:job", "manage:support-tickets"],
+    // manage:perks added for the same reason as manage:support-tickets --
+    // /perks* has no extra gate beyond the blanket admin-tier check, so
+    // Support Executive (like every admin-tier role) already reaches it
+    // today.
+    "Support Executive": ["read:job", "manage:support-tickets", "manage:perks"],
   }
 
   for (const [roleName, perms] of Object.entries(rbacMappings)) {

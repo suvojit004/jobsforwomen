@@ -235,23 +235,37 @@ export const AdminApi = {
     return res?.data
   },
 
+  // RBAC (Roles & Permissions Matrix, and the role picker on Admin
+  // Management) now calls /api/v1/rbac/* directly -- the real, fully
+  // permission-gated implementation (rbac.service.ts) -- rather than the
+  // parallel /api/v1/admins/rbac/* copy that used to live on admin.routes.ts
+  // and has since been removed. That router has no single combined
+  // "matrix" endpoint, so getRBAC composes {roles, permissions} from its
+  // two list endpoints client-side instead of adding a redundant one
+  // server-side.
   async getRBAC() {
-    const res = await apiClient.get("/api/v1/admins/rbac")
-    return res?.data || { roles: [], permissions: [] }
+    const [rolesRes, permissionsRes] = await Promise.all([
+      apiClient.get("/api/v1/rbac/roles"),
+      apiClient.get("/api/v1/rbac/permissions"),
+    ])
+    return {
+      roles: rolesRes?.data?.roles || [],
+      permissions: permissionsRes?.data?.permissions || [],
+    }
   },
 
   async createRole(name: string, permissionNames: string[] = []) {
-    const res = await apiClient.post("/api/v1/admins/rbac/roles", { name, permissions: permissionNames })
+    const res = await apiClient.post("/api/v1/rbac/roles", { name, permissionNames })
     return res?.data
   },
 
   async updateRolePermissions(roleId: string, permissionNames: string[]) {
-    const res = await apiClient.put(`/api/v1/admins/rbac/roles/${roleId}`, { permissions: permissionNames })
+    const res = await apiClient.post(`/api/v1/rbac/roles/${roleId}/permissions`, { permissionNames })
     return res?.data
   },
 
   async deleteRole(roleId: string) {
-    const res = await apiClient.delete(`/api/v1/admins/rbac/roles/${roleId}`)
+    const res = await apiClient.delete(`/api/v1/rbac/roles/${roleId}`)
     return res?.data
   },
 
@@ -282,11 +296,13 @@ export const AdminApi = {
     return res?.data
   },
 
-  // Multi-role assign/replace -- reuses the existing hardened RBAC endpoint
-  // (POST /admins/users/:id/roles, requireSuperAdmin-gated, delegates to
-  // RbacService.assignRolesToUser server-side).
+  // Multi-role assign/replace -- calls the real RBAC endpoint directly
+  // (POST /api/v1/rbac/users/:id/roles, requireSuperAdmin + manage:users
+  // gated, backed by RbacService.assignRolesToUser). Used to go through a
+  // parallel route on admin.routes.ts that forwarded to the same service;
+  // that forwarding route was removed, so this calls it directly now.
   async assignAdminRoles(userId: string, roleIds: string[]) {
-    const res = await apiClient.post(`/api/v1/admins/users/${userId}/roles`, { roleIds })
+    const res = await apiClient.post(`/api/v1/rbac/users/${userId}/roles`, { roleIds })
     return res?.data
   },
 

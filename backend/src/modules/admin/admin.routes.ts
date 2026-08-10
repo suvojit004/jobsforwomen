@@ -5,34 +5,14 @@ import {
   requireActiveUser,
   requireSuperAdmin,
   requirePermission,
+  requireAll,
 } from "../rbac/rbac.middleware"
 import { adminRateLimiter } from "../../shared/middleware/rateLimit.middleware"
 import { enforceAdminSessionTimeout, enforceTwoFactorPolicy } from "../../shared/middleware/securityPolicy.middleware"
 import { ADMIN_TIER_ROLES } from "../../shared/constants/roles"
-import type { Request, Response, NextFunction, RequestHandler } from "express"
 
 const router = Router()
 const controller = new AdminController()
-
-// Composes several Express middlewares so a route can require ALL of them
-// to pass (each middleware in this codebase either calls next() with no
-// error on success, or sends its own 4xx response directly and never calls
-// next() at all -- see requireRole/requirePermission -- so a bare
-// short-circuiting sequence is all that's needed, no error-first plumbing).
-// Used below to layer a real requirePermission() check alongside an
-// existing, more specific role-name gate without loosening it.
-function requireAll(...middlewares: RequestHandler[]): RequestHandler {
-  return (req: Request, res: Response, next: NextFunction) => {
-    let i = 0
-    const run = (err?: any) => {
-      if (err) return next(err)
-      if (i >= middlewares.length) return next()
-      const mw = middlewares[i++]
-      mw(req, res, run)
-    }
-    run()
-  }
-}
 
 // Every route below requires an admin-tier role -- the service layer fetches
 // `admin`/`adminId` only for audit attribution, it doesn't itself verify
@@ -85,10 +65,13 @@ router.get("/search", controller.globalSearch)
 // Real permission-table enforcement (RBAC Matrix, see RolesPermissions.tsx)
 // starts below. Applied only where a permission cleanly and unambiguously
 // maps to one route's real job -- routes with no matching seeded permission
-// (dashboard/health/search/perks/invitations/admin-management/platform-
-// settings/audits/personal notification inbox) are deliberately left on
-// their existing role-based gates rather than force-fitting a permission
-// that doesn't actually describe them.
+// (dashboard/health/search/audits/personal notification inbox) are
+// deliberately left on their existing role-based gates rather than
+// force-fitting a permission that doesn't actually describe them.
+// (perks/invitations/admin-management/platform-settings used to be in this
+// deliberately-unmapped list too -- manage:perks/manage:invitations/
+// manage:admins/manage:platform-settings were added specifically to close
+// that gap, see the sections below.)
 //
 // Two patterns used below:
 //   REPLACE -- the permission IS the entire, sole intended boundary for
@@ -165,10 +148,13 @@ router.delete("/companies/:id", requireCompanyManagementRole, controller.deleteC
 
 // Company Perk Requests (Parts 6/7/12 -- deliberately a separate module from
 // Company Registration Requests above; never mixed into the same queue).
-// No seeded permission describes "perks" specifically, so this stays on the
-// blanket admin-tier gate rather than force-fitting an unrelated permission.
-router.get("/perks", controller.listPerkRequests)
-router.post("/perks/:id/review", controller.reviewPerkRequest)
+// REPLACE: manage:perks is seeded to all four admin-tier roles today (the
+// same set the blanket gate above already let through), so this is a
+// zero-regression swap from "any admin-tier role" to "any admin-tier role
+// that holds manage:perks" -- which today is everyone, but now genuinely
+// depends on the RBAC Matrix rather than being unconditional.
+router.get("/perks", requirePermission(["manage:perks"]), controller.listPerkRequests)
+router.post("/perks/:id/review", requirePermission(["manage:perks"]), controller.reviewPerkRequest)
 
 // Job listings moderation (Admin, Super Admin, Moderator).
 // REPLACE: read:job is seeded to all four admin-tier roles (no regression);
@@ -189,47 +175,47 @@ const requireUserManagementRole = requireAll(requireRole(USER_MGMT_ROLES), requi
 router.get("/users", controller.listUsers)
 router.put("/users/:id/status", requireUserManagementRole, controller.updateUserStatus)
 router.delete("/users/:id", requireUserManagementRole, controller.deleteUser)
-router.put("/recruiters/:id/verify", requireRole(USER_MGMT_ROLES), controller.verifyRecruiter)
+// LAYER: verify:recruiters is seeded to exactly Admin + Super Admin, same as
+// USER_MGMT_ROLES -- zero regression, but this previously had no permission
+// concept at all despite being as much an admin-tier action as everything
+// else on this page.
+router.put("/recruiters/:id/verify", requireAll(requireRole(USER_MGMT_ROLES), requirePermission(["verify:recruiters"])), controller.verifyRecruiter)
 router.post("/users/:id/action/:action", requireUserManagementRole, controller.userAdministrativeAction)
 
-// Employee invitations (Admin, Super Admin only)
-router.get("/invitations", requireRole(USER_MGMT_ROLES), controller.listInvitations)
-router.post("/invitations", requireRole(USER_MGMT_ROLES), controller.inviteEmployee)
-router.post("/invitations/:id/resend", requireRole(USER_MGMT_ROLES), controller.resendInvitation)
-router.post("/invitations/:id/cancel", requireRole(USER_MGMT_ROLES), controller.cancelInvitation)
-router.post("/invitations/:id/expire", requireRole(USER_MGMT_ROLES), controller.expireInvitation)
+// Employee invitations (Admin, Super Admin only).
+// LAYER: manage:invitations is seeded to exactly Admin + Super Admin, same
+// as USER_MGMT_ROLES -- zero regression today.
+const requireInvitationManagementRole = requireAll(requireRole(USER_MGMT_ROLES), requirePermission(["manage:invitations"]))
+router.get("/invitations", requireInvitationManagementRole, controller.listInvitations)
+router.post("/invitations", requireInvitationManagementRole, controller.inviteEmployee)
+router.post("/invitations/:id/resend", requireInvitationManagementRole, controller.resendInvitation)
+router.post("/invitations/:id/cancel", requireInvitationManagementRole, controller.cancelInvitation)
+router.post("/invitations/:id/expire", requireInvitationManagementRole, controller.expireInvitation)
 
-// High Privilege Role & Permission Administration.
-// REPLACE: manage:roles is the entire, sole reason this permission exists --
-// it's seeded to exactly Super Admin today (identical to requireSuperAdmin,
-// so zero regression), but now it's the RBAC Matrix itself that decides who
-// can manage roles, not a hardcoded name. This is also what fixes the
-// visible bug in RolesPermissions.tsx: before this change, toggling
-// "manage:roles" on for any other role had no real effect whatsoever,
-// because this exact route -- the one the toggle itself calls
-// (PUT /rbac/roles/:id) -- only ever checked requireSuperAdmin.
-// GET stays ungated by permission: viewing the matrix has always been open
-// to every admin-tier role and nobody should lose that just to look at it.
-router.get("/rbac", controller.getRBACData)
-router.post("/rbac/roles", requirePermission(["manage:roles"]), controller.createRole)
-router.put("/rbac/roles/:id", requirePermission(["manage:roles"]), controller.updateRole)
-router.delete("/rbac/roles/:id", requirePermission(["manage:roles"]), controller.deleteRole)
-// LAYER (not replace): manage:users is also seeded to Admin, but granting a
-// role to a user -- which can include granting Super Admin itself -- stays
-// a deliberately narrower, Super-Admin-only action than general user
-// management. RbacService.assignRolesToUser (which this delegates to) also
-// independently guards against privilege escalation and removing the last
-// Super Admin.
-router.post("/users/:id/roles", requireAll(requireSuperAdmin, requirePermission(["manage:users"])), controller.assignUserRoles)
+// High Privilege Role & Permission Administration, and user-role assignment,
+// used to have a full parallel implementation here (GET /rbac, POST/PUT/
+// DELETE /rbac/roles, POST /users/:id/roles) alongside the already-real,
+// already-permission-gated /api/v1/rbac/* router (rbac.routes.ts) -- which
+// the frontend never actually called. That duplication risked the two
+// drifting apart (the guards on role deletion, for one, only ever existed
+// on this copy). RolesPermissions.tsx and AdminManagement.tsx now call
+// /api/v1/rbac/* directly for all of this instead, so it's removed from
+// here rather than kept as a second, unused implementation.
 
 // Admin Management module (Super Admin only, end-to-end -- create/list
 // administrator accounts and revoke a single role without recreating the
 // user; Suspend/Activate/Delete/Assign-multiple-roles reuse the existing
 // USER_MGMT_ROLES + requireSuperAdmin routes above, per the spec's
 // "uses reusable services/components" requirement).
-router.get("/management/admins", requireSuperAdmin, controller.listAdmins)
-router.post("/management/admins", requireSuperAdmin, controller.createAdmin)
-router.delete("/management/admins/:id/roles/:roleName", requireSuperAdmin, controller.removeAdminRole)
+// LAYER: manage:admins is seeded to exactly Super Admin, identical to
+// requireSuperAdmin -- zero regression, but this module (arguably the most
+// sensitive one on the whole admin surface, since it creates/edits other
+// admin-tier accounts) previously had no permission concept describing it
+// at all.
+const requireAdminManagementRole = requireAll(requireSuperAdmin, requirePermission(["manage:admins"]))
+router.get("/management/admins", requireAdminManagementRole, controller.listAdmins)
+router.post("/management/admins", requireAdminManagementRole, controller.createAdmin)
+router.delete("/management/admins/:id/roles/:roleName", requireAdminManagementRole, controller.removeAdminRole)
 
 // Platform settings & critical Feature Flags (Enforces Super Admin Safeguards).
 // LAYER: manage:features is also seeded to Admin, but flipping a
@@ -251,8 +237,10 @@ router.delete("/feature-flags/:id", requireFeatureFlagManagementRole, controller
 // without a code deploy). Every admin-tier role can view it; unlike
 // security-settings above, Admin (not just Super Admin) can also change it,
 // same USER_MGMT_ROLES bar as the User Management section.
+// LAYER: manage:platform-settings is seeded to exactly Admin + Super Admin,
+// same as USER_MGMT_ROLES -- zero regression today.
 router.get("/platform-settings", controller.getPlatformSettings)
-router.put("/platform-settings", requireRole(USER_MGMT_ROLES), controller.updatePlatformSettings)
+router.put("/platform-settings", requireAll(requireRole(USER_MGMT_ROLES), requirePermission(["manage:platform-settings"])), controller.updatePlatformSettings)
 
 // Personal preferences and notifications for Admin
 router.get("/settings", controller.getAdminSettings)
