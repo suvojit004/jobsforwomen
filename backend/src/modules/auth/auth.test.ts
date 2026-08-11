@@ -360,7 +360,7 @@ describe("Authentication Routes Integration Tests (Phase 3)", () => {
         {
           role: {
             name: "Recruiter",
-            permissions: [{ permission: { name: "create:job" } }],
+            permissions: [{ permission: { name: "manage:job" } }],
           },
         },
       ],

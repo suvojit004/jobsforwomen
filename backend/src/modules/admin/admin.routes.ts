@@ -158,12 +158,13 @@ router.post("/perks/:id/review", requirePermission(["manage:perks"]), controller
 
 // Job listings moderation (Admin, Super Admin, Moderator).
 // REPLACE: read:job is seeded to all four admin-tier roles (no regression);
-// approve:job + reject:job are seeded to exactly Admin/Super Admin/Moderator
-// -- same gap-closing rationale as Company Verification above (the section
-// comment always said Moderator-and-up only, the code let Support Executive
-// through too).
+// moderate:job (formerly two separate permissions, approve:job + reject:job,
+// consolidated since nothing ever held one without the other) is seeded to
+// exactly Admin/Super Admin/Moderator -- same gap-closing rationale as
+// Company Verification above (the section comment always said
+// Moderator-and-up only, the code let Support Executive through too).
 router.get("/jobs", requirePermission(["read:job"]), controller.listJobs)
-router.post("/jobs/:id/moderate", requirePermission(["approve:job", "reject:job"]), controller.moderateJob)
+router.post("/jobs/:id/moderate", requirePermission(["moderate:job"]), controller.moderateJob)
 
 // User Management (Admin, Super Admin only -- Moderator/Support Executive
 // can view/moderate content but must not be able to suspend/ban accounts

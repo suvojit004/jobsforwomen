@@ -61,22 +61,24 @@ router.put("/settings", controller.updateSettings)
 // requireApprovedCompany (a no-op for any non-Recruiter, since it just
 // bypasses -- see rbac.middleware.ts) and requireOwnership (which has
 // nothing to check yet on create). Any authenticated, active user could
-// technically reach these. create/read/update/delete:job are seeded to
-// exactly Recruiter (+ Admin/Super Admin, who don't route through here in
-// practice), so wiring them in is a real, zero-regression hardening for the
-// mutating routes. GET is left with read:job too for consistency, though
-// note Candidate also holds read:job (for browsing public listings on the
-// candidate side) -- this doesn't add protection against a Candidate
-// specifically reaching a recruiter's own job list, that gap is a
-// limitation of the current permission model, not something introduced here.
+// technically reach these. manage:job (create/update/delete, consolidated
+// into one permission -- nothing ever held one without the others) and
+// read:job are seeded to exactly Recruiter (+ Admin/Super Admin, who don't
+// route through here in practice), so wiring them in is a real,
+// zero-regression hardening for the mutating routes. GET is left with
+// read:job too for consistency, though note Candidate also holds read:job
+// (for browsing public listings on the candidate side) -- this doesn't add
+// protection against a Candidate specifically reaching a recruiter's own
+// job list, that gap is a limitation of the current permission model, not
+// something introduced here.
 router.get("/jobs", requireApprovedCompany, requirePermission(["read:job"]), controller.getJobs)
 router.get("/jobs/:id", requireApprovedCompany, requirePermission(["read:job"]), requireOwnership("Job"), controller.getJobById)
-router.post("/jobs", requireApprovedCompany, requirePermission(["create:job"]), controller.postJob)
-router.put("/jobs/:id", requireApprovedCompany, requirePermission(["update:job"]), requireOwnership("Job"), controller.updateJob)
-router.post("/jobs/:id/duplicate", requireApprovedCompany, requirePermission(["create:job"]), requireOwnership("Job"), controller.duplicateJob)
-router.post("/jobs/:id/archive", requireApprovedCompany, requirePermission(["update:job"]), requireOwnership("Job"), controller.archiveJob)
-router.post("/jobs/:id/lifecycle/:action", requireApprovedCompany, requirePermission(["update:job"]), requireOwnership("Job"), controller.lifecycleJob)
-router.delete("/jobs/:id", requireApprovedCompany, requirePermission(["delete:job"]), requireOwnership("Job"), controller.deleteJob)
+router.post("/jobs", requireApprovedCompany, requirePermission(["manage:job"]), controller.postJob)
+router.put("/jobs/:id", requireApprovedCompany, requirePermission(["manage:job"]), requireOwnership("Job"), controller.updateJob)
+router.post("/jobs/:id/duplicate", requireApprovedCompany, requirePermission(["manage:job"]), requireOwnership("Job"), controller.duplicateJob)
+router.post("/jobs/:id/archive", requireApprovedCompany, requirePermission(["manage:job"]), requireOwnership("Job"), controller.archiveJob)
+router.post("/jobs/:id/lifecycle/:action", requireApprovedCompany, requirePermission(["manage:job"]), requireOwnership("Job"), controller.lifecycleJob)
+router.delete("/jobs/:id", requireApprovedCompany, requirePermission(["manage:job"]), requireOwnership("Job"), controller.deleteJob)
 
 // Applicants Pipeline Management (Requires approved company)
 router.get("/applications", requireApprovedCompany, controller.getCompanyApplications)

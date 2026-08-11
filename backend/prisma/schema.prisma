@@ -197,7 +197,7 @@ model Role {
 
 model Permission {
   id    String           @id @default(uuid())
-  name  String           @unique // create:job, moderate:job, verify:company, manage:users etc
+  name  String           @unique // manage:job, moderate:job, manage:users etc
   roles RolePermission[]
 }
 

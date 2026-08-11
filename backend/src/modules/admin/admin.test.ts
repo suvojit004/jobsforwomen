@@ -145,15 +145,15 @@ describe("Admin Module Integration Tests (Phase 7)", () => {
     // mocked cache has to return each token's real seeded permission set.
     const ROLE_PERMISSIONS: Record<string, string[]> = {
       "super-admin-id": [
-        "create:job", "read:job", "update:job", "delete:job", "approve:job", "reject:job",
+        "manage:job", "read:job", "moderate:job",
         "manage:users", "manage:companies", "manage:reports", "manage:notifications",
         "manage:features", "manage:support-tickets", "manage:roles", "manage:permissions",
         "verify:recruiters", "manage:invitations", "manage:platform-settings", "manage:perks",
         "manage:admins",
       ],
-      "moderator-id": ["read:job", "approve:job", "reject:job", "manage:companies", "manage:perks"],
+      "moderator-id": ["read:job", "moderate:job", "manage:companies", "manage:perks"],
       "plain-admin-id": [
-        "create:job", "read:job", "update:job", "delete:job", "approve:job", "reject:job",
+        "manage:job", "read:job", "moderate:job",
         "manage:users", "manage:companies", "manage:reports", "manage:notifications",
         "manage:features", "manage:support-tickets",
         "verify:recruiters", "manage:invitations", "manage:platform-settings", "manage:perks",

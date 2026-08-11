@@ -1,5 +1,5 @@
-import { Fragment, useEffect, useState, useCallback } from "react"
-import { Shield, RefreshCw, Check, X, Info, Plus, Users } from "lucide-react"
+import { Fragment, useEffect, useMemo, useState, useCallback } from "react"
+import { Shield, RefreshCw, Check, Plus, Users, ChevronDown, ChevronRight, Search, Info } from "lucide-react"
 import { DashboardCard } from "@/components/shared/DashboardCard"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -19,24 +19,28 @@ interface ApiRole {
 // Candidate and Recruiter are base account types, not admin-tier access
 // policy (see backend/src/shared/constants/roles.ts's ADMIN_TIER_ROLES,
 // which deliberately excludes them) -- nobody realistically reconfigures
-// their permission set from this screen. Shown as a read-only reference
-// below the editable matrix instead of occupying two of six columns in it.
+// their permission set from this screen. Shown as a collapsed, read-only
+// reference below the editor instead of a second always-visible table.
 const BASE_ROLE_NAMES = new Set(["Candidate", "Recruiter"])
 
 // Human-readable label + description for every seeded permission, plus
 // whether the backend actually checks it via requirePermission() at request
-// time. Every permission below is now wired into at least one real route
+// time. Every permission below is wired into at least one real route
 // (admin.routes.ts / recruiter.routes.ts / support.routes.ts) -- either
-// REPLACING a coarse role-name gate outright (job read/moderate, company
-// view/verify, role/permission CRUD, a recruiter's own job CRUD, support
-// ticket status), or LAYERED as an additional AND-condition alongside an
-// existing, more specific role gate for destructive/sensitive actions
-// (suspend/delete a user or company, assign a role, flip a feature flag,
-// export the full reports CSV) so today's explicit role boundaries can only
-// get narrower, never wider, than before. manage:notifications is the one
-// exception -- disclosed honestly below rather than force-mapped onto an
-// admin's own personal notification inbox, which every admin-tier role
+// REPLACING a coarse role-name gate outright, or LAYERED as an additional
+// AND-condition alongside an existing, more specific role gate for
+// destructive/sensitive actions, so today's explicit role boundaries can
+// only get narrower, never wider, than before. manage:notifications is the
+// one exception -- disclosed honestly below rather than force-mapped onto
+// an admin's own personal notification inbox, which every admin-tier role
 // needs regardless of any permission.
+//
+// manage:job and moderate:job were previously three and two separate
+// permissions respectively (create/update/delete:job, approve/reject:job).
+// No role ever held one of a group without the others -- every route that
+// checked them required all of them together anyway -- so they're
+// consolidated here into one toggle each, matching what the backend now
+// actually checks.
 interface PermissionMeta {
   label: string
   description: string
@@ -46,11 +50,11 @@ interface PermissionMeta {
 }
 
 const PERMISSION_META: Record<string, PermissionMeta> = {
-  "create:job": {
-    label: "Create Jobs",
-    description: "Post new job listings on behalf of a company.",
+  "manage:job": {
+    label: "Manage Jobs",
+    description: "Create, edit, or delete job listings on behalf of a company.",
     enforced: true,
-    enforcedNote: "Gates POST /recruiters/jobs and .../jobs/:id/duplicate.",
+    enforcedNote: "Gates POST/PUT/DELETE on /recruiters/jobs* -- create, update, archive, lifecycle actions, duplicate, and delete. Consolidated from three separate permissions (create/update/delete:job) that were never granted independently of each other.",
     category: "Job Lifecycle",
   },
   "read:job": {
@@ -60,32 +64,11 @@ const PERMISSION_META: Record<string, PermissionMeta> = {
     enforcedNote: "Gates GET /recruiters/jobs, GET .../jobs/:id, and the admin job-moderation list (GET /admins/jobs). Note: Candidate also holds this permission (for browsing public listings), so it doesn't by itself stop a Candidate account from reaching a recruiter's own job list -- ownership checks handle that.",
     category: "Job Lifecycle",
   },
-  "update:job": {
-    label: "Edit Jobs",
-    description: "Modify an existing job listing.",
+  "moderate:job": {
+    label: "Moderate Jobs",
+    description: "Approve or reject a pending job submission.",
     enforced: true,
-    enforcedNote: "Gates PUT /recruiters/jobs/:id, .../jobs/:id/archive, and .../jobs/:id/lifecycle/:action.",
-    category: "Job Lifecycle",
-  },
-  "delete:job": {
-    label: "Delete Jobs",
-    description: "Permanently remove a job listing.",
-    enforced: true,
-    enforcedNote: "Gates DELETE /recruiters/jobs/:id.",
-    category: "Job Lifecycle",
-  },
-  "approve:job": {
-    label: "Approve Jobs",
-    description: "Approve a pending job submission for publishing.",
-    enforced: true,
-    enforcedNote: "Gates POST /admins/jobs/:id/moderate (together with reject:job -- this single endpoint handles both actions).",
-    category: "Job Lifecycle",
-  },
-  "reject:job": {
-    label: "Reject Jobs",
-    description: "Reject a pending job submission.",
-    enforced: true,
-    enforcedNote: "Gates POST /admins/jobs/:id/moderate (together with approve:job -- this single endpoint handles both actions).",
+    enforcedNote: "Gates POST /admins/jobs/:id/moderate (a single endpoint handles both approve and reject). Consolidated from two separate permissions (approve/reject:job) that were never granted independently of each other.",
     category: "Job Lifecycle",
   },
   "manage:users": {
@@ -195,14 +178,30 @@ function metaFor(permission: ApiPermission): PermissionMeta {
   return PERMISSION_META[permission.name] || { ...FALLBACK_META, label: permission.name }
 }
 
+function matchesSearch(permission: ApiPermission, meta: PermissionMeta, query: string): boolean {
+  if (!query.trim()) return true
+  const q = query.trim().toLowerCase()
+  return (
+    meta.label.toLowerCase().includes(q) ||
+    permission.name.toLowerCase().includes(q) ||
+    meta.description.toLowerCase().includes(q)
+  )
+}
+
 export function RolesPermissions() {
   const [roles, setRoles] = useState<ApiRole[]>([])
   const [permissions, setPermissions] = useState<ApiPermission[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [pendingCell, setPendingCell] = useState<string | null>(null)
+  const [pendingPermissionId, setPendingPermissionId] = useState<string | null>(null)
   const [newRoleName, setNewRoleName] = useState("")
   const [creatingRole, setCreatingRole] = useState(false)
+
+  const [selectedRoleId, setSelectedRoleId] = useState<string | null>(null)
+  const [searchQuery, setSearchQuery] = useState("")
+  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set())
+  const [showComparison, setShowComparison] = useState(false)
+  const [showBaseRoles, setShowBaseRoles] = useState(false)
 
   const load = useCallback(async () => {
     try {
@@ -223,11 +222,25 @@ export function RolesPermissions() {
     load()
   }, [load])
 
+  const adminRoles = useMemo(() => roles.filter((r) => !BASE_ROLE_NAMES.has(r.name)), [roles])
+  const baseRoles = useMemo(() => roles.filter((r) => BASE_ROLE_NAMES.has(r.name)), [roles])
+
+  // Keep a valid role selected as data loads/changes -- default to the
+  // first admin-tier role once one is available.
+  useEffect(() => {
+    if (adminRoles.length === 0) return
+    if (!selectedRoleId || !adminRoles.some((r) => r.id === selectedRoleId)) {
+      setSelectedRoleId(adminRoles[0].id)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [adminRoles.map((r) => r.id).join(",")])
+
+  const selectedRole = adminRoles.find((r) => r.id === selectedRoleId) || null
+
   const hasPermission = (role: ApiRole, permissionId: string) =>
     role.permissions.some((rp) => rp.permission.id === permissionId)
 
   const handleToggle = async (role: ApiRole, permission: ApiPermission) => {
-    const cellKey = `${role.id}:${permission.id}`
     const currentlyHas = hasPermission(role, permission.id)
     const nextNames = currentlyHas
       ? role.permissions.filter((rp) => rp.permission.id !== permission.id).map((rp) => rp.permission.name)
@@ -247,7 +260,7 @@ export function RolesPermissions() {
           : r
       )
     )
-    setPendingCell(cellKey)
+    setPendingPermissionId(permission.id)
 
     try {
       await AdminApi.updateRolePermissions(role.id, nextNames)
@@ -256,7 +269,7 @@ export function RolesPermissions() {
       setRoles(prevRoles)
       setError(`Failed to update "${permission.name}" for ${role.name}. You may not have Super Admin rights.`)
     } finally {
-      setPendingCell(null)
+      setPendingPermissionId(null)
     }
   }
 
@@ -277,83 +290,21 @@ export function RolesPermissions() {
     }
   }
 
-  const renderToggle = (role: ApiRole, permission: ApiPermission) => {
-    const val = hasPermission(role, permission.id)
-    const cellKey = `${role.id}:${permission.id}`
-    const isPending = pendingCell === cellKey
-
-    return (
-      <div
-        className={`flex justify-center cursor-pointer p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors w-max mx-auto ${
-          isPending ? "opacity-50 cursor-wait" : ""
-        }`}
-        onClick={() => !isPending && handleToggle(role, permission)}
-        title={`Toggle "${metaFor(permission).label}" for ${role.name}`}
-      >
-        {val ? (
-          <Check className="size-4 text-emerald-500 stroke-[3]" />
-        ) : (
-          <X className="size-4 text-slate-300 dark:text-slate-700 stroke-[2]" />
-        )}
-      </div>
-    )
+  const toggleCategory = (category: string) => {
+    setExpandedCategories((prev) => {
+      const next = new Set(prev)
+      if (next.has(category)) next.delete(category)
+      else next.add(category)
+      return next
+    })
   }
 
-  // Non-interactive twin of renderToggle for the read-only base-role
-  // reference table below -- same visual language, but no click handler and
-  // no hover affordance, so it doesn't look editable when it isn't.
-  const renderStatic = (role: ApiRole, permission: ApiPermission) => {
-    const val = hasPermission(role, permission.id)
-    return (
-      <div className="flex justify-center p-1 w-max mx-auto">
-        {val ? (
-          <Check className="size-4 text-emerald-500/70 stroke-[3]" />
-        ) : (
-          <X className="size-4 text-slate-250 dark:text-slate-800 stroke-[2]" />
-        )}
-      </div>
-    )
-  }
-
-  const adminRoles = roles.filter((r) => !BASE_ROLE_NAMES.has(r.name))
-  const baseRoles = roles.filter((r) => BASE_ROLE_NAMES.has(r.name))
+  const unenforcedPermissions = permissions.filter((p) => !metaFor(p).enforced)
 
   const groupedPermissions = CATEGORY_ORDER.map((category) => ({
     category,
     items: permissions.filter((p) => metaFor(p).category === category),
   })).filter((g) => g.items.length > 0)
-
-  const permissionRow = (permission: ApiPermission, roleList: ApiRole[], indicator: typeof renderToggle) => {
-    const meta = metaFor(permission)
-    return (
-      <tr key={permission.id} className="hover:bg-slate-50/30 dark:hover:bg-slate-900/10">
-        <td className="p-3.5 space-y-0.5">
-          <div
-            className="flex items-center gap-1.5 w-max cursor-help"
-            title={`${meta.description}\n\n${meta.enforced ? "Enforced: " : "Not enforced: "}${meta.enforcedNote}`}
-          >
-            <Info className="size-3.5 text-slate-400 dark:text-slate-500 shrink-0" />
-            <span className="text-xs font-bold text-slate-900 dark:text-white">{meta.label}</span>
-            <span
-              className={`text-[8px] font-black uppercase tracking-wide px-1.5 py-0.5 rounded shrink-0 ${
-                meta.enforced
-                  ? "text-emerald-700 bg-emerald-100/70 dark:bg-emerald-950/30 dark:text-emerald-300"
-                  : "text-slate-450 bg-slate-100 dark:bg-slate-800 dark:text-slate-400"
-              }`}
-            >
-              {meta.enforced ? "Enforced" : "Not Enforced"}
-            </span>
-          </div>
-          <p className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 pl-5">{permission.name}</p>
-        </td>
-        {roleList.map((role) => (
-          <td key={role.id} className="p-3.5 text-center">
-            {indicator(role, permission)}
-          </td>
-        ))}
-      </tr>
-    )
-  }
 
   return (
     <div className="space-y-6 select-none animate-fadeIn">
@@ -365,7 +316,7 @@ export function RolesPermissions() {
             Roles & Permissions Matrix
           </h1>
           <p className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">
-            Define admin-tier Role-Based Access Control (RBAC) policies. Changes persist immediately per toggle.
+            Pick a role, then toggle what it can do. Changes persist immediately per toggle.
           </p>
         </div>
         <div className="flex gap-2 shrink-0">
@@ -388,6 +339,25 @@ export function RolesPermissions() {
         </div>
       )}
 
+      {/* Single enforcement disclosure, replacing a per-row badge on every
+          permission -- almost everything below is genuinely enforced now,
+          so repeating that on every row was just noise. Only call out the
+          exceptions. */}
+      {!isLoading && permissions.length > 0 && (
+        <div className="rounded-lg border border-slate-200 bg-slate-50/60 px-4 py-2.5 text-xs font-semibold text-slate-500 dark:border-slate-800 dark:bg-slate-950/20 dark:text-slate-400 flex items-start gap-1.5">
+          <Info className="size-3.5 shrink-0 mt-0.5 text-slate-400 dark:text-slate-500" />
+          {unenforcedPermissions.length === 0 ? (
+            <span>All {permissions.length} permissions below are actually enforced by the backend.</span>
+          ) : (
+            <span>
+              {permissions.length - unenforcedPermissions.length} of {permissions.length} permissions are enforced.
+              Not yet enforced: {unenforcedPermissions.map((p) => metaFor(p).label || p.name).join(", ")} -- hover its
+              row for why.
+            </span>
+          )}
+        </div>
+      )}
+
       {/* Add role */}
       <DashboardCard className="p-4 flex flex-col sm:flex-row gap-2 sm:items-center">
         <Input
@@ -407,10 +377,9 @@ export function RolesPermissions() {
         </Button>
       </DashboardCard>
 
-      {/* Grid Matrix Table -- Admin-tier roles only (Candidate/Recruiter are
-          base account types, not access policy -- see the read-only
-          reference table further down). */}
-      <DashboardCard className="p-4 overflow-hidden">
+      {/* Role-focused editor -- one role's permission checklist at a time,
+          instead of every role's toggles visible simultaneously. */}
+      <DashboardCard className="p-4">
         {isLoading ? (
           <div className="py-12 flex flex-col justify-center items-center gap-2">
             <span className="size-6 border-2 border-slate-350 border-t-[#6B2C91] rounded-full animate-spin dark:border-slate-800 dark:border-t-pink-300" />
@@ -418,96 +387,243 @@ export function RolesPermissions() {
               Fetching RBAC policies...
             </p>
           </div>
-        ) : permissions.length === 0 || adminRoles.length === 0 ? (
-          <p className="py-8 text-center text-xs font-bold text-slate-400">
-            No roles or permissions found.
-          </p>
+        ) : adminRoles.length === 0 || permissions.length === 0 ? (
+          <p className="py-8 text-center text-xs font-bold text-slate-400">No roles or permissions found.</p>
         ) : (
-          <div className="w-full overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/20">
-                  <th className="p-3 text-xs font-black text-slate-500 uppercase tracking-widest dark:text-slate-400">
-                    Permission
-                  </th>
-                  {adminRoles.map((role) => (
-                    <th
-                      key={role.id}
-                      className="p-3 text-xs font-black text-slate-550 uppercase tracking-widest text-center dark:text-slate-400 w-24"
+          <>
+            {/* Role tabs */}
+            <div className="flex flex-wrap gap-1.5 mb-4">
+              {adminRoles.map((role) => {
+                const isActive = role.id === selectedRoleId
+                return (
+                  <button
+                    key={role.id}
+                    onClick={() => setSelectedRoleId(role.id)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-black transition-colors ${
+                      isActive
+                        ? "bg-[#6B2C91] text-white dark:bg-pink-650"
+                        : "bg-slate-100 text-slate-500 hover:bg-slate-200 dark:bg-slate-900 dark:text-slate-400 dark:hover:bg-slate-800"
+                    }`}
+                  >
+                    {role.name}
+                    <span className={`ml-1.5 font-bold ${isActive ? "text-white/70" : "text-slate-400 dark:text-slate-500"}`}>
+                      {role.permissions.length}
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+
+            {/* Search filter */}
+            <div className="relative mb-4 max-w-xs">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-slate-350 dark:text-slate-600" />
+              <Input
+                placeholder="Filter permissions..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="text-xs h-9 pl-8"
+              />
+            </div>
+
+            {selectedRole &&
+              groupedPermissions.map((group) => {
+                const matches = group.items.filter((p) => matchesSearch(p, metaFor(p), searchQuery))
+                if (matches.length === 0) return null
+                const isExpanded = searchQuery.trim() ? true : expandedCategories.has(group.category)
+                const enabledCount = matches.filter((p) => hasPermission(selectedRole, p.id)).length
+
+                return (
+                  <div key={group.category} className="mb-2 border border-slate-100 dark:border-slate-850 rounded-lg overflow-hidden">
+                    <button
+                      onClick={() => toggleCategory(group.category)}
+                      className="w-full flex items-center justify-between px-3.5 py-2 bg-slate-50/80 dark:bg-slate-950/40 hover:bg-slate-100 dark:hover:bg-slate-900 transition-colors"
                     >
-                      {role.name}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-850">
-                {groupedPermissions.map((group) => (
-                  <Fragment key={group.category}>
-                    <tr className="bg-slate-50/80 dark:bg-slate-950/40">
-                      <td
-                        colSpan={1 + adminRoles.length}
-                        className="px-3.5 py-1.5 text-[9px] font-black uppercase tracking-widest text-[#6B2C91] dark:text-pink-300"
-                      >
+                      <span className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-[#6B2C91] dark:text-pink-300">
+                        {isExpanded ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
                         {group.category}
-                      </td>
-                    </tr>
-                    {group.items.map((permission) => permissionRow(permission, adminRoles, renderToggle))}
-                  </Fragment>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                      </span>
+                      <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500">
+                        {enabledCount}/{matches.length} enabled
+                      </span>
+                    </button>
+
+                    {isExpanded && (
+                      <div className="divide-y divide-slate-100 dark:divide-slate-850">
+                        {matches.map((permission) => {
+                          const meta = metaFor(permission)
+                          const checked = hasPermission(selectedRole, permission.id)
+                          const isPending = pendingPermissionId === permission.id
+                          return (
+                            <label
+                              key={permission.id}
+                              className={`flex items-start gap-3 px-3.5 py-2.5 cursor-pointer hover:bg-slate-50/50 dark:hover:bg-slate-900/20 transition-colors ${
+                                isPending ? "opacity-50 cursor-wait" : ""
+                              }`}
+                              title={`${meta.description}\n\n${meta.enforced ? "Enforced: " : "Not enforced: "}${meta.enforcedNote}`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                disabled={isPending}
+                                onChange={() => handleToggle(selectedRole, permission)}
+                                className="mt-0.5 size-4 rounded accent-[#6B2C91] cursor-pointer disabled:cursor-wait"
+                              />
+                              <span className="flex-1">
+                                <span className="block text-xs font-bold text-slate-900 dark:text-white">{meta.label}</span>
+                                <span className="block text-[10px] font-semibold text-slate-400 dark:text-slate-500">
+                                  {permission.name}
+                                </span>
+                              </span>
+                              {checked && <Check className="size-3.5 text-emerald-500 stroke-[3] shrink-0 mt-0.5" />}
+                            </label>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+          </>
         )}
       </DashboardCard>
 
-      {/* Read-only reference: what Candidate/Recruiter currently have,
-          without giving this screen a way to accidentally change base
-          account behavior alongside admin-tier policy. */}
-      {!isLoading && baseRoles.length > 0 && (
-        <DashboardCard className="p-4 overflow-hidden opacity-90">
-          <div className="px-2 pt-1 pb-3 flex items-center gap-1.5">
-            <Users className="size-3.5 text-slate-400 dark:text-slate-500" />
-            <h3 className="text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest">
-              Base Account Roles (Read-Only)
-            </h3>
-            <span className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 normal-case tracking-normal">
-              -- shown for reference, not reconfigured from this screen.
+      {/* Compare all roles -- collapsed by default. Read-only: this page's
+          one editing surface is the role-focused checklist above; this is
+          just for eyeballing everything at once. */}
+      {!isLoading && adminRoles.length > 0 && (
+        <DashboardCard className="p-0 overflow-hidden">
+          <button
+            onClick={() => setShowComparison((v) => !v)}
+            className="w-full flex items-center justify-between px-4 py-3 hover:bg-slate-50/50 dark:hover:bg-slate-900/20 transition-colors"
+          >
+            <span className="flex items-center gap-1.5 text-xs font-black text-slate-600 dark:text-slate-300">
+              {showComparison ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
+              Compare all roles
             </span>
-          </div>
-          <div className="w-full overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="border-b border-slate-100 dark:border-slate-800">
-                  <th className="p-3 text-xs font-black text-slate-500 uppercase tracking-widest dark:text-slate-400">
-                    Permission
-                  </th>
-                  {baseRoles.map((role) => (
-                    <th
-                      key={role.id}
-                      className="p-3 text-xs font-black text-slate-550 uppercase tracking-widest text-center dark:text-slate-400 w-24"
-                    >
-                      {role.name}
+            <span className="text-[10px] font-semibold text-slate-400 dark:text-slate-500">Read-only overview</span>
+          </button>
+          {showComparison && (
+            <div className="w-full overflow-x-auto border-t border-slate-100 dark:border-slate-850">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/20">
+                    <th className="p-2.5 text-[10px] font-black text-slate-500 uppercase tracking-widest dark:text-slate-400">
+                      Permission
                     </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-850">
-                {groupedPermissions.map((group) => (
-                  <Fragment key={group.category}>
-                    <tr>
-                      <td
-                        colSpan={1 + baseRoles.length}
-                        className="px-3.5 py-1.5 text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500"
+                    {adminRoles.map((role) => (
+                      <th
+                        key={role.id}
+                        className="p-2.5 text-[10px] font-black text-slate-550 uppercase tracking-widest text-center dark:text-slate-400 w-20"
                       >
-                        {group.category}
-                      </td>
-                    </tr>
-                    {group.items.map((permission) => permissionRow(permission, baseRoles, renderStatic))}
-                  </Fragment>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                        {role.name}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-850">
+                  {groupedPermissions.map((group) => (
+                    <Fragment key={group.category}>
+                      <tr className="bg-slate-50/50 dark:bg-slate-950/30">
+                        <td
+                          colSpan={1 + adminRoles.length}
+                          className="px-2.5 py-1 text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500"
+                        >
+                          {group.category}
+                        </td>
+                      </tr>
+                      {group.items.map((permission) => (
+                        <tr key={permission.id}>
+                          <td className="p-2.5 text-[11px] font-bold text-slate-700 dark:text-slate-300">
+                            {metaFor(permission).label || permission.name}
+                          </td>
+                          {adminRoles.map((role) => (
+                            <td key={role.id} className="p-2.5 text-center">
+                              {hasPermission(role, permission.id) ? (
+                                <span className="inline-block size-1.5 rounded-full bg-emerald-500" />
+                              ) : (
+                                <span className="inline-block size-1.5 rounded-full bg-slate-200 dark:bg-slate-800" />
+                              )}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </Fragment>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </DashboardCard>
+      )}
+
+      {/* Base account roles -- collapsed by default, out of the way of the
+          admin-tier editing task this page is actually for. */}
+      {!isLoading && baseRoles.length > 0 && (
+        <DashboardCard className="p-0 overflow-hidden opacity-90">
+          <button
+            onClick={() => setShowBaseRoles((v) => !v)}
+            className="w-full flex items-center justify-between px-4 py-3 hover:bg-slate-50/50 dark:hover:bg-slate-900/20 transition-colors"
+          >
+            <span className="flex items-center gap-1.5 text-xs font-black text-slate-500 dark:text-slate-400">
+              {showBaseRoles ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
+              <Users className="size-3.5" />
+              Base account roles (read-only)
+            </span>
+            <span className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 normal-case">
+              Candidate & Recruiter -- not reconfigured from this screen
+            </span>
+          </button>
+          {showBaseRoles && (
+            <div className="w-full overflow-x-auto border-t border-slate-100 dark:border-slate-850">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="border-b border-slate-100 dark:border-slate-800">
+                    <th className="p-2.5 text-[10px] font-black text-slate-500 uppercase tracking-widest dark:text-slate-400">
+                      Permission
+                    </th>
+                    {baseRoles.map((role) => (
+                      <th
+                        key={role.id}
+                        className="p-2.5 text-[10px] font-black text-slate-550 uppercase tracking-widest text-center dark:text-slate-400 w-20"
+                      >
+                        {role.name}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-850">
+                  {groupedPermissions.map((group) => (
+                    <Fragment key={group.category}>
+                      <tr>
+                        <td
+                          colSpan={1 + baseRoles.length}
+                          className="px-2.5 py-1 text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500"
+                        >
+                          {group.category}
+                        </td>
+                      </tr>
+                      {group.items.map((permission) => (
+                        <tr key={permission.id}>
+                          <td className="p-2.5 text-[11px] font-bold text-slate-700 dark:text-slate-300">
+                            {metaFor(permission).label || permission.name}
+                          </td>
+                          {baseRoles.map((role) => (
+                            <td key={role.id} className="p-2.5 text-center">
+                              {hasPermission(role, permission.id) ? (
+                                <span className="inline-block size-1.5 rounded-full bg-emerald-500/70" />
+                              ) : (
+                                <span className="inline-block size-1.5 rounded-full bg-slate-200 dark:bg-slate-800" />
+                              )}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </Fragment>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </DashboardCard>
       )}
     </div>

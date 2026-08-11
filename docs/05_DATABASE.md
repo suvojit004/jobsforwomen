@@ -44,7 +44,7 @@ erDiagram
 
 ### 2. Authorization (RBAC)
 * **`Role`**: Represents platform capabilities (e.g., `Super Admin`, `Recruiter`, `Candidate`).
-* **`Permission`**: Granular operations (e.g., `create:job`, `manage:users`).
+* **`Permission`**: Granular operations (e.g., `manage:job`, `manage:users`).
 * **`RolePermission`**: Bridge table connecting roles to permissions.
 * **`UserRole`**: Bridge table associating users with roles.
 
@@ -83,7 +83,7 @@ The schema uses foreign-key constraints to guarantee database integrity. Major c
 
 The seed script (`backend/src/database/seed.ts`) populates:
 1. **Roles**: `Candidate`, `Recruiter`, `Moderator`, `Admin`, `Super Admin`, and `Support Executive`.
-2. **Permissions**: Map actions (e.g., `approve:job`, `manage:users`, `manage:features`).
+2. **Permissions**: Map actions (e.g., `moderate:job`, `manage:users`, `manage:features`).
 3. **Role-Permission Joins**: Binds permissions to roles (RBAC matrix).
 4. **Platform Constants**: Seeds `Departments` (IT, Marketing, etc.) and `Industries` (Tech, Finance, etc.).
 5. **Default Admin**: Inserts the default Super Admin user `admin@jobsforwomen.info` (password `admin123`).

@@ -28,12 +28,16 @@ async function main() {
 
   // 2. Seed Permissions
   const permissions = [
-    { name: "create:job" },
+    // create:job/update:job/delete:job and approve:job/reject:job used to
+    // be seeded as separate permissions here. No role ever held one without
+    // the others in its group (requirePermission's AND semantics meant they
+    // were only ever checked/toggled together anyway), so they're
+    // consolidated into manage:job and moderate:job -- see the
+    // 20260811000000_consolidate_job_permissions migration, which renames
+    // the existing rows in place for any already-seeded database.
+    { name: "manage:job" },
     { name: "read:job" },
-    { name: "update:job" },
-    { name: "delete:job" },
-    { name: "approve:job" },
-    { name: "reject:job" },
+    { name: "moderate:job" },
     { name: "manage:users" },
     { name: "manage:companies" },
     { name: "manage:reports" },
@@ -71,13 +75,13 @@ async function main() {
   console.log("Seeding Role-Permission Joins...")
   const rbacMappings: Record<string, string[]> = {
     "Candidate": ["read:job"],
-    "Recruiter": ["create:job", "read:job", "update:job", "delete:job"],
+    "Recruiter": ["manage:job", "read:job"],
     // manage:perks added alongside the existing three -- /perks* has no
     // extra gate beyond the blanket admin-tier check today, so Moderator
     // (like every admin-tier role) already reaches it.
-    "Moderator": ["read:job", "approve:job", "reject:job", "manage:companies", "manage:perks"],
+    "Moderator": ["read:job", "moderate:job", "manage:companies", "manage:perks"],
     "Admin": [
-      "create:job", "read:job", "update:job", "delete:job", "approve:job", "reject:job",
+      "manage:job", "read:job", "moderate:job",
       "manage:users", "manage:companies", "manage:reports", "manage:notifications", "manage:features",
       "manage:support-tickets",
       // Matches USER_MGMT_ROLES (Admin, Super Admin) on
@@ -90,7 +94,7 @@ async function main() {
       "manage:perks",
     ],
     "Super Admin": [
-      "create:job", "read:job", "update:job", "delete:job", "approve:job", "reject:job",
+      "manage:job", "read:job", "moderate:job",
       "manage:users", "manage:companies", "manage:reports", "manage:notifications", "manage:features",
       "manage:roles", "manage:permissions", "manage:support-tickets",
       "verify:recruiters", "manage:invitations", "manage:platform-settings", "manage:perks",

@@ -140,11 +140,11 @@ describe("Role-Based Access Control Integration Tests (Phase 4)", () => {
   describe("Permission caching using Redis", () => {
     it("should read permissions from Redis cache if available", async () => {
       // Override mock implementation for this test case
-      mockRedis.get.mockResolvedValue(JSON.stringify(["read:job", "create:job"]))
+      mockRedis.get.mockResolvedValue(JSON.stringify(["read:job", "manage:job"]))
 
       const perms = await PermissionCacheManager.getUserPermissions("user-123")
 
-      expect(perms).toEqual(["read:job", "create:job"])
+      expect(perms).toEqual(["read:job", "manage:job"])
       expect(mockRedis.get).toHaveBeenCalledWith("user:permissions:user-123")
       expect(mockPrisma.user.findUnique).not.toHaveBeenCalled()
     })
