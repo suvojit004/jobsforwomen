@@ -125,6 +125,7 @@ export interface InterviewScheduledParams {
   mode?: string
   location?: string
   notes?: string
+  loginLink: string
 }
 
 // Issue 3 (Candidate Job Lifecycle spec): the generic recruiter status
@@ -140,6 +141,7 @@ export interface ApplicationStatusUpdateParams {
   statusHeading: string
   statusMessage: string
   notes?: string
+  loginLink: string
 }
 
 export interface OfferReleasedParams {
@@ -147,6 +149,7 @@ export interface OfferReleasedParams {
   jobTitle: string
   companyName: string
   offerDetails: string
+  loginLink: string
 }
 
 // ==========================================================================
@@ -452,7 +455,7 @@ export const EmailTemplates = {
           <p style="margin:0 0 4px; font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:0.3px; color:#94A3B8;">Notes from the recruiter</p>
           <p style="margin:0;">${params.notes}</p>
         </div>` : ""}
-        <p>Log in to your JobsForWomen account for full details.</p>
+        ${ctaButton(params.loginLink, "Log In to View")}
       `,
     }),
 
@@ -478,7 +481,7 @@ export const EmailTemplates = {
           <p style="margin:0 0 4px; font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:0.3px; color:#94A3B8;">Notes from the recruiter</p>
           <p style="margin:0;">${params.notes}</p>
         </div>` : ""}
-        <p>Log in to your JobsForWomen account to see the full details.</p>
+        ${ctaButton(params.loginLink, "Log In to View")}
       `,
     }),
 
@@ -493,7 +496,7 @@ export const EmailTemplates = {
           <p style="margin:0 0 4px; font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:0.3px; color:#94A3B8;">Offer Details</p>
           <p style="margin:0;">${params.offerDetails}</p>
         </div>
-        <p>Log in to your JobsForWomen account to review and respond.</p>
+        ${ctaButton(params.loginLink, "Log In to Respond")}
       `,
     }),
 

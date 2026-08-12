@@ -376,7 +376,8 @@ export class EmailService {
     mode?: string,
     notes?: string
   ): Promise<boolean> {
-    const html = EmailTemplates.interviewScheduled({ recipientName, jobTitle, companyName, scheduledAt, location, timezone, mode, notes })
+    const loginLink = `${frontendBaseUrl()}/auth/login`
+    const html = EmailTemplates.interviewScheduled({ recipientName, jobTitle, companyName, scheduledAt, location, timezone, mode, notes, loginLink })
     return this.sendMail(to, `Interview Scheduled: ${jobTitle} at ${companyName}`, html)
   }
 
@@ -389,7 +390,8 @@ export class EmailService {
     statusMessage: string,
     notes?: string
   ): Promise<boolean> {
-    const html = EmailTemplates.applicationStatusUpdate({ recipientName, jobTitle, companyName, statusHeading, statusMessage, notes })
+    const loginLink = `${frontendBaseUrl()}/auth/login`
+    const html = EmailTemplates.applicationStatusUpdate({ recipientName, jobTitle, companyName, statusHeading, statusMessage, notes, loginLink })
     return this.sendMail(to, `${statusHeading}: ${jobTitle} at ${companyName}`, html)
   }
 
@@ -400,7 +402,8 @@ export class EmailService {
     companyName: string,
     offerDetails: string
   ): Promise<boolean> {
-    const html = EmailTemplates.offerReleased({ recipientName, jobTitle, companyName, offerDetails })
+    const loginLink = `${frontendBaseUrl()}/auth/login`
+    const html = EmailTemplates.offerReleased({ recipientName, jobTitle, companyName, offerDetails, loginLink })
     return this.sendMail(to, `You've Received an Offer: ${jobTitle} at ${companyName}`, html)
   }
 }

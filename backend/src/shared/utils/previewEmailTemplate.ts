@@ -96,6 +96,7 @@ const SAMPLE_RENDERERS: Record<string, () => string> = {
       timezone: "IST",
       mode: "Video Call",
       notes: "Please join 5 minutes early.",
+      loginLink: "http://localhost:5173/auth/login",
     }),
 
   applicationStatusUpdate: () =>
@@ -105,6 +106,7 @@ const SAMPLE_RENDERERS: Record<string, () => string> = {
       companyName: "Acme Corp",
       statusHeading: "Application Shortlisted",
       statusMessage: "Your application has moved to the shortlist stage.",
+      loginLink: "http://localhost:5173/auth/login",
     }),
 
   offerReleased: () =>
@@ -113,6 +115,7 @@ const SAMPLE_RENDERERS: Record<string, () => string> = {
       jobTitle: "Senior Frontend Engineer",
       companyName: "Acme Corp",
       offerDetails: "Base salary: 18 LPA. Start date: Sept 1, 2026.",
+      loginLink: "http://localhost:5173/auth/login",
     }),
 
   passwordReset: () =>
