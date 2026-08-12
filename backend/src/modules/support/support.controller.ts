@@ -16,6 +16,15 @@ export class SupportController {
     }
   }
 
+  getContactEmail = async (req: Request, res: Response, next: any) => {
+    try {
+      const supportContactEmail = await this.service.getContactEmail()
+      return sendSuccess(res, { supportContactEmail }, "Support contact email fetched successfully.")
+    } catch (err: any) {
+      next(err)
+    }
+  }
+
   createTicket = async (req: Request, res: Response, next: any) => {
     try {
       const userId = req.user?.userId || ""

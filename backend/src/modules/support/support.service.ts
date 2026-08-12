@@ -54,6 +54,23 @@ function resolveFullName(user: { email: string; candidateProfile?: { fullName: s
 
 export class SupportService {
   // ==========================================
+  // READ -- the admin-configured support contact email (PlatformSettings
+  // singleton, see admin.service.ts's getPlatformSettings), surfaced here so
+  // the Candidate/Recruiter "Still Need Assistance?" cards can show the same
+  // address an admin sets on the Operations Support Contacts card, instead
+  // of a hardcoded string that would silently drift from whatever's actually
+  // configured. Deliberately duplicated rather than imported from
+  // admin.service.ts -- that service sits behind the admin-only router, and
+  // candidate/recruiter routers have no reason to import from it. Same
+  // fallback chain as the admin-side read: PlatformSettings row, then
+  // env.SUPPORT_EMAIL, then env.SES_FROM.
+  // ==========================================
+  async getContactEmail(): Promise<string> {
+    const settings = await prisma.platformSettings.findUnique({ where: { id: "singleton" } })
+    return settings?.supportContactEmail || env.SUPPORT_EMAIL || env.SES_FROM || ""
+  }
+
+  // ==========================================
   // CREATE -- Candidate / Recruiter / Admin-tier can all file a ticket
   // (previously admin-only; see the old AdminService.submitSupportTicket).
   // ==========================================

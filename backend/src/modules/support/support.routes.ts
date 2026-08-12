@@ -20,6 +20,12 @@ router.use(requireActiveUser)
 // ticket and see their own ticket history.
 router.post("/", controller.createTicket)
 router.get("/mine", controller.listMyTickets)
+// The admin-configured support contact email (see PlatformSettings in
+// admin.service.ts) -- any active user can read it, none can write it here
+// (writing stays admin-only, under /api/v1/admins/platform-settings).
+// Registered before the "/:id" route below so "contact-email" isn't
+// swallowed as a ticket id.
+router.get("/contact-email", controller.getContactEmail)
 
 // Admin-tier queue/progress view -- Support Executive works tickets here,
 // Admin/Super Admin/Moderator get read visibility via the same list+detail

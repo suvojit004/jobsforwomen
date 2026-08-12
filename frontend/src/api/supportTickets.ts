@@ -43,6 +43,15 @@ export interface SupportTicket {
 // and Admin portals alike (see support.routes.ts on the backend, mounted at
 // /api/v1/support-tickets rather than under the admin-only /api/v1/admins).
 export const SupportTicketsApi = {
+  // Admin-configured support contact email (see the Operations Support
+  // Contacts card on the admin Help & Support page). Falls back to
+  // "support@jobsforwomen.info" only if the request itself fails, so the
+  // "Still Need Assistance?" card never renders blank.
+  async getContactEmail(): Promise<string> {
+    const res = await apiClient.get("/api/v1/support-tickets/contact-email")
+    return res?.data?.supportContactEmail || "support@jobsforwomen.info"
+  },
+
   async createTicket(subject: string, category: string, message: string): Promise<SupportTicket> {
     const res = await apiClient.post("/api/v1/support-tickets", { subject, category, message })
     return res?.data

@@ -1,8 +1,9 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { CircleHelp, Mail, ChevronDown, ChevronUp, Search } from "lucide-react"
 import { DashboardCard } from "@/components/shared/DashboardCard"
 import { ReportIssueForm } from "@/features/shared/support/ReportIssueForm"
 import { MyTicketsList } from "@/features/shared/support/MyTicketsList"
+import { SupportTicketsApi } from "@/api/supportTickets"
 
 const TICKET_CATEGORIES = ["Technical Issue", "Account Issue", "Application Issue", "Other Query"]
 
@@ -15,6 +16,19 @@ export function Help() {
   const [search, setSearch] = useState("")
   const [openIdx, setOpenIdx] = useState<number | null>(0)
   const [ticketsRefreshKey, setTicketsRefreshKey] = useState(0)
+  // Admin-configured support contact email (Operations Support Contacts
+  // card, admin Help & Support page) -- was hardcoded here previously, so
+  // an admin's change to that card silently never showed up for candidates.
+  const [supportEmail, setSupportEmail] = useState("support@jobsforwomen.info")
+
+  useEffect(() => {
+    SupportTicketsApi.getContactEmail()
+      .then(setSupportEmail)
+      .catch(() => {
+        // Keep the fallback already in state -- no need to surface an error
+        // for a non-critical display value.
+      })
+  }, [])
 
   const faqs: FaqItem[] = [
     {
@@ -115,7 +129,7 @@ export function Help() {
           <Mail className="size-5 text-[#6B2C91] dark:text-pink-300 mt-0.5" />
           <div>
             <p className="text-xs font-black text-slate-800 dark:text-slate-200">Email Support</p>
-            <p className="text-[10px] font-semibold text-slate-400 mt-0.5">support@jobsforwomen.info</p>
+            <p className="text-[10px] font-semibold text-slate-400 mt-0.5">{supportEmail}</p>
           </div>
         </div>
       </DashboardCard>
