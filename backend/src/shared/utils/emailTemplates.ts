@@ -1,3 +1,5 @@
+import env from "../config/env"
+
 export interface WelcomeParams {
   email: string
   verificationLink: string
@@ -165,6 +167,20 @@ export interface OfferReleasedParams {
 const BRAND_PURPLE = "#6B2C91"
 const BRAND_PINK = "#EC4899"
 
+// Duplicated from email.ts's frontendBaseUrl() rather than imported -- email.ts
+// already imports EmailTemplates from this file, so importing back from
+// email.ts would create a circular dependency. Kept in sync manually; both
+// resolve to the same env vars with the same fallback.
+function frontendBaseUrl(): string {
+  return env.FRONTEND_URL || env.CLIENT_URL || "https://jobsforwomen.info"
+}
+
+// Absolute URL for the white JFW mark -- needed because email clients don't
+// serve assets from the app's own origin, they load whatever URL is in the
+// <img src>, so this has to be publicly reachable rather than a root-relative
+// path like the frontend uses.
+const LOGO_URL = `${frontendBaseUrl()}/logo-mark-white.png`
+
 // Part 17's accessible status colors, reused here so the color language a
 // recruiter learns in the dashboard (Pending/Approved/Rejected/More Info
 // Required) matches what they see in their inbox.
@@ -224,8 +240,8 @@ function renderShell(opts: { preheader: string; heading: string; bodyHtml: strin
       <td align="center">
         <table role="presentation" class="jfw-container" width="600" cellpadding="0" cellspacing="0" style="width:600px; max-width:600px; background-color:#ffffff; border-radius:16px; overflow:hidden; border:1px solid #E2E8F0;">
           <tr>
-            <td style="background: linear-gradient(135deg, ${BRAND_PURPLE}, ${BRAND_PINK}); padding:24px 32px;">
-              <span style="font-size:20px; font-weight:800; color:#ffffff; letter-spacing:0.3px;">JobsForWomen</span>
+            <td style="background: linear-gradient(135deg, ${BRAND_PURPLE}, ${BRAND_PINK}); padding:20px 32px;">
+              <img src="${LOGO_URL}" alt="JobsForWomen" height="28" style="height:28px; width:auto; display:block; border:0;" />
             </td>
           </tr>
           <tr>
