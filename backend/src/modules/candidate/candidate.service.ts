@@ -2,7 +2,7 @@ import prisma from "../../shared/database/db"
 import { calculateProfileCompletion } from "../../shared/utils/profileCompletion"
 import { logger } from "../../shared/utils/logger"
 import EventBus from "../../shared/eventBus/eventBus"
-import { ApplicationStatus, JobStatus, UserStatus } from "@prisma/client"
+import { ApplicationStatus, JobStatus, UserStatus, WorkMode } from "@prisma/client"
 import { NotificationService } from "../../shared/services/notification.service"
 import { RECRUITER_SUMMARY_SELECT, shapeRecruiterSummary } from "../../shared/utils/recruiterSummary"
 import { AppError } from "../../shared/middleware/errorHandler"
@@ -766,25 +766,59 @@ export class CandidateService {
 
     const skillNames = candidate.skills.map((s) => s.skill.name)
 
+    // A job the candidate has already applied to (or withdrawn from) isn't a
+    // useful "recommendation" anymore -- exclude it rather than showing it
+    // back to them.
+    const appliedJobIds = (
+      await prisma.application.findMany({
+        where: { candidateId: candidate.id },
+        select: { jobId: true },
+      })
+    ).map((a) => a.jobId)
+
+    // Build the relevance match from whatever real signal the candidate
+    // actually has. Previously the title branch fell back to a hardcoded
+    // `"Developer"` whenever `candidate.title` was empty -- which is the
+    // common case for a new profile -- so every such candidate was silently
+    // "recommended" only jobs with the literal word "Developer" in the
+    // title, regardless of their actual field. That's not a relevant
+    // fallback for a general job board, it's a leftover placeholder.
+    const matchConditions: any[] = []
+    if (skillNames.length > 0) {
+      matchConditions.push({
+        skills: { some: { skill: { name: { in: skillNames } } } },
+      })
+    }
+    if (candidate.title && candidate.title.trim()) {
+      matchConditions.push({
+        title: { contains: candidate.title.trim(), mode: "insensitive" },
+      })
+    }
+    if (candidate.preferredLocations.length > 0) {
+      matchConditions.push({
+        location: { in: candidate.preferredLocations, mode: "insensitive" },
+      })
+      // "Remote" as a preferred location doesn't literally appear in a job's
+      // location string -- it's a separate workMode field -- so match that too.
+      if (candidate.preferredLocations.some((loc) => loc.toLowerCase() === "remote")) {
+        matchConditions.push({ workMode: WorkMode.Remote })
+      }
+    }
+
+    const whereClause: any = {
+      status: JobStatus.approved,
+      visibility: "visible",
+      id: { notIn: appliedJobIds },
+    }
+    // With no skills, title, or preferred location to match against yet,
+    // there's nothing meaningful to filter on -- fall back to the newest
+    // open roles instead of an arbitrary keyword match.
+    if (matchConditions.length > 0) {
+      whereClause.OR = matchConditions
+    }
+
     return prisma.job.findMany({
-      where: {
-        status: JobStatus.approved,
-        visibility: "visible",
-        OR: [
-          {
-            skills: {
-              some: {
-                skill: {
-                  name: { in: skillNames },
-                },
-              },
-            },
-          },
-          {
-            title: { contains: candidate.title || "Developer", mode: "insensitive" },
-          },
-        ],
-      },
+      where: whereClause,
       include: {
         company: true,
         department: true,
