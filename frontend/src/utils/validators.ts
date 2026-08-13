@@ -59,6 +59,20 @@ export function toTitleCase(value: string): string {
     .join(" ")
 }
 
+// Preferred Locations tags: accept "Remote" (any casing) or a plausible
+// place name -- letters, spaces, and the handful of punctuation marks real
+// place names use ("St. John's", "Bengaluru, India"). Rejects pure numbers,
+// symbol strings, or other garbage someone could otherwise type into a bare
+// free-text tag field.
+const LOCATION_NAME_REGEX = /^[A-Za-z][A-Za-z\s.'-]*(,\s*[A-Za-z][A-Za-z\s.'-]*)*$/
+
+export function isValidLocationTag(value: string): boolean {
+  const trimmed = value.trim()
+  if (!trimmed || trimmed.length > 60) return false
+  if (/^remote$/i.test(trimmed)) return true
+  return LOCATION_NAME_REGEX.test(trimmed)
+}
+
 export function isValidWebsite(value: string): boolean {
   if (!value.trim()) return false
   try {

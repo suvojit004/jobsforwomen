@@ -2,7 +2,25 @@ import { useState } from "react"
 import { Compass, Plus } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { DashboardCard } from "@/components/dashboard/DashboardCard"
+import { sanitizeNumeric, isValidLocationTag, toTitleCase } from "@/utils/validators"
 import type { JobPreferences } from "../../types/candidate"
+
+const NOTICE_UNITS = ["Days", "Months"] as const
+
+// noticePeriod stays a single string ("15 Days", "2 Months") -- no schema
+// change -- these just bridge it to/from an amount + unit pair so the value
+// is always one of the two real units instead of free text like "15 dats".
+function parseNoticePeriod(value: string): { amount: string; unit: (typeof NOTICE_UNITS)[number] } {
+  const match = value.trim().match(/^(\d+)\s*(day|days|month|months)?$/i)
+  if (!match) return { amount: "", unit: "Days" }
+  const unit: (typeof NOTICE_UNITS)[number] = /^month/i.test(match[2] || "") ? "Months" : "Days"
+  return { amount: match[1], unit }
+}
+
+function formatNoticePeriod(amount: string, unit: string): string {
+  const n = parseInt(amount, 10)
+  return Number.isFinite(n) && amount !== "" ? `${n} ${unit}` : ""
+}
 
 type PreferencesSectionProps = {
   preferences: JobPreferences
@@ -16,16 +34,27 @@ export function PreferencesSection({
   onChange,
 }: PreferencesSectionProps) {
   const [newLocation, setNewLocation] = useState("")
+  const [locationError, setLocationError] = useState("")
 
   const handleAddLocation = (e: React.FormEvent) => {
     e.preventDefault()
-    if (newLocation.trim() && !preferences.preferredLocation.includes(newLocation.trim())) {
-      onChange({
-        preferredLocation: [...preferences.preferredLocation, newLocation.trim()],
-      })
-      setNewLocation("")
+    const trimmed = newLocation.trim()
+    if (!trimmed) return
+    if (!isValidLocationTag(trimmed)) {
+      setLocationError('Enter "Remote" or a valid location name (letters only, no numbers or symbols).')
+      return
     }
+    const normalized = /^remote$/i.test(trimmed) ? "Remote" : toTitleCase(trimmed)
+    if (!preferences.preferredLocation.includes(normalized)) {
+      onChange({
+        preferredLocation: [...preferences.preferredLocation, normalized],
+      })
+    }
+    setNewLocation("")
+    setLocationError("")
   }
+
+  const noticePeriodParsed = parseNoticePeriod(preferences.noticePeriod)
 
   const handleRemoveLocation = (loc: string) => {
     onChange({
@@ -96,8 +125,9 @@ export function PreferencesSection({
               <input
                 id="expectedSalary"
                 type="text"
+                inputMode="decimal"
                 value={preferences.expectedSalary}
-                onChange={(e) => onChange({ expectedSalary: e.target.value })}
+                onChange={(e) => onChange({ expectedSalary: sanitizeNumeric(e.target.value) })}
                 className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6B2C91]/30 dark:border-slate-800 dark:bg-slate-900"
               />
             </div>
@@ -124,13 +154,30 @@ export function PreferencesSection({
               <label htmlFor="noticePeriod" className="text-xs font-extrabold text-slate-600 dark:text-slate-400">
                 Notice Period
               </label>
-              <input
-                id="noticePeriod"
-                type="text"
-                value={preferences.noticePeriod}
-                onChange={(e) => onChange({ noticePeriod: e.target.value })}
-                className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6B2C91]/30 dark:border-slate-800 dark:bg-slate-900"
-              />
+              <div className="flex gap-2">
+                <input
+                  id="noticePeriod"
+                  type="text"
+                  inputMode="numeric"
+                  placeholder="e.g. 15"
+                  value={noticePeriodParsed.amount}
+                  onChange={(e) =>
+                    onChange({ noticePeriod: formatNoticePeriod(sanitizeNumeric(e.target.value).split(".")[0], noticePeriodParsed.unit) })
+                  }
+                  className="w-20 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6B2C91]/30 dark:border-slate-800 dark:bg-slate-900"
+                />
+                <select
+                  value={noticePeriodParsed.unit}
+                  onChange={(e) => onChange({ noticePeriod: formatNoticePeriod(noticePeriodParsed.amount, e.target.value) })}
+                  className="flex-1 rounded-lg border border-slate-200 bg-white px-2 py-2 text-xs focus-visible:outline-none dark:border-slate-800 dark:bg-slate-900"
+                >
+                  {NOTICE_UNITS.map((u) => (
+                    <option key={u} value={u}>
+                      {u}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
           </div>
 
@@ -162,13 +209,19 @@ export function PreferencesSection({
                 type="text"
                 placeholder="e.g. Remote, Delhi..."
                 value={newLocation}
-                onChange={(e) => setNewLocation(e.target.value)}
+                onChange={(e) => {
+                  setNewLocation(e.target.value)
+                  if (locationError) setLocationError("")
+                }}
                 className="flex-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6B2C91]/30 dark:border-slate-800 dark:bg-slate-900"
               />
               <Button type="submit" size="sm" className="bg-[#6B2C91] text-white hover:bg-[#5a237b]">
                 <Plus className="size-3.5" />
               </Button>
             </form>
+            {locationError && (
+              <p className="mt-1.5 max-w-xs text-[10px] font-bold text-red-500">{locationError}</p>
+            )}
           </div>
         </div>
       )}

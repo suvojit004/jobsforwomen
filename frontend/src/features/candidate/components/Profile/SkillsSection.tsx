@@ -3,6 +3,42 @@ import { Award, Plus, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { DashboardCard } from "@/components/dashboard/DashboardCard"
 
+// A curated, canonically-cased catalog to pick from -- covers the skills
+// most candidates actually have, in the casing they should display in
+// (e.g. "JavaScript", not "javascript"). "Other" still exists for anything
+// not on the list, since no fixed list can cover every real skill; it isn't
+// auto-reformatted the way Degree's "Other" is, because unlike degree names,
+// correct skill casing isn't a simple title-case rule (e.g. "AWS", "Node.js").
+const SKILL_GROUPS: { label: string; skills: string[] }[] = [
+  {
+    label: "Programming & Web",
+    skills: [
+      "JavaScript", "TypeScript", "Python", "Java", "C++", "C#", "PHP", "Ruby", "Go",
+      "HTML", "CSS", "React", "Angular", "Vue.js", "Node.js", "Express.js", "Next.js",
+      "REST APIs", "GraphQL",
+    ],
+  },
+  {
+    label: "Data & Cloud",
+    skills: [
+      "SQL", "MongoDB", "PostgreSQL", "AWS", "Azure", "Google Cloud", "Docker",
+      "Kubernetes", "Git", "Data Analysis", "Excel", "Power BI", "Tableau",
+    ],
+  },
+  {
+    label: "Design & Product",
+    skills: ["Figma", "Adobe XD", "Photoshop", "UI/UX Design", "Product Management"],
+  },
+  {
+    label: "Business & Soft Skills",
+    skills: [
+      "Communication", "Leadership", "Project Management", "Content Writing",
+      "Digital Marketing", "Sales", "Customer Service", "Team Management",
+    ],
+  },
+]
+const OTHER_SKILL = "__other__"
+
 type SkillsSectionProps = {
   skills: string[]
   isEditing: boolean
@@ -16,13 +52,25 @@ export function SkillsSection({
   onAddSkill,
   onRemoveSkill,
 }: SkillsSectionProps) {
-  const [newSkill, setNewSkill] = useState("")
+  const [pickerMode, setPickerMode] = useState<"select" | "custom">("select")
+  const [customSkill, setCustomSkill] = useState("")
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handlePresetSelect = (value: string) => {
+    if (value === OTHER_SKILL) {
+      setPickerMode("custom")
+      return
+    }
+    if (value && !skills.includes(value)) {
+      onAddSkill(value)
+    }
+  }
+
+  const handleAddCustom = (e: React.FormEvent) => {
     e.preventDefault()
-    if (newSkill.trim()) {
-      onAddSkill(newSkill.trim())
-      setNewSkill("")
+    const trimmed = customSkill.trim()
+    if (trimmed && !skills.includes(trimmed)) {
+      onAddSkill(trimmed)
+      setCustomSkill("")
     }
   }
 
@@ -69,23 +117,57 @@ export function SkillsSection({
         )}
 
         {isEditing && (
-          <form onSubmit={handleSubmit} className="flex max-w-xs gap-2 pt-2">
-            <input
-              type="text"
-              placeholder="e.g. TypeScript, GraphQL..."
-              value={newSkill}
-              onChange={(e) => setNewSkill(e.target.value)}
-              className="flex-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6B2C91]/30 dark:border-slate-800 dark:bg-slate-900"
-            />
-            <Button
-              type="submit"
-              size="sm"
-              className="bg-[#6B2C91] text-white hover:bg-[#5a237b]"
-            >
-              <Plus className="size-3.5" />
-              Add Skill
-            </Button>
-          </form>
+          <div className="max-w-xs pt-2">
+            {pickerMode === "select" ? (
+              <select
+                value=""
+                onChange={(e) => handlePresetSelect(e.target.value)}
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6B2C91]/30 dark:border-slate-800 dark:bg-slate-900 dark:text-white"
+              >
+                <option value="" disabled>
+                  Select a skill to add...
+                </option>
+                {SKILL_GROUPS.map((group) => (
+                  <optgroup key={group.label} label={group.label}>
+                    {group.skills.map((skill) => (
+                      <option key={skill} value={skill} disabled={skills.includes(skill)}>
+                        {skill}
+                        {skills.includes(skill) ? " (added)" : ""}
+                      </option>
+                    ))}
+                  </optgroup>
+                ))}
+                <option value={OTHER_SKILL}>Other (type your own)...</option>
+              </select>
+            ) : (
+              <form onSubmit={handleAddCustom} className="space-y-1.5">
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    autoFocus
+                    placeholder="e.g. TypeScript, GraphQL..."
+                    value={customSkill}
+                    onChange={(e) => setCustomSkill(e.target.value)}
+                    className="flex-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6B2C91]/30 dark:border-slate-800 dark:bg-slate-900"
+                  />
+                  <Button type="submit" size="sm" className="bg-[#6B2C91] text-white hover:bg-[#5a237b]">
+                    <Plus className="size-3.5" />
+                    Add
+                  </Button>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPickerMode("select")
+                    setCustomSkill("")
+                  }}
+                  className="text-[10px] font-bold text-[#6B2C91] hover:underline dark:text-pink-200"
+                >
+                  Choose from list instead
+                </button>
+              </form>
+            )}
+          </div>
         )}
       </div>
     </DashboardCard>
