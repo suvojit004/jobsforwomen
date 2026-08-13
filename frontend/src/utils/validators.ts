@@ -43,6 +43,22 @@ export function sanitizeNumeric(value: string): string {
   return cleaned.slice(0, firstDot + 1) + cleaned.slice(firstDot + 1).replace(/\./g, "")
 }
 
+// Used for a free-typed "Other, please specify" value (e.g. a degree name
+// not in a preset list) so it reads consistently regardless of how the
+// person capitalized it -- "btech", "BTECH", and "bTech" all become
+// "Btech". Capitalizes the first letter of every whitespace-separated word
+// and lowercases the rest of that word; does not special-case acronyms
+// (an intentional simplification -- there's no reliable way to tell "b.tech"
+// from a genuine multi-letter acronym without a dictionary).
+export function toTitleCase(value: string): string {
+  return value
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(" ")
+}
+
 export function isValidWebsite(value: string): boolean {
   if (!value.trim()) return false
   try {
