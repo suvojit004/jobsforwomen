@@ -103,7 +103,7 @@ export function CandidateDetails() {
           id: u.id,
           fullName: u.candidateProfile?.fullName || u.email.split("@")[0],
           email: u.email,
-          title: u.candidateProfile?.title || "Professional",
+          title: u.candidateProfile?.title || "Working Professional",
           phone: u.candidateProfile?.phone || "Not specified",
           location: u.candidateProfile?.location || "Not specified",
           totalExperience: u.candidateProfile?.totalExperience || "Not specified",

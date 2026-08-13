@@ -2,7 +2,7 @@ import { useState } from "react"
 import { Globe, Plus, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { DashboardCard } from "@/components/dashboard/DashboardCard"
-import { isValidPhone } from "@/utils/validators"
+import { isValidPhone, sanitizeNumeric, normalizeWebsite } from "@/utils/validators"
 import type { ExtendedCandidate, SocialLink } from "../../types/candidate"
 
 type PersonalDetailsFormProps = {
@@ -41,8 +41,20 @@ export function PersonalDetailsForm({
   const handleAddSocial = (e: React.FormEvent) => {
     e.preventDefault()
     if (newSocialUrl.trim()) {
-      onAddSocialLink(newSocialPlatform, newSocialUrl.trim())
+      // Accept a bare domain/handle ("linkedin.com/in/x") same as the
+      // website field elsewhere in the app -- prepend https:// if the user
+      // didn't type a scheme, rather than requiring it up front.
+      onAddSocialLink(newSocialPlatform, normalizeWebsite(newSocialUrl.trim()))
       setNewSocialUrl("")
+    }
+  }
+
+  // Normalizes an existing link's URL once the user leaves the field,
+  // rather than on every keystroke -- doing it on change would fight the
+  // user mid-type (e.g. immediately rewriting "l" to "https://l").
+  const handleSocialBlur = (id: string, url: string) => {
+    if (url.trim()) {
+      onUpdateSocialLink(id, normalizeWebsite(url.trim()))
     }
   }
 
@@ -197,8 +209,9 @@ export function PersonalDetailsForm({
               <input
                 id="currentCtc"
                 type="text"
+                inputMode="decimal"
                 value={candidate.currentCtc}
-                onChange={(e) => onChange({ currentCtc: e.target.value })}
+                onChange={(e) => onChange({ currentCtc: sanitizeNumeric(e.target.value) })}
                 className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6B2C91]/30 dark:border-slate-800 dark:bg-slate-900"
               />
             </div>
@@ -269,6 +282,7 @@ export function PersonalDetailsForm({
                   type="text"
                   value={link.url}
                   onChange={(e) => onUpdateSocialLink(link.id, e.target.value)}
+                  onBlur={(e) => handleSocialBlur(link.id, e.target.value)}
                   className="flex-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6B2C91]/30 dark:border-slate-800 dark:bg-slate-900"
                 />
                 <Button
@@ -295,8 +309,12 @@ export function PersonalDetailsForm({
                 <option value="Portfolio">Portfolio</option>
               </select>
               <input
-                type="url"
-                placeholder="https://..."
+                // Deliberately type="text", not "url" -- the browser's
+                // built-in url validation requires a scheme (https://) to be
+                // typed up front and blocks submitting otherwise, which
+                // defeats normalizeWebsite() below adding it automatically.
+                type="text"
+                placeholder="e.g. linkedin.com/in/yourname"
                 value={newSocialUrl}
                 onChange={(e) => setNewSocialUrl(e.target.value)}
                 className="flex-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6B2C91]/30 dark:border-slate-800 dark:bg-slate-900"

@@ -32,6 +32,17 @@ export function normalizeWebsite(value: string): string {
   return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`
 }
 
+// Used by the Current CTC field -- strips everything but digits and a
+// single decimal point as the user types, so free-text values like
+// "15LPA" or "15,00,000" can no longer be entered/saved. Keeps at most one
+// "." (typing a second one is simply dropped) so "15.5.2" can't happen.
+export function sanitizeNumeric(value: string): string {
+  const cleaned = value.replace(/[^\d.]/g, "")
+  const firstDot = cleaned.indexOf(".")
+  if (firstDot === -1) return cleaned
+  return cleaned.slice(0, firstDot + 1) + cleaned.slice(firstDot + 1).replace(/\./g, "")
+}
+
 export function isValidWebsite(value: string): boolean {
   if (!value.trim()) return false
   try {

@@ -19,7 +19,7 @@ export function useProfile() {
   const mapProfileToState = (prof: any): ExtendedCandidate => {
     return {
       fullName: prof?.fullName ?? "",
-      role: prof?.title ?? "Professional",
+      role: prof?.title ?? "Working Professional",
       email: prof?.user?.email ?? "",
       phone: prof?.phone ?? "",
       location: prof?.location ?? "",

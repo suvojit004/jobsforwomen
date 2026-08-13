@@ -46,7 +46,7 @@ export function CandidateManagement() {
         id: u.id,
         name: u.fullName || u.email.split("@")[0],
         email: u.email,
-        role: u.candidateProfile?.title || "Professional",
+        role: u.candidateProfile?.title || "Working Professional",
         careerBreak: !!(u as ProfileWithCareerBreak).candidateProfile?.careerBreak?.hasBreak,
         hasResume: !!u.candidateProfile?.resumeUrl,
         // Real UserStatus enum values: PendingVerification, PendingApproval,

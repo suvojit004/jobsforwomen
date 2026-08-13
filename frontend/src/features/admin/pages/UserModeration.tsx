@@ -132,7 +132,7 @@ export function UserModeration() {
         id: u.id,
         name: u.fullName || u.email.split("@")[0],
         email: u.email,
-        role: u.candidateProfile?.title || "Professional",
+        role: u.candidateProfile?.title || "Working Professional",
         careerBreak: !!(u as ProfileWithCareerBreak).candidateProfile?.careerBreak?.hasBreak,
         hasResume: !!u.candidateProfile?.resumeUrl,
         status: u.status === "Active" ? "Active" : "Inactive"

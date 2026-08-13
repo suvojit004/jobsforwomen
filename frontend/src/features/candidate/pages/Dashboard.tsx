@@ -29,7 +29,7 @@ import type { Activity } from "@/types/dashboard"
 function mapDashboardProfile(prof: any, fallbackName?: string, fallbackEmail?: string) {
   return {
     fullName: prof?.fullName || fallbackName || "Candidate",
-    role: prof?.title || "Professional",
+    role: prof?.title || "Working Professional",
     location: prof?.location || "Not Specified",
     email: prof?.user?.email || fallbackEmail || "",
     phone: prof?.phone || "Not Specified",
