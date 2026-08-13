@@ -176,21 +176,34 @@ export function CandidatePreview() {
           {/* no flex-wrap meant these two buttons (with fairly
               long labels like "No Resume Uploaded") could force this row,
               and the page, wider than a narrow mobile viewport. */}
-          <div className="flex flex-wrap items-center gap-2 shrink-0">
-            <Button
-              variant="outline"
-              onClick={handleDownloadResume}
-              disabled={!profile.resumeUrl}
-              className="h-9 font-bold text-xs gap-1.5 cursor-pointer"
-            >
-              <Download className="size-4" />
-              {profile.resumeUrl ? "View Resume" : "No Resume Uploaded"}
-            </Button>
-          </div>
+          {profile.status !== "Withdrawn" && (
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
+              <Button
+                variant="outline"
+                onClick={handleDownloadResume}
+                disabled={!profile.resumeUrl}
+                className="h-9 font-bold text-xs gap-1.5 cursor-pointer"
+              >
+                <Download className="size-4" />
+                {profile.resumeUrl ? "View Resume" : "No Resume Uploaded"}
+              </Button>
+            </div>
+          )}
         </div>
       </DashboardCard>
 
-      {/* Main Details Workspace */}
+      {profile.status === "Withdrawn" ? (
+        <DashboardCard className="p-6 text-center space-y-2">
+          <AlertCircle className="size-10 text-amber-500 mx-auto" />
+          <h2 className="text-sm font-black text-slate-900 dark:text-white">
+            This candidate withdrew their application
+          </h2>
+          <p className="text-xs font-semibold text-slate-500 max-w-md mx-auto">
+            Once a candidate withdraws, their profile details, resume, and contact
+            information are no longer visible to you here -- only their name is shown.
+          </p>
+        </DashboardCard>
+      ) : (
       <div className="grid gap-6 md:grid-cols-3">
         {/* Left main: profile components */}
         <div className="md:col-span-2 space-y-6">
@@ -454,6 +467,7 @@ export function CandidatePreview() {
           </DashboardCard>
         </div>
       </div>
+      )}
 
       {/* Schedule Interview modal */}
       <ScheduleInterviewModal

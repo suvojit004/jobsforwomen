@@ -29,7 +29,13 @@ const PIPELINE_ORDER: ApplicationStatus[] = [
 ]
 
 function getAllowedTransitions(current: ApplicationStatus): ApplicationStatus[] {
-  if (current === ApplicationStatus.Hired || current === ApplicationStatus.Rejected) {
+  if (
+    current === ApplicationStatus.Hired ||
+    current === ApplicationStatus.Rejected ||
+    // Withdrawn is candidate-initiated and terminal from the recruiter's
+    // side too -- there's nothing left to progress once they've pulled out.
+    current === ApplicationStatus.Withdrawn
+  ) {
     return [] // terminal states
   }
   const idx = PIPELINE_ORDER.indexOf(current)
@@ -1031,7 +1037,7 @@ export class RecruiterService {
       whereClause.jobId = jobId
     }
 
-    return prisma.application.findMany({
+    const applications = await prisma.application.findMany({
       where: whereClause,
       include: {
         candidate: {
@@ -1049,6 +1055,24 @@ export class RecruiterService {
         },
       },
       orderBy: { appliedOn: "desc" },
+    })
+
+    // Once a candidate withdraws, the recruiter loses access to everything
+    // about them except their name -- no email, phone, bio, resume, skills,
+    // experience, education, salary expectations, etc. They chose to pull
+    // out of this specific pipeline; there's no ongoing legitimate reason
+    // for the recruiter to keep viewing their profile through it.
+    return applications.map((app) => {
+      if (app.status !== ApplicationStatus.Withdrawn) {
+        return app
+      }
+      return {
+        ...app,
+        candidate: {
+          id: app.candidate.id,
+          fullName: app.candidate.fullName,
+        } as unknown as typeof app.candidate,
+      }
     })
   }
 
@@ -1088,7 +1112,11 @@ export class RecruiterService {
     const targetStatus = extendedStatus as ApplicationStatus
 
     // Check terminal states
-    if (currentStatus === ApplicationStatus.Hired || currentStatus === ApplicationStatus.Rejected) {
+    if (
+      currentStatus === ApplicationStatus.Hired ||
+      currentStatus === ApplicationStatus.Rejected ||
+      currentStatus === ApplicationStatus.Withdrawn
+    ) {
       throw new Error(`Cannot transition application from terminal state: ${currentStatus}`)
     }
 
@@ -1194,7 +1222,11 @@ export class RecruiterService {
     }
 
     const currentStatus = app.status
-    if (currentStatus === ApplicationStatus.Hired || currentStatus === ApplicationStatus.Rejected) {
+    if (
+      currentStatus === ApplicationStatus.Hired ||
+      currentStatus === ApplicationStatus.Rejected ||
+      currentStatus === ApplicationStatus.Withdrawn
+    ) {
       throw new Error(`Cannot schedule an interview on a terminal application state: ${currentStatus}`)
     }
     const allowed = getAllowedTransitions(currentStatus)
@@ -1296,7 +1328,11 @@ export class RecruiterService {
     }
 
     const currentStatus = app.status
-    if (currentStatus === ApplicationStatus.Hired || currentStatus === ApplicationStatus.Rejected) {
+    if (
+      currentStatus === ApplicationStatus.Hired ||
+      currentStatus === ApplicationStatus.Rejected ||
+      currentStatus === ApplicationStatus.Withdrawn
+    ) {
       throw new Error(`Cannot release an offer on a terminal application state: ${currentStatus}`)
     }
     const allowed = getAllowedTransitions(currentStatus)

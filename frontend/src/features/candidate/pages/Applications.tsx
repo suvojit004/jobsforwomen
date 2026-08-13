@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { toast } from "sonner"
 import { motion } from "framer-motion"
 import { ChevronRight, Calendar, User, ArrowLeft, Eye } from "lucide-react"
@@ -34,31 +34,31 @@ export function Applications() {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false)
   const [mobileShowTimeline, setMobileShowTimeline] = useState(false)
 
-  useEffect(() => {
-    let cancelled = false
-
-    async function load() {
-      try {
-        const rawApplications = await CandidateJobsApi.getApplications()
-        const mapped: DisplayApplication[] = rawApplications.map(mapApiApplication)
-        if (cancelled) return
-        setApplications(mapped)
-        if (mapped.length > 0) {
-          setSelectedApp(mapped[0])
-        }
-      } catch (err: any) {
-        console.error("Failed to load applications", err)
-        toast.error(err?.message || "Failed to load your applications.")
-      } finally {
-        if (!cancelled) setIsLoading(false)
-      }
-    }
-
-    load()
-    return () => {
-      cancelled = true
+  // opts.silent skips the full-page skeleton -- used for the post-reapply
+  // refetch, where the existing list should stay visible while it refreshes
+  // (a reapplied application's interview/offer data is cleared server-side,
+  // so a real refetch is needed rather than a local optimistic patch).
+  const load = useCallback(async (opts?: { silent?: boolean }) => {
+    if (!opts?.silent) setIsLoading(true)
+    try {
+      const rawApplications = await CandidateJobsApi.getApplications()
+      const mapped: DisplayApplication[] = rawApplications.map(mapApiApplication)
+      setApplications(mapped)
+      setSelectedApp((prev) => {
+        if (!prev) return mapped[0] ?? null
+        return mapped.find((a) => a.id === prev.id) ?? mapped[0] ?? null
+      })
+    } catch (err: any) {
+      console.error("Failed to load applications", err)
+      toast.error(err?.message || "Failed to load your applications.")
+    } finally {
+      if (!opts?.silent) setIsLoading(false)
     }
   }, [])
+
+  useEffect(() => {
+    load()
+  }, [load])
 
   if (isLoading) {
     return <TablePageSkeleton rows={5} />
@@ -70,16 +70,23 @@ export function Applications() {
     setMobileShowTimeline(true)
   }
 
-  // Reflect a successful withdrawal locally (status -> Rejected) so the list,
-  // the selected-application panel, and the drawer all stay in sync without
-  // a full refetch.
+  // Reflect a successful withdrawal locally (status -> Withdrawn) so the
+  // list, the selected-application panel, and the drawer all stay in sync
+  // without a full refetch.
   const handleWithdrawn = (applicationId: string) => {
     setApplications((prev) =>
-      prev.map((app) => (app.id === applicationId ? { ...app, status: "Rejected" } : app))
+      prev.map((app) => (app.id === applicationId ? { ...app, status: "Withdrawn" } : app))
     )
     setSelectedApp((prev) =>
-      prev && prev.id === applicationId ? { ...prev, status: "Rejected" } : prev
+      prev && prev.id === applicationId ? { ...prev, status: "Withdrawn" } : prev
     )
+  }
+
+  // A reapply resets the same application row server-side (fresh Applied
+  // status, cleared interview/offer data) -- refetch quietly rather than
+  // guessing the new shape locally.
+  const handleReapplied = () => {
+    load({ silent: true })
   }
 
   return (
@@ -116,6 +123,7 @@ export function Applications() {
                 application={selectedApp}
                 onClose={() => setMobileShowTimeline(false)}
                 onWithdrawn={handleWithdrawn}
+                onReapplied={handleReapplied}
               />
             </div>
           ) : (
@@ -287,7 +295,7 @@ export function Applications() {
               <div className="hidden lg:block lg:col-span-4 h-full">
                 {selectedApp ? (
                   <div className="sticky top-20">
-                    <ApplicationTimeline application={selectedApp} onWithdrawn={handleWithdrawn} />
+                    <ApplicationTimeline application={selectedApp} onWithdrawn={handleWithdrawn} onReapplied={handleReapplied} />
                   </div>
                 ) : (
                   <div className="h-48 flex items-center justify-center border border-dashed border-slate-200 rounded-xl dark:border-slate-800 text-slate-400">
@@ -312,6 +320,7 @@ export function Applications() {
                   application={selectedApp}
                   onClose={() => setIsDrawerOpen(false)}
                   onWithdrawn={handleWithdrawn}
+                  onReapplied={handleReapplied}
                 />
               )}
             </SheetContent>

@@ -119,6 +119,9 @@ const APPLICANT_STATUS_FROM_BACKEND: Record<string, string> = {
   OfferReleased: "Offer Released",
   Hired: "Selected",
   Rejected: "Rejected",
+  // Not settable through APPLICANT_STATUS_TO_BACKEND above -- only the
+  // candidate can put an application into this state.
+  Withdrawn: "Withdrawn",
 }
 
 export interface ApplicantRow {

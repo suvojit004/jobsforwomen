@@ -167,10 +167,16 @@ export function Applicants() {
             {row.name}
           </p>
           <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-slate-400 font-bold dark:text-slate-500">
-            <span className="flex items-center gap-0.5 font-bold uppercase truncate max-w-28 sm:max-w-none">
-              <Mail className="size-3 shrink-0" />
-              {row.email}
-            </span>
+            {row.status === "Withdrawn" ? (
+              <span className="italic normal-case text-slate-400 dark:text-slate-500">
+                Candidate details hidden after withdrawal
+              </span>
+            ) : (
+              <span className="flex items-center gap-0.5 font-bold uppercase truncate max-w-28 sm:max-w-none">
+                <Mail className="size-3 shrink-0" />
+                {row.email}
+              </span>
+            )}
             <span>•</span>
             <span className="text-[#6B2C91] dark:text-pink-300 uppercase">{row.job}</span>
           </div>
@@ -190,20 +196,24 @@ export function Applicants() {
             {/* Status Badge preview */}
             <StatusBadge status={row.status as any} />
 
-            {/* Interactive drop selector */}
-            <select
-              value={row.status}
-              onChange={(e: any) => handleStatusSelect(row, e.target.value)}
-              className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-[10px] font-black uppercase text-slate-600 focus-visible:outline-none dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300"
-            >
-              <option value="Applied">Applied</option>
-              <option value="Under Review">Under Review</option>
-              <option value="Shortlisted">Shortlisted</option>
-              <option value="Interview Scheduled">Interview Scheduled</option>
-              <option value="Offer Released">Offer Released</option>
-              <option value="Selected">Selected</option>
-              <option value="Rejected">Rejected</option>
-            </select>
+            {/* Interactive drop selector -- withdrawn is candidate-only and
+                terminal, so there's nothing left to set it to; the backend
+                rejects any transition attempt anyway. */}
+            {row.status !== "Withdrawn" && (
+              <select
+                value={row.status}
+                onChange={(e: any) => handleStatusSelect(row, e.target.value)}
+                className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-[10px] font-black uppercase text-slate-600 focus-visible:outline-none dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300"
+              >
+                <option value="Applied">Applied</option>
+                <option value="Under Review">Under Review</option>
+                <option value="Shortlisted">Shortlisted</option>
+                <option value="Interview Scheduled">Interview Scheduled</option>
+                <option value="Offer Released">Offer Released</option>
+                <option value="Selected">Selected</option>
+                <option value="Rejected">Rejected</option>
+              </select>
+            )}
           </div>
           {row.nextInterview && (
             <p className="text-[9px] font-bold text-slate-400 flex items-center gap-1">
@@ -244,19 +254,21 @@ export function Applicants() {
           >
             <Eye className="size-3.5" />
           </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => handleDownloadResume(row)}
-            className="h-8 w-8 text-slate-400 hover:text-[#6B2C91] dark:hover:text-pink-200"
-            title="Preview Resume"
-          >
-            {downloadSuccessId === row.id ? (
-              <CheckCircle className="size-3.5 text-emerald-500 stroke-[3]" />
-            ) : (
-              <Download className="size-3.5" />
-            )}
-          </Button>
+          {row.status !== "Withdrawn" && (
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => handleDownloadResume(row)}
+              className="h-8 w-8 text-slate-400 hover:text-[#6B2C91] dark:hover:text-pink-200"
+              title="Preview Resume"
+            >
+              {downloadSuccessId === row.id ? (
+                <CheckCircle className="size-3.5 text-emerald-500 stroke-[3]" />
+              ) : (
+                <Download className="size-3.5" />
+              )}
+            </Button>
+          )}
         </div>
       ),
     },
@@ -323,6 +335,7 @@ export function Applicants() {
               <option value="Offer Released">Offer Released</option>
               <option value="Selected">Selected</option>
               <option value="Rejected">Rejected</option>
+              <option value="Withdrawn">Withdrawn</option>
             </select>
           </div>
 

@@ -1,6 +1,6 @@
 import { useState } from "react"
 import { toast } from "sonner"
-import { Check, Clock, User, Calendar, FileText, X, Gift, Undo2 } from "lucide-react"
+import { Check, Clock, User, Calendar, FileText, X, Gift, Undo2, RotateCcw } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { DashboardCard } from "@/components/dashboard/DashboardCard"
 import { CompanyLogo } from "@/components/shared/CompanyLogo"
@@ -15,19 +15,24 @@ type ApplicationTimelineProps = {
   // Called after a successful withdrawal so the parent list/selection can be
   // updated in place without a full refetch.
   onWithdrawn?: (applicationId: string) => void
+  // Called after a successful reapply -- unlike withdrawal this resets real
+  // server-side state (interview/offer data is cleared), so the parent
+  // should refetch rather than patch locally.
+  onReapplied?: () => void
 }
 
 // Once an application reaches one of these stages, withdrawing no longer
-// makes sense (offer already extended/accepted, or it's already closed out)
-// -- mirrors candidate.service.ts's withdrawApplication() guard on the
-// backend, which is the actual source of truth/enforcement.
-const NON_WITHDRAWABLE_STATUSES = ["Offer Released", "Selected", "Rejected"]
+// makes sense (offer already extended/accepted, already closed out, or
+// already withdrawn) -- mirrors candidate.service.ts's withdrawApplication()
+// guard on the backend, which is the actual source of truth/enforcement.
+const NON_WITHDRAWABLE_STATUSES = ["Offer Released", "Selected", "Rejected", "Withdrawn"]
 
-export function ApplicationTimeline({ application, onClose, onWithdrawn }: ApplicationTimelineProps) {
+export function ApplicationTimeline({ application, onClose, onWithdrawn, onReapplied }: ApplicationTimelineProps) {
   // Stepper state computation based on status
   const status = application.status
   const [previewingOffer, setPreviewingOffer] = useState(false)
   const [withdrawing, setWithdrawing] = useState(false)
+  const [reapplying, setReapplying] = useState(false)
   const canWithdraw = !NON_WITHDRAWABLE_STATUSES.includes(status)
 
   const handleWithdraw = async () => {
@@ -47,6 +52,19 @@ export function ApplicationTimeline({ application, onClose, onWithdrawn }: Appli
       toast.error(err?.message || "Couldn't withdraw the application.")
     } finally {
       setWithdrawing(false)
+    }
+  }
+
+  const handleReapply = async () => {
+    try {
+      setReapplying(true)
+      await CandidateJobsApi.applyToJob(application.jobId)
+      toast.success("Application resubmitted successfully.")
+      onReapplied?.()
+    } catch (err: any) {
+      toast.error(err?.message || "Couldn't reapply to this job.")
+    } finally {
+      setReapplying(false)
     }
   }
 
@@ -73,21 +91,30 @@ export function ApplicationTimeline({ application, onClose, onWithdrawn }: Appli
       // "Offer Released" and "Selected" both imply an interview already
       // happened -- without including them here, the stepper stayed stuck
       // on "Under Review" for every application that progressed past this
-      // point, even once an offer had actually been sent.
-      completed: ["Interview Scheduled", "Offer Released", "Selected", "Rejected"].includes(status),
+      // point, even once an offer had actually been sent. "Withdrawn" is
+      // included the same way "Rejected" is: it's a terminal outcome that
+      // may have happened before or after an interview, and there's no
+      // stored record of which stage it was withdrawn from.
+      completed: ["Interview Scheduled", "Offer Released", "Selected", "Rejected", "Withdrawn"].includes(status),
       active: status === "Interview Scheduled",
     },
     {
-      label: status === "Rejected" ? "Rejected" : status === "Selected" ? "Selected" : status === "Offer Released" ? "Offer Released" : "Final Decision",
+      label:
+        status === "Withdrawn" ? "Withdrawn" :
+        status === "Rejected" ? "Rejected" :
+        status === "Selected" ? "Selected" :
+        status === "Offer Released" ? "Offer Released" : "Final Decision",
       description: status === "Selected"
         ? "Congratulations! You received an offer."
         : status === "Offer Released"
           ? "An offer has been extended -- check the details below."
           : status === "Rejected"
             ? "Role closed. Thank you for applying."
-            : "Awaiting final feedback",
-      completed: ["Offer Released", "Selected", "Rejected"].includes(status),
-      active: ["Offer Released", "Selected", "Rejected"].includes(status),
+            : status === "Withdrawn"
+              ? "You withdrew this application."
+              : "Awaiting final feedback",
+      completed: ["Offer Released", "Selected", "Rejected", "Withdrawn"].includes(status),
+      active: ["Offer Released", "Selected", "Rejected", "Withdrawn"].includes(status),
     },
   ]
 
@@ -338,6 +365,24 @@ export function ApplicationTimeline({ application, onClose, onWithdrawn }: Appli
             </div>
           </div>
         </div>
+
+        {status === "Withdrawn" && (
+          <>
+            <hr className="border-slate-100 dark:border-slate-800" />
+            <div className="rounded-lg bg-amber-50 p-3 text-xs font-semibold text-amber-700 dark:bg-amber-500/10 dark:text-amber-200">
+              You withdrew this application. The recruiter can no longer see your profile details for it.
+            </div>
+            <Button
+              type="button"
+              onClick={handleReapply}
+              disabled={reapplying}
+              className="w-full h-8 gap-1.5 text-xs font-bold bg-[#6B2C91] text-white hover:bg-[#5a237b]"
+            >
+              <RotateCcw className="size-3.5" />
+              {reapplying ? "Reapplying..." : "Reapply to this Job"}
+            </Button>
+          </>
+        )}
 
         {canWithdraw && (
           <>

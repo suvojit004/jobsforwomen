@@ -57,7 +57,7 @@ export function MyApplications({ applications = [] }: MyApplicationsProps) {
       all: applications.length,
       applied: applications.filter(a => a.status === "Applied").length,
       interviewing: applications.filter(a => a.status === "Interview Scheduled" || a.status === "Under Review").length,
-      closed: applications.filter(a => a.status === "Rejected" || a.status === "Selected").length,
+      closed: applications.filter(a => a.status === "Rejected" || a.status === "Selected" || a.status === "Withdrawn").length,
     }
   }, [applications])
 
@@ -67,7 +67,7 @@ export function MyApplications({ applications = [] }: MyApplicationsProps) {
     if (activeFilter === "interviewing") {
       return applications.filter((a) => a.status === "Interview Scheduled" || a.status === "Under Review")
     }
-    return applications.filter((a) => a.status === "Rejected" || a.status === "Selected")
+    return applications.filter((a) => a.status === "Rejected" || a.status === "Selected" || a.status === "Withdrawn")
   }, [applications, activeFilter])
 
   const filterTabs: { key: ApplicationFilter; label: string; count: number }[] = [

@@ -6,6 +6,7 @@ export type ApplicationStatus =
   | "Offer Released"
   | "Selected"
   | "Rejected"
+  | "Withdrawn"
 
 // Matches jobsApi.ts's RecruiterSummary / candidate.service.ts's
 // shapeRecruiterSummary() -- no dedicated photo column exists on
@@ -31,6 +32,9 @@ export interface ApplicationInterview {
 
 export interface Application {
   id: string
+  // Needed so a withdrawn application can be resubmitted (reapply posts to
+  // /candidates/jobs/:jobId/apply) without a separate lookup.
+  jobId: string
   company: string
   companyCode: string
   companyLogoUrl?: string | null

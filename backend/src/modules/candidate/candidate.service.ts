@@ -425,6 +425,47 @@ export class CandidateService {
       where: { candidateId: candidate.id, jobId },
     })
     if (existing) {
+      // A withdrawn application is not a live duplicate -- let the candidate
+      // reapply. Reuse the same row (rather than creating a second one)
+      // since nothing in this schema expects more than one Application per
+      // candidate/job pair; reset it back to a fresh Applied cycle and clear
+      // out anything left over from the previous attempt (old offer, old
+      // interview records) so the recruiter sees a clean new application.
+      if (existing.status === ApplicationStatus.Withdrawn) {
+        await prisma.interview.deleteMany({ where: { applicationId: existing.id } })
+        const reapplied = await prisma.application.update({
+          where: { id: existing.id },
+          data: {
+            status: ApplicationStatus.Applied,
+            appliedOn: new Date(),
+            offerDetails: null,
+            offerReleasedAt: null,
+            offerLetterUrl: null,
+            offerLetterPublicId: null,
+            history: {
+              create: {
+                status: ApplicationStatus.Applied,
+                changedBy: candidate.fullName,
+                notes: "Candidate reapplied after previously withdrawing",
+              },
+            },
+          },
+        })
+
+        EventBus.publish("ApplicationSubmitted", {
+          applicationId: reapplied.id,
+          candidateId: candidate.id,
+          candidateName: candidate.fullName,
+          jobId,
+          jobTitle: job.title,
+          companyName: job.company.name,
+          recruiterUserId: job.recruiter.userId,
+          context,
+        })
+
+        return reapplied
+      }
+
       throw new Error("You have already applied for this job posting")
     }
 
@@ -543,6 +584,7 @@ export class CandidateService {
       ApplicationStatus.OfferReleased,
       ApplicationStatus.Hired,
       ApplicationStatus.Rejected,
+      ApplicationStatus.Withdrawn,
     ]
     if (NON_WITHDRAWABLE_STATUSES.includes(app.status)) {
       throw new AppError(
@@ -554,10 +596,10 @@ export class CandidateService {
     const updated = await prisma.application.update({
       where: { id: applicationId },
       data: {
-        status: ApplicationStatus.Rejected,
+        status: ApplicationStatus.Withdrawn,
         history: {
           create: {
-            status: ApplicationStatus.Rejected,
+            status: ApplicationStatus.Withdrawn,
             changedBy: app.candidate.fullName,
             notes: "Application withdrawn by candidate",
           },

@@ -76,6 +76,11 @@ enum ApplicationStatus {
   OfferReleased
   Rejected
   Hired
+  // Candidate-initiated withdrawal -- previously withdrawing an application
+  // just set it to Rejected, which is misleading (the recruiter never
+  // rejected them, they withdrew of their own accord) and made it impossible
+  // to tell the two apart anywhere in the UI.
+  Withdrawn
 }
 
 // "Report Platform Issue" ticket lifecycle. Deliberately just three states --

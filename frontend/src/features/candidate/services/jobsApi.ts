@@ -185,6 +185,7 @@ const APPLICATION_STATUS_MAP: Record<string, DisplayApplicationStatus> = {
   OfferReleased: "Offer Released",
   Rejected: "Rejected",
   Hired: "Selected",
+  Withdrawn: "Withdrawn",
 }
 
 type DisplayApplicationStatus =
@@ -194,6 +195,7 @@ type DisplayApplicationStatus =
   | "Offer Released"
   | "Selected"
   | "Rejected"
+  | "Withdrawn"
 
 // Matches candidate.service.ts's shapeRecruiterSummary() -- a flat, safe
 // (no passwordHash, no raw preferences blob) recruiter summary attached to
@@ -222,6 +224,9 @@ export interface DisplayApplicationInterview {
 
 export interface DisplayApplication {
   id: string
+  // Needed so a withdrawn application can be resubmitted without a separate
+  // lookup -- see CandidateJobsApi.applyToJob().
+  jobId: string
   company: string
   companyCode: string
   companyLogoUrl?: string | null
@@ -249,6 +254,7 @@ export function mapApiApplication(app: any): DisplayApplication {
   const latestInterview = (app.interviews || [])[0]
   return {
     id: app.id,
+    jobId: app.jobId,
     company: companyName,
     companyCode: codeForCompany(companyName),
     companyLogoUrl: app.job?.company?.logoUrl || null,
