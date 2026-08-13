@@ -49,6 +49,52 @@ export class CandidateController {
   }
 
   // ==========================================
+  // AVATAR (PROFILE PHOTO) HANDLERS
+  // ==========================================
+  uploadAvatar = async (req: Request, res: Response, next: any) => {
+    try {
+      const file = (req as any).file
+      const userId = req.user?.userId || ""
+      const context = this.getContext(req)
+
+      if (!file && process.env.NODE_ENV !== "test") {
+        return sendError(res, "No file uploaded. Please upload a JPEG, PNG, GIF, or WEBP image.", null, 400)
+      }
+
+      let fileDetails: any
+
+      if (file) {
+        // Deterministic filename (not one-per-upload like gallery photos) --
+        // a re-upload overwrites the same asset, same as the company logo.
+        const result = await uploadFile(file.buffer, "jfw/avatars", `${userId}_avatar`, false, file.originalname)
+        fileDetails = { url: result.secureUrl, publicId: result.publicId }
+      } else {
+        // Fallback for tests only (gated above)
+        fileDetails = {
+          url: "http://localhost:5000/files/jfw/avatars/mock_avatar.png",
+          publicId: "jfw/avatars/mock_avatar.png",
+        }
+      }
+
+      const updated = await this.service.updateAvatar(userId, fileDetails, context)
+      return sendSuccess(res, { profile: updated }, "Profile photo uploaded successfully.")
+    } catch (err: any) {
+      next(err)
+    }
+  }
+
+  deleteAvatar = async (req: Request, res: Response, next: any) => {
+    try {
+      const userId = req.user?.userId || ""
+      const context = this.getContext(req)
+      const updated = await this.service.deleteAvatar(userId, context)
+      return sendSuccess(res, { profile: updated }, "Profile photo removed successfully.")
+    } catch (err: any) {
+      next(err)
+    }
+  }
+
+  // ==========================================
   // RESUME HANDLERS
   // ==========================================
   uploadResume = async (req: Request, res: Response, next: any) => {

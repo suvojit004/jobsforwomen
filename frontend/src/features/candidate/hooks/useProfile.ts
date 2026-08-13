@@ -25,6 +25,8 @@ export function useProfile() {
       location: prof?.location ?? "",
       experience: prof?.totalExperience ?? "",
       currentCtc: prof?.expectedSalary ?? "",
+      bio: prof?.bio ?? "",
+      avatarUrl: prof?.avatarUrl ?? "",
       profileCompletion: prof?.profileCompletePercent ?? 0,
       skills: (prof?.skills ?? []).map((s: any) => s.skill?.name ?? s.name ?? s),
       languages: prof?.languages?.length ? prof.languages : ["English"],
@@ -93,6 +95,7 @@ export function useProfile() {
         const payload = {
           fullName: editingData.fullName,
           title: editingData.role,
+          bio: editingData.bio,
           phone: editingData.phone,
           location: editingData.location,
           totalExperience: editingData.experience,
@@ -119,7 +122,7 @@ export function useProfile() {
     }
   }
 
-  const updatePersonalInfo = (fields: Partial<Pick<ExtendedCandidate, "fullName" | "role" | "email" | "phone" | "location" | "experience" | "currentCtc">>) => {
+  const updatePersonalInfo = (fields: Partial<Pick<ExtendedCandidate, "fullName" | "role" | "email" | "phone" | "location" | "experience" | "currentCtc" | "bio">>) => {
     if (editingData) {
       setEditingData((prev: any) => ({
         ...prev,
@@ -344,6 +347,32 @@ export function useProfile() {
     }
   }
 
+  const uploadAvatar = async (file: File) => {
+    try {
+      const updated = await candidateApi.uploadAvatar(file)
+      if (updated) {
+        setCandidateData((prev) => (prev ? { ...prev, avatarUrl: updated.avatarUrl ?? "" } : prev))
+        setEditingData((prev) => (prev ? { ...prev, avatarUrl: updated.avatarUrl ?? "" } : prev))
+      }
+      return updated
+    } catch (err: any) {
+      console.error("Failed to upload avatar in hook:", err)
+      throw err
+    }
+  }
+
+  const deleteAvatar = async () => {
+    try {
+      const updated = await candidateApi.deleteAvatar()
+      setCandidateData((prev) => (prev ? { ...prev, avatarUrl: "" } : prev))
+      setEditingData((prev) => (prev ? { ...prev, avatarUrl: "" } : prev))
+      return updated
+    } catch (err: any) {
+      console.error("Failed to delete avatar in hook:", err)
+      throw err
+    }
+  }
+
   return {
     candidateData,
     isEditing,
@@ -372,5 +401,7 @@ export function useProfile() {
     removeSocialLink,
     uploadResume,
     deleteResume,
+    uploadAvatar,
+    deleteAvatar,
   }
 }

@@ -37,6 +37,8 @@ export interface ExtendedCandidate {
   location: string
   experience: string
   currentCtc: string
+  bio: string
+  avatarUrl: string
   profileCompletion: number
   skills: string[]
   languages: string[]

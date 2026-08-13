@@ -40,6 +40,8 @@ export function Profile() {
     removeSocialLink,
     uploadResume,
     deleteResume,
+    uploadAvatar,
+    deleteAvatar,
   } = useProfile()
 
   if (isLoading || !candidateData) {
@@ -79,6 +81,8 @@ export function Profile() {
         onEdit={startEditing}
         onSave={saveChanges}
         onCancel={cancelChanges}
+        onUploadAvatar={uploadAvatar}
+        onDeleteAvatar={deleteAvatar}
       />
 
       {/* Responsive Grid layout */}

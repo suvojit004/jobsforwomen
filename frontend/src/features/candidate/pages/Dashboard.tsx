@@ -30,6 +30,8 @@ function mapDashboardProfile(prof: any, fallbackName?: string, fallbackEmail?: s
   return {
     fullName: prof?.fullName || fallbackName || "Candidate",
     role: prof?.title || "Working Professional",
+    bio: prof?.bio || "",
+    avatarUrl: prof?.avatarUrl || "",
     location: prof?.location || "Not Specified",
     email: prof?.user?.email || fallbackEmail || "",
     phone: prof?.phone || "Not Specified",

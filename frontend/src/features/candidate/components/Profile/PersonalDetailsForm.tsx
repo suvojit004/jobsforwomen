@@ -65,7 +65,18 @@ export function PersonalDetailsForm({
       </h2>
 
       {!isEditing ? (
-        <div className="grid gap-6 md:grid-cols-2">
+        <div className="space-y-5">
+          {candidate.bio && (
+            <div className="rounded-xl bg-slate-50 p-4 dark:bg-slate-950/50">
+              <span className="mb-1.5 block text-xs font-bold text-slate-500 dark:text-slate-400">
+                Professional Summary
+              </span>
+              <p className="whitespace-pre-wrap text-xs font-semibold text-slate-700 dark:text-slate-200">
+                {candidate.bio}
+              </p>
+            </div>
+          )}
+          <div className="grid gap-6 md:grid-cols-2">
           {/* Details list */}
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-2 border-b border-slate-100 pb-2 dark:border-slate-800">
@@ -125,10 +136,31 @@ export function PersonalDetailsForm({
               </ul>
             )}
           </div>
+          </div>
         </div>
       ) : (
         <div className="space-y-5">
           {/* Edit form */}
+          <div className="flex flex-col gap-1.5">
+            <label htmlFor="bio" className="text-xs font-extrabold text-slate-600 dark:text-slate-400">
+              Professional Summary / Bio
+            </label>
+            <textarea
+              id="bio"
+              rows={4}
+              maxLength={500}
+              placeholder="A short summary recruiters will see -- your background, strengths, and what you're looking for."
+              value={candidate.bio}
+              onChange={(e) => onChange({ bio: e.target.value })}
+              className="resize-none rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6B2C91]/30 dark:border-slate-800 dark:bg-slate-900"
+            />
+            <span className="text-right text-[10px] font-semibold text-slate-400 dark:text-slate-500">
+              {(candidate.bio || "").length}/500
+            </span>
+          </div>
+
+          <hr className="border-slate-100 dark:border-slate-800" />
+
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="flex flex-col gap-1.5">
               <label htmlFor="fullName" className="text-xs font-extrabold text-slate-600 dark:text-slate-400">

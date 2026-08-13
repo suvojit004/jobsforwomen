@@ -25,10 +25,11 @@ export interface FileUploadResult {
 // signature required. Everything else is a private document (resume, offer
 // letter, verification/perk document) and requires a signed, time-limited
 // URL -- see signFileUrl()/verifyFileSignature() below.
-export const PUBLIC_FOLDER_TYPES = new Set(["logos", "gallery"])
+export const PUBLIC_FOLDER_TYPES = new Set(["logos", "gallery", "avatars"])
 export const KNOWN_FOLDER_TYPES = new Set([
   "logos",
   "gallery",
+  "avatars",
   "resumes",
   "offer-letters",
   "perk-documents",

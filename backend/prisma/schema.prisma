@@ -235,6 +235,7 @@ model CandidateProfile {
   preferredLocations String[]
   availability       String?
   avatarUrl          String?
+  avatarPublicId     String?
   resumeUrl          String?
   resumePublicId     String?
   resumeMetadata     Json? // File type, size details from Cloudinary

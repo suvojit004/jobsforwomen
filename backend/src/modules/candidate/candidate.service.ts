@@ -6,6 +6,7 @@ import { ApplicationStatus, JobStatus, UserStatus } from "@prisma/client"
 import { NotificationService } from "../../shared/services/notification.service"
 import { RECRUITER_SUMMARY_SELECT, shapeRecruiterSummary } from "../../shared/utils/recruiterSummary"
 import { AppError } from "../../shared/middleware/errorHandler"
+import { deleteFile } from "../../shared/utils/fileStorage"
 
 export interface ServiceContext {
   operatorId?: string
@@ -174,6 +175,90 @@ export class CandidateService {
       userId,
       profileCompletePercent: calculateProfileCompletion(user),
     }
+  }
+
+  // ==========================================
+  // AVATAR (PROFILE PHOTO) MANAGEMENT SERVICES
+  // ==========================================
+  async updateAvatar(userId: string, fileDetails: { url: string; publicId: string }, context?: ServiceContext) {
+    const candidate = await prisma.candidateProfile.findUnique({
+      where: { userId },
+    })
+    if (!candidate) {
+      throw new Error("Candidate profile not found")
+    }
+
+    const oldPublicId = candidate.avatarPublicId
+
+    const updated = await prisma.candidateProfile.update({
+      where: { userId },
+      data: {
+        avatarUrl: fileDetails.url,
+        avatarPublicId: fileDetails.publicId,
+      },
+    })
+
+    // Same safe-replacement order as Company logo uploads: point the DB at
+    // the new asset first, only delete the old one after that succeeds --
+    // and only if it's actually a different file. The uploader uses a
+    // deterministic filename (`${userId}_avatar`), so a re-upload usually
+    // overwrites the same path (oldPublicId === fileDetails.publicId); if
+    // we deleted unconditionally here, that would delete the brand-new
+    // image we just pointed the database at.
+    if (oldPublicId && oldPublicId !== fileDetails.publicId) {
+      try {
+        await deleteFile(oldPublicId, false)
+      } catch (err: any) {
+        logger.warn(`[FileStorage] Failed to delete previous avatar asset: ${err.message}`)
+      }
+    }
+
+    EventBus.publish("CandidateProfileUpdated", {
+      userId,
+      candidateId: candidate.id,
+      fullName: updated.fullName,
+      context,
+      oldValue: { avatarUrl: candidate.avatarUrl },
+      newValue: { avatarUrl: updated.avatarUrl },
+    })
+
+    return updated
+  }
+
+  async deleteAvatar(userId: string, context?: ServiceContext) {
+    const candidate = await prisma.candidateProfile.findUnique({
+      where: { userId },
+    })
+    if (!candidate) {
+      throw new Error("Candidate profile not found")
+    }
+
+    if (candidate.avatarPublicId) {
+      try {
+        await deleteFile(candidate.avatarPublicId, false)
+      } catch (err: any) {
+        logger.warn(`[FileStorage] Failed to delete avatar asset: ${err.message}`)
+      }
+    }
+
+    const updated = await prisma.candidateProfile.update({
+      where: { userId },
+      data: {
+        avatarUrl: null,
+        avatarPublicId: null,
+      },
+    })
+
+    EventBus.publish("CandidateProfileUpdated", {
+      userId,
+      candidateId: candidate.id,
+      fullName: updated.fullName,
+      context,
+      oldValue: { avatarUrl: candidate.avatarUrl },
+      newValue: { avatarUrl: null },
+    })
+
+    return updated
   }
 
   // ==========================================

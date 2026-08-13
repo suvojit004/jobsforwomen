@@ -23,6 +23,18 @@ export const candidateApi = {
     return res?.data?.profile || res?.data
   },
 
+  async uploadAvatar(file: File) {
+    const formData = new FormData()
+    formData.append("avatar", file)
+    const res = await apiClient.post("/api/v1/candidates/avatar", formData)
+    return res?.data?.profile || res?.data
+  },
+
+  async deleteAvatar() {
+    const res = await apiClient.delete("/api/v1/candidates/avatar")
+    return res?.data?.profile || res?.data
+  },
+
   async getSettings() {
     const res = await apiClient.get("/api/v1/candidates/settings")
     return res?.data?.settings || res?.data

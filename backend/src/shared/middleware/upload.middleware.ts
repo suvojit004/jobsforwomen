@@ -120,6 +120,33 @@ export const uploadGalleryPhotoMiddleware = (req: Request, res: Response, next: 
   })
 }
 
+// Candidate profile photo. Same image constraints as the company logo
+// (2MB, JPEG/PNG/GIF/WEBP) -- a profile photo has no reason to be held to a
+// different bar than a company logo -- kept as its own export (field name
+// "avatar") rather than reusing uploadLogoMiddleware directly, same
+// reasoning as uploadGalleryPhotoMiddleware above.
+export const uploadAvatarMiddleware = (req: Request, res: Response, next: NextFunction) => {
+  const upload = logoUploader.single("avatar")
+  upload(req, res, async (err: any) => {
+    if (err) {
+      return sendError(res, err.message, null, 400)
+    }
+
+    const file = (req as any).file
+    if (file) {
+      try {
+        const isClean = await scanFileForVirus(file.buffer, file.mimetype)
+        if (!isClean) {
+          return sendError(res, "File rejected: it is empty or its contents do not match the declared file type.", null, 400)
+        }
+      } catch (scanErr: any) {
+        return sendError(res, "File security verification failed.", null, 400)
+      }
+    }
+    next()
+  })
+}
+
 // Company verification documents (GST/PAN/CIN/registration certificate/
 // website ownership proof/etc. -- Part 3 & 13 of the recruiter-onboarding
 // spec). Same PDF/PNG/JPEG + 10MB constraints already defined for this

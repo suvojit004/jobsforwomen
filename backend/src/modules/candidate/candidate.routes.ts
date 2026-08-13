@@ -1,7 +1,7 @@
 import { Router } from "express"
 import { CandidateController } from "./candidate.controller"
 import { authenticateToken } from "../../shared/middleware/auth.middleware"
-import { uploadResumeMiddleware } from "../../shared/middleware/upload.middleware"
+import { uploadResumeMiddleware, uploadAvatarMiddleware } from "../../shared/middleware/upload.middleware"
 import {
   requireActiveUser,
   requireVerifiedEmail,
@@ -34,6 +34,10 @@ router.get("/profile/completion", controller.getProfileCompletion)
 // Resume upload & delete
 router.post("/resume", uploadRateLimiter, uploadResumeMiddleware, controller.uploadResume)
 router.delete("/resume", controller.deleteResume)
+
+// Profile photo upload & delete
+router.post("/avatar", uploadRateLimiter, uploadAvatarMiddleware, controller.uploadAvatar)
+router.delete("/avatar", controller.deleteAvatar)
 
 // Saved Jobs Bookmarks
 router.get("/saved-jobs", controller.getSavedJobs)
