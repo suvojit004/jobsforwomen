@@ -47,6 +47,7 @@ interface PerkRequestSummary {
 interface AdminCompany {
   id: string
   name: string
+  logoUrl: string | null
   website: string
   location: string
   industry: string
@@ -109,6 +110,7 @@ export function CompanyDetails() {
         const formattedComps = (comps || []).map((c: any) => ({
           id: c.id,
           name: c.name,
+          logoUrl: c.logoUrl || null,
           website: c.website || "Not specified",
           location: c.location || "Not specified",
           industry: c.industry?.name || "Not specified",
@@ -215,9 +217,17 @@ export function CompanyDetails() {
             <DashboardCard className="p-6 space-y-6">
               <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
                 <div className="flex items-center gap-3">
-                  <div className="size-12 rounded-xl bg-violet-100 text-[#6B2C91] dark:bg-pink-900/20 dark:text-pink-300 flex items-center justify-center font-black text-lg shrink-0">
-                    {selectedCompany.name.charAt(0)}
-                  </div>
+                  {selectedCompany.logoUrl ? (
+                    <img
+                      src={selectedCompany.logoUrl}
+                      alt={selectedCompany.name}
+                      className="size-12 rounded-xl object-cover shrink-0 border border-slate-100 dark:border-slate-800"
+                    />
+                  ) : (
+                    <div className="size-12 rounded-xl bg-violet-100 text-[#6B2C91] dark:bg-pink-900/20 dark:text-pink-300 flex items-center justify-center font-black text-lg shrink-0">
+                      {selectedCompany.name.charAt(0)}
+                    </div>
+                  )}
                   <div>
                     <h2 className="text-lg font-black text-slate-950 dark:text-white">
                       {selectedCompany.name}
