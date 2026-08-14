@@ -33,6 +33,36 @@ function isKnownDegree(value: string): boolean {
   return COMMON_DEGREES.includes(value)
 }
 
+// Covers the common B.Tech/B.E. branches plus a few non-engineering
+// specializations (MBA majors, etc.) since this field isn't exclusive to
+// engineering degrees. "Other" reveals a free-text input the same way the
+// Degree field does.
+const COMMON_SPECIALIZATIONS = [
+  "Computer Science Engineering (CSE)",
+  "Information Technology (IT)",
+  "Electronics & Communication (ECE)",
+  "Electrical & Electronics (EEE)",
+  "Electrical Engineering",
+  "Mechanical Engineering",
+  "Civil Engineering",
+  "Chemical Engineering",
+  "Biotechnology",
+  "Aerospace Engineering",
+  "Automobile Engineering",
+  "Instrumentation Engineering",
+  "Data Science",
+  "Artificial Intelligence & Machine Learning",
+  "Finance",
+  "Marketing",
+  "Human Resources",
+  "Operations",
+]
+const OTHER_SPECIALIZATION = "Other"
+
+function isKnownSpecialization(value: string): boolean {
+  return COMMON_SPECIALIZATIONS.includes(value)
+}
+
 const CURRENT_YEAR = new Date().getFullYear()
 const MAX_YEAR = CURRENT_YEAR + 10
 
@@ -183,6 +213,68 @@ function DegreeCustomInput({ value, onChange, onBlur, idPrefix }: DegreeCustomIn
   )
 }
 
+type SpecializationFieldProps = {
+  value: string
+  isOther: boolean
+  onSelect: (value: string) => void
+  idPrefix: string
+}
+
+// Same select + "Other" free-text pattern as DegreeField -- this field is
+// optional (empty option lets it be cleared/skipped entirely), and its
+// preset options aren't gated behind which degree is selected, since
+// specializations don't map 1:1 onto a fixed degree list (e.g. an MBA
+// candidate might pick "Finance", a B.Tech candidate "CSE").
+function SpecializationField({ value, isOther, onSelect, idPrefix }: SpecializationFieldProps) {
+  return (
+    <div className="flex flex-col gap-1">
+      <label htmlFor={`${idPrefix}-specialization`} className="text-[10px] font-bold text-slate-500">
+        Specialization / Branch (optional)
+      </label>
+      <select
+        id={`${idPrefix}-specialization`}
+        value={isOther ? OTHER_SPECIALIZATION : value}
+        onChange={(e) => onSelect(e.target.value)}
+        className="rounded border border-slate-200 bg-white px-2 py-1.5 text-xs dark:border-slate-800 dark:bg-slate-900 dark:text-white"
+      >
+        <option value="">None / not applicable</option>
+        {COMMON_SPECIALIZATIONS.map((s) => (
+          <option key={s} value={s}>
+            {s}
+          </option>
+        ))}
+        <option value={OTHER_SPECIALIZATION}>Other (type your own)</option>
+      </select>
+    </div>
+  )
+}
+
+type SpecializationCustomInputProps = {
+  value: string
+  onChange: (value: string) => void
+  onBlur: (value: string) => void
+  idPrefix: string
+}
+
+function SpecializationCustomInput({ value, onChange, onBlur, idPrefix }: SpecializationCustomInputProps) {
+  return (
+    <div className="flex flex-col gap-1 sm:col-span-2">
+      <label htmlFor={`${idPrefix}-specialization-custom`} className="sr-only">
+        Your specialization / branch
+      </label>
+      <input
+        id={`${idPrefix}-specialization-custom`}
+        type="text"
+        placeholder="Enter your specialization / branch"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onBlur={(e) => onBlur(e.target.value)}
+        className="rounded border border-slate-200 bg-white px-2 py-1.5 text-xs dark:border-slate-800 dark:bg-slate-900 dark:text-white"
+      />
+    </div>
+  )
+}
+
 type EducationSectionProps = {
   education: Education[]
   isEditing: boolean
@@ -206,25 +298,29 @@ export function EducationSection({
   const [newCurrent, setNewCurrent] = useState(false)
   const [newGrade, setNewGrade] = useState("")
   const [newSpecialization, setNewSpecialization] = useState("")
-  // Existing entries derive "other mode" from their saved degree value not
-  // matching a known preset -- this set only tracks the one edge case that
-  // can't be derived: the user just picked "Other" from the dropdown but
-  // hasn't typed anything into the custom field yet (an empty degree value
-  // is otherwise indistinguishable from "no preset selected").
+  const [newSpecializationIsOther, setNewSpecializationIsOther] = useState(false)
+  // Existing entries derive "other mode" from their saved degree/
+  // specialization value not matching a known preset -- these sets only
+  // track the one edge case that can't be derived: the user just picked
+  // "Other" from the dropdown but hasn't typed anything into the custom
+  // field yet (an empty value is otherwise indistinguishable from "no
+  // preset selected").
   const [otherModeIds, setOtherModeIds] = useState<Set<string>>(new Set())
+  const [otherSpecializationModeIds, setOtherSpecializationModeIds] = useState<Set<string>>(new Set())
 
   const newDuration = formatEduDuration(newStart, newEnd, newCurrent)
 
   const handleAdd = (e: React.FormEvent) => {
     e.preventDefault()
     const degree = newDegreeIsOther ? toTitleCase(newDegree) : newDegree
+    const specialization = newSpecializationIsOther ? toTitleCase(newSpecialization) : newSpecialization
     if (degree.trim() && newInstitution.trim() && newDuration) {
       onAddEducation({
         degree: degree.trim(),
         institution: newInstitution.trim(),
         duration: newDuration,
         grade: newGrade.trim() || undefined,
-        specialization: newSpecialization.trim() || undefined,
+        specialization: specialization.trim() || undefined,
       })
       setNewDegree("")
       setNewDegreeIsOther(false)
@@ -234,6 +330,7 @@ export function EducationSection({
       setNewCurrent(false)
       setNewGrade("")
       setNewSpecialization("")
+      setNewSpecializationIsOther(false)
     }
   }
 
@@ -250,6 +347,9 @@ export function EducationSection({
         {education.map((edu) => {
           const durationParsed = parseEduDuration(edu.duration)
           const inOtherMode = otherModeIds.has(edu.id) || (edu.degree !== "" && !isKnownDegree(edu.degree))
+          const specializationInOtherMode =
+            otherSpecializationModeIds.has(edu.id) ||
+            (!!edu.specialization && !isKnownSpecialization(edu.specialization))
 
           return (
             <div
@@ -265,7 +365,7 @@ export function EducationSection({
                     <h3 className="text-sm font-extrabold text-slate-950 dark:text-white">
                       {edu.degree}
                       {edu.specialization && (
-                        <span className="font-bold text-slate-500 dark:text-slate-400"> in {edu.specialization}</span>
+                        <span className="font-bold text-slate-500 dark:text-slate-400">, {edu.specialization}</span>
                       )}
                     </h3>
                     <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
@@ -343,16 +443,36 @@ export function EducationSection({
                         className="rounded border border-slate-200 bg-white px-2 py-1 text-xs dark:border-slate-800 dark:bg-slate-900"
                       />
                     </div>
-                    <div className="flex flex-col gap-1 sm:col-span-2">
-                      <label className="text-[10px] font-bold text-slate-500">Specialization / Branch (optional)</label>
-                      <input
-                        type="text"
-                        placeholder="e.g. Computer Science Engineering (CSE)"
+                    <div className="sm:col-span-2">
+                      <SpecializationField
+                        idPrefix={`edu-${edu.id}`}
                         value={edu.specialization ?? ""}
-                        onChange={(e) => onUpdateEducation(edu.id, { specialization: e.target.value })}
-                        className="rounded border border-slate-200 bg-white px-2 py-1 text-xs dark:border-slate-800 dark:bg-slate-900"
+                        isOther={specializationInOtherMode}
+                        onSelect={(v) => {
+                          if (v === OTHER_SPECIALIZATION) {
+                            setOtherSpecializationModeIds((prev) => new Set(prev).add(edu.id))
+                            if (edu.specialization && isKnownSpecialization(edu.specialization)) {
+                              onUpdateEducation(edu.id, { specialization: "" })
+                            }
+                          } else {
+                            setOtherSpecializationModeIds((prev) => {
+                              const next = new Set(prev)
+                              next.delete(edu.id)
+                              return next
+                            })
+                            onUpdateEducation(edu.id, { specialization: v || undefined })
+                          }
+                        }}
                       />
                     </div>
+                    {specializationInOtherMode && (
+                      <SpecializationCustomInput
+                        idPrefix={`edu-${edu.id}`}
+                        value={edu.specialization ?? ""}
+                        onChange={(v) => onUpdateEducation(edu.id, { specialization: v })}
+                        onBlur={(v) => onUpdateEducation(edu.id, { specialization: toTitleCase(v) || undefined })}
+                      />
+                    )}
                   </div>
                   <div className="flex justify-end">
                     <Button
@@ -431,15 +551,30 @@ export function EducationSection({
                   className="rounded border border-slate-200 bg-white px-2 py-1.5 text-xs dark:border-slate-800 dark:bg-slate-900"
                 />
               </div>
-              <div className="flex flex-col gap-1 sm:col-span-2">
-                <input
-                  type="text"
-                  placeholder="Specialization / Branch (optional, e.g. Computer Science Engineering / CSE)"
+              <div className="sm:col-span-2">
+                <SpecializationField
+                  idPrefix="new-edu"
                   value={newSpecialization}
-                  onChange={(e) => setNewSpecialization(e.target.value)}
-                  className="rounded border border-slate-200 bg-white px-2 py-1.5 text-xs dark:border-slate-800 dark:bg-slate-900"
+                  isOther={newSpecializationIsOther}
+                  onSelect={(v) => {
+                    if (v === OTHER_SPECIALIZATION) {
+                      setNewSpecializationIsOther(true)
+                      setNewSpecialization("")
+                    } else {
+                      setNewSpecializationIsOther(false)
+                      setNewSpecialization(v)
+                    }
+                  }}
                 />
               </div>
+              {newSpecializationIsOther && (
+                <SpecializationCustomInput
+                  idPrefix="new-edu"
+                  value={newSpecialization}
+                  onChange={setNewSpecialization}
+                  onBlur={(v) => setNewSpecialization(toTitleCase(v))}
+                />
+              )}
             </div>
             <Button
               type="submit"

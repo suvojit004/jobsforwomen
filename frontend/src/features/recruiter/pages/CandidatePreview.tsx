@@ -257,7 +257,7 @@ export function CandidatePreview() {
                   <div key={edu.id} className="space-y-0.5">
                     <h4 className="text-xs font-black text-slate-900 dark:text-white">
                       {edu.degree}
-                      {edu.specialization && <span className="font-bold text-slate-400"> in {edu.specialization}</span>}
+                      {edu.specialization && <span className="font-bold text-slate-400">, {edu.specialization}</span>}
                     </h4>
                     <p className="text-[11px] font-bold text-slate-400">{edu.institution} &middot; {edu.duration}</p>
                     {edu.grade && <p className="text-[11px] text-slate-500">Result: {edu.grade}</p>}

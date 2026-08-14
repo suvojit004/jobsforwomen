@@ -315,7 +315,7 @@ export function CandidateDetails() {
                     <div className="flex items-center justify-between gap-2">
                       <h4 className="text-xs font-extrabold text-slate-900 dark:text-white">
                         {edu.degree}
-                        {edu.specialization && <span className="font-bold text-slate-450 dark:text-slate-500"> in {edu.specialization}</span>}
+                        {edu.specialization && <span className="font-bold text-slate-450 dark:text-slate-500">, {edu.specialization}</span>}
                       </h4>
                       <span className="text-[10px] font-bold text-slate-450 dark:text-slate-500 shrink-0">{edu.duration}</span>
                     </div>
