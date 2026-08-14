@@ -96,6 +96,11 @@ export class RecruiterService {
       where: { userId },
       include: {
         company: { include: { benefits: true, perkRequests: true } },
+        // Settings.tsx reads dash.recruiterProfile.user.email for the
+        // (read-only) Corporate Email field -- previously this include
+        // didn't exist at all, so that field was always blank regardless of
+        // what the account's real login email was.
+        user: { select: { email: true } },
       },
     })
 
@@ -260,6 +265,17 @@ export class RecruiterService {
       // fabricated placeholder company data ("TechNova Solutions", etc.)
       // regardless of which real company the recruiter actually belonged to.
       company,
+      // Settings.tsx has always read dash.recruiterProfile.{fullName,phone,
+      // user.email} for the Recruiter Details form, but this key never
+      // existed on the response -- every load fell back to `{}`, so the
+      // name field silently showed the literal fallback string "Recruiter",
+      // and the (disabled) email + phone fields rendered blank regardless
+      // of what was actually on file.
+      recruiterProfile: {
+        fullName: profile.fullName,
+        phone: profile.phone,
+        user: { email: profile.user.email },
+      },
       jobStatistics: jobCounts,
       applicantStatistics: appCounts,
       interviewSummary: interviews,

@@ -577,6 +577,16 @@ export class AuthService {
       user: {
         id: user.id,
         email: user.email,
+        // Same fix as getMe() below -- the top-right profile menu (Navbar.tsx)
+        // reads `user.fullName` and falls back to email only when it's
+        // missing, but this shape never set it, so it always fell back
+        // immediately after login/refresh/OAuth, before the next /auth/me
+        // call happened to paper over it.
+        fullName:
+          user.candidateProfile?.fullName ||
+          user.recruiterProfile?.fullName ||
+          user.adminProfile?.fullName ||
+          undefined,
         status: user.status,
         roles,
         permissions,
@@ -628,6 +638,16 @@ export class AuthService {
     return {
       id: user.id,
       email: user.email,
+      // Frontend's User type has a top-level `fullName`, and Navbar.tsx
+      // reads it directly (falling back to email only if it's missing) --
+      // but this response never actually set it, so the top-right profile
+      // menu showed every user's login email instead of their real name.
+      // The real name lives on whichever role profile the account has.
+      fullName:
+        user.candidateProfile?.fullName ||
+        user.recruiterProfile?.fullName ||
+        user.adminProfile?.fullName ||
+        undefined,
       status: user.status,
       roles,
       permissions,
