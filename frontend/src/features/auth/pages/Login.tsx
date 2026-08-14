@@ -6,6 +6,7 @@ import { Eye, EyeOff, Lock, Mail, ShieldCheck } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Logo } from "@/components/shared/Logo"
+import { BackToHomeLink } from "@/components/shared/BackToHomeLink"
 import { useAuth } from "@/hooks/useAuth"
 import { isValidEmail } from "@/utils/validators"
 import type { User, TwoFactorChallenge } from "@/contexts/AuthContext"
@@ -107,7 +108,8 @@ export function Login() {
   // so "Back" re-runs the password step to get a fresh one.
   if (pendingToken) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[#FDFBFD] dark:bg-slate-950 px-4 py-12 sm:px-6 lg:px-8 font-sans transition-colors duration-300">
+      <div className="relative flex min-h-screen items-center justify-center bg-[#FDFBFD] dark:bg-slate-950 px-4 py-12 sm:px-6 lg:px-8 font-sans transition-colors duration-300">
+        <BackToHomeLink />
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -171,8 +173,9 @@ export function Login() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[#FDFBFD] dark:bg-slate-950 px-4 py-12 sm:px-6 lg:px-8 font-sans transition-colors duration-300">
-      <motion.div 
+    <div className="relative flex min-h-screen items-center justify-center bg-[#FDFBFD] dark:bg-slate-950 px-4 py-12 sm:px-6 lg:px-8 font-sans transition-colors duration-300">
+      <BackToHomeLink />
+      <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}

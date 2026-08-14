@@ -6,6 +6,7 @@ import { Lock, Mail, User, Phone, Building, Globe, MapPin, Briefcase, Eye, EyeOf
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Logo } from "@/components/shared/Logo"
+import { BackToHomeLink } from "@/components/shared/BackToHomeLink"
 import { useAuth } from "@/hooks/useAuth"
 import { isValidEmail, isValidPhone, isValidPassword, isValidWebsite, normalizeWebsite, PASSWORD_HELP_TEXT } from "@/utils/validators"
 
@@ -83,8 +84,9 @@ export function RecruiterRegister() {
 
   if (registered) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[#FDFBFD] px-4 py-12 font-sans">
-        <motion.div 
+      <div className="relative flex min-h-screen items-center justify-center bg-[#FDFBFD] px-4 py-12 font-sans">
+        <BackToHomeLink />
+        <motion.div
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
           className="w-full max-w-md space-y-6 bg-white p-8 rounded-3xl border border-slate-100 shadow-xl text-center"
@@ -109,8 +111,9 @@ export function RecruiterRegister() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[#FDFBFD] dark:bg-slate-950 px-4 py-12 sm:px-6 lg:px-8 font-sans transition-colors duration-300">
-      <motion.div 
+    <div className="relative flex min-h-screen items-center justify-center bg-[#FDFBFD] dark:bg-slate-950 px-4 py-12 sm:px-6 lg:px-8 font-sans transition-colors duration-300">
+      <BackToHomeLink />
+      <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
