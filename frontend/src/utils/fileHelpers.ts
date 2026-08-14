@@ -49,14 +49,28 @@ export function formatFileSize(bytes?: number | null): string {
   return `${size % 1 === 0 ? size : size.toFixed(1)} ${units[unitIndex]}`
 }
 
-// Best-effort extension, preferring the stored original filename (present on
-// documents uploaded after this fix shipped) and falling back to sniffing
-// the URL's path for older/legacy records that never had one stored.
+// Best-effort extension, preferring the stored original filename and falling
+// back to sniffing the URL's path.
+//
+// Previously this used `doc.originalFilename || doc.url` as a single combined
+// string, then ran the extension regex once -- so an originalFilename that's
+// PRESENT but has no extension (e.g. Applicants.tsx/CandidatePreview.tsx/
+// admin's CandidateDetails.tsx all build resume preview docs as
+// `{ url: candidate.resumeUrl, originalFilename: "${name} - Resume" }`, with
+// no dot anywhere in it) short-circuited the whole lookup: since
+// originalFilename was truthy, `url` was never even tried, and this returned
+// "" regardless of the real file type. DocumentPreviewModal then built a
+// download filename with NO extension at all, so the browser/OS had nothing
+// to recognize the (perfectly valid) downloaded bytes as a PDF/DOCX -- which
+// is exactly what looks like "corrupted garbage" when opened. Now each
+// candidate is tried independently, so a real extension on the URL is used
+// whenever the originalFilename doesn't have one of its own.
 export function getFileExtension(doc: { originalFilename?: string | null; url?: string | null; format?: string | null }): string {
   if (doc.format) return doc.format.toLowerCase()
-  const name = doc.originalFilename || doc.url || ""
-  const match = /\.([a-zA-Z0-9]+)(?:$|\?)/.exec(name)
-  return match ? match[1].toLowerCase() : ""
+  const fromName = doc.originalFilename ? /\.([a-zA-Z0-9]+)(?:$|\?)/.exec(doc.originalFilename) : null
+  if (fromName) return fromName[1].toLowerCase()
+  const fromUrl = doc.url ? /\.([a-zA-Z0-9]+)(?:$|\?)/.exec(doc.url) : null
+  return fromUrl ? fromUrl[1].toLowerCase() : ""
 }
 
 const ICON_BY_EXTENSION: Record<string, "pdf" | "word" | "sheet" | "slide" | "image" | "file"> = {
