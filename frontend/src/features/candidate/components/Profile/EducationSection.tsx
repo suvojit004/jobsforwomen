@@ -117,8 +117,6 @@ type DegreeFieldProps = {
   value: string
   isOther: boolean
   onSelect: (value: string) => void
-  onCustomChange: (value: string) => void
-  onCustomBlur: (value: string) => void
   idPrefix: string
 }
 
@@ -126,7 +124,14 @@ type DegreeFieldProps = {
 // input (auto title-cased on blur) for anything not on the list -- rather
 // than a single always-free-text field where "btech", "B.TECH", and "Btech"
 // could all be sitting in different candidates' profiles at once.
-function DegreeField({ value, isOther, onSelect, onCustomChange, onCustomBlur, idPrefix }: DegreeFieldProps) {
+//
+// The "Other" custom-text input used to live inside this component, which
+// made this grid cell taller than the Institution Name cell next to it --
+// since a CSS grid row stretches to its tallest cell, that left an ugly gap
+// under Institution Name and pushed the Duration/Grade row down unevenly.
+// It's rendered by the caller instead, as its own full-width row, so this
+// cell is always just a label + select.
+function DegreeField({ value, isOther, onSelect, idPrefix }: DegreeFieldProps) {
   return (
     <div className="flex flex-col gap-1">
       <label htmlFor={`${idPrefix}-degree`} className="text-[10px] font-bold text-slate-500">
@@ -148,16 +153,32 @@ function DegreeField({ value, isOther, onSelect, onCustomChange, onCustomBlur, i
         ))}
         <option value={OTHER_DEGREE}>Other (type your own)</option>
       </select>
-      {isOther && (
-        <input
-          type="text"
-          placeholder="Enter your degree / certification"
-          value={value}
-          onChange={(e) => onCustomChange(e.target.value)}
-          onBlur={(e) => onCustomBlur(e.target.value)}
-          className="mt-1 rounded border border-slate-200 bg-white px-2 py-1.5 text-xs dark:border-slate-800 dark:bg-slate-900 dark:text-white"
-        />
-      )}
+    </div>
+  )
+}
+
+type DegreeCustomInputProps = {
+  value: string
+  onChange: (value: string) => void
+  onBlur: (value: string) => void
+  idPrefix: string
+}
+
+function DegreeCustomInput({ value, onChange, onBlur, idPrefix }: DegreeCustomInputProps) {
+  return (
+    <div className="flex flex-col gap-1 sm:col-span-2">
+      <label htmlFor={`${idPrefix}-degree-custom`} className="sr-only">
+        Your degree / certification
+      </label>
+      <input
+        id={`${idPrefix}-degree-custom`}
+        type="text"
+        placeholder="Enter your degree / certification"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onBlur={(e) => onBlur(e.target.value)}
+        className="rounded border border-slate-200 bg-white px-2 py-1.5 text-xs dark:border-slate-800 dark:bg-slate-900 dark:text-white"
+      />
     </div>
   )
 }
@@ -184,6 +205,7 @@ export function EducationSection({
   const [newEnd, setNewEnd] = useState("")
   const [newCurrent, setNewCurrent] = useState(false)
   const [newGrade, setNewGrade] = useState("")
+  const [newSpecialization, setNewSpecialization] = useState("")
   // Existing entries derive "other mode" from their saved degree value not
   // matching a known preset -- this set only tracks the one edge case that
   // can't be derived: the user just picked "Other" from the dropdown but
@@ -202,6 +224,7 @@ export function EducationSection({
         institution: newInstitution.trim(),
         duration: newDuration,
         grade: newGrade.trim() || undefined,
+        specialization: newSpecialization.trim() || undefined,
       })
       setNewDegree("")
       setNewDegreeIsOther(false)
@@ -210,6 +233,7 @@ export function EducationSection({
       setNewEnd("")
       setNewCurrent(false)
       setNewGrade("")
+      setNewSpecialization("")
     }
   }
 
@@ -240,6 +264,9 @@ export function EducationSection({
                   <div className="flex flex-wrap items-center justify-between gap-1.5">
                     <h3 className="text-sm font-extrabold text-slate-950 dark:text-white">
                       {edu.degree}
+                      {edu.specialization && (
+                        <span className="font-bold text-slate-500 dark:text-slate-400"> in {edu.specialization}</span>
+                      )}
                     </h3>
                     <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
                       {edu.duration}
@@ -256,7 +283,7 @@ export function EducationSection({
                 </div>
               ) : (
                 <div className="space-y-3 rounded-lg bg-slate-50 p-3 dark:bg-slate-950/40">
-                  <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="grid gap-3 sm:grid-cols-2 sm:items-start">
                     <DegreeField
                       idPrefix={`edu-${edu.id}`}
                       value={edu.degree}
@@ -274,8 +301,6 @@ export function EducationSection({
                           onUpdateEducation(edu.id, { degree: v })
                         }
                       }}
-                      onCustomChange={(v) => onUpdateEducation(edu.id, { degree: v })}
-                      onCustomBlur={(v) => onUpdateEducation(edu.id, { degree: toTitleCase(v) })}
                     />
                     <div className="flex flex-col gap-1">
                       <label className="text-[10px] font-bold text-slate-500">Institution Name</label>
@@ -286,6 +311,14 @@ export function EducationSection({
                         className="rounded border border-slate-200 bg-white px-2 py-1 text-xs dark:border-slate-800 dark:bg-slate-900"
                       />
                     </div>
+                    {inOtherMode && (
+                      <DegreeCustomInput
+                        idPrefix={`edu-${edu.id}`}
+                        value={edu.degree}
+                        onChange={(v) => onUpdateEducation(edu.id, { degree: v })}
+                        onBlur={(v) => onUpdateEducation(edu.id, { degree: toTitleCase(v) })}
+                      />
+                    )}
                     <EduDurationFields
                       idPrefix={`edu-${edu.id}`}
                       start={durationParsed.start}
@@ -307,6 +340,16 @@ export function EducationSection({
                         type="text"
                         value={edu.grade ?? ""}
                         onChange={(e) => onUpdateEducation(edu.id, { grade: e.target.value })}
+                        className="rounded border border-slate-200 bg-white px-2 py-1 text-xs dark:border-slate-800 dark:bg-slate-900"
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1 sm:col-span-2">
+                      <label className="text-[10px] font-bold text-slate-500">Specialization / Branch (optional)</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Computer Science Engineering (CSE)"
+                        value={edu.specialization ?? ""}
+                        onChange={(e) => onUpdateEducation(edu.id, { specialization: e.target.value })}
                         className="rounded border border-slate-200 bg-white px-2 py-1 text-xs dark:border-slate-800 dark:bg-slate-900"
                       />
                     </div>
@@ -337,7 +380,7 @@ export function EducationSection({
             <h3 className="mb-3 text-xs font-extrabold text-slate-950 dark:text-white">
               Add Education
             </h3>
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid gap-3 sm:grid-cols-2 sm:items-start">
               <DegreeField
                 idPrefix="new-edu"
                 value={newDegree}
@@ -351,8 +394,6 @@ export function EducationSection({
                     setNewDegree(v)
                   }
                 }}
-                onCustomChange={setNewDegree}
-                onCustomBlur={(v) => setNewDegree(toTitleCase(v))}
               />
               <div className="flex flex-col gap-1">
                 <input
@@ -364,6 +405,14 @@ export function EducationSection({
                   required
                 />
               </div>
+              {newDegreeIsOther && (
+                <DegreeCustomInput
+                  idPrefix="new-edu"
+                  value={newDegree}
+                  onChange={setNewDegree}
+                  onBlur={(v) => setNewDegree(toTitleCase(v))}
+                />
+              )}
               <EduDurationFields
                 idPrefix="new-edu"
                 start={newStart}
@@ -379,6 +428,15 @@ export function EducationSection({
                   placeholder="Grade / CGPA (optional)"
                   value={newGrade}
                   onChange={(e) => setNewGrade(e.target.value)}
+                  className="rounded border border-slate-200 bg-white px-2 py-1.5 text-xs dark:border-slate-800 dark:bg-slate-900"
+                />
+              </div>
+              <div className="flex flex-col gap-1 sm:col-span-2">
+                <input
+                  type="text"
+                  placeholder="Specialization / Branch (optional, e.g. Computer Science Engineering / CSE)"
+                  value={newSpecialization}
+                  onChange={(e) => setNewSpecialization(e.target.value)}
                   className="rounded border border-slate-200 bg-white px-2 py-1.5 text-xs dark:border-slate-800 dark:bg-slate-900"
                 />
               </div>

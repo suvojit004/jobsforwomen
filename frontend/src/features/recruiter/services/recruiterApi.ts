@@ -142,7 +142,7 @@ export interface ApplicantRow {
   resumeUrl?: string | null
   resumeMetadata?: { uploadedAt?: string; size?: number; mimetype?: string } | null
   experience?: { id: string; jobTitle: string; company: string; duration: string; description?: string }[]
-  education?: { id: string; degree: string; institution: string; duration: string; grade?: string }[]
+  education?: { id: string; degree: string; institution: string; duration: string; grade?: string; specialization?: string }[]
   skills?: string[]
   languages?: string[]
   noticePeriod?: string

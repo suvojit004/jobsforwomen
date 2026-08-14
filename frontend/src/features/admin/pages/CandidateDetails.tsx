@@ -32,6 +32,7 @@ interface AdminEducation {
   institution: string
   duration: string
   grade?: string
+  specialization?: string
 }
 
 interface AdminSocialLink {
@@ -312,7 +313,10 @@ export function CandidateDetails() {
                 {selectedCandidate.education.map((edu, i) => (
                   <div key={i} className="py-3.5 first:pt-0 last:pb-0">
                     <div className="flex items-center justify-between gap-2">
-                      <h4 className="text-xs font-extrabold text-slate-900 dark:text-white">{edu.degree}</h4>
+                      <h4 className="text-xs font-extrabold text-slate-900 dark:text-white">
+                        {edu.degree}
+                        {edu.specialization && <span className="font-bold text-slate-450 dark:text-slate-500"> in {edu.specialization}</span>}
+                      </h4>
                       <span className="text-[10px] font-bold text-slate-450 dark:text-slate-500 shrink-0">{edu.duration}</span>
                     </div>
                     <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 mt-0.5">

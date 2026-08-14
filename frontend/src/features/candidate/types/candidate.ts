@@ -14,6 +14,10 @@ export interface Education {
   institution: string
   duration: string
   grade?: string
+  // e.g. degree "B.Tech / B.E." + specialization "Computer Science
+  // Engineering (CSE)" -- optional since it doesn't apply to every
+  // qualification (10th/12th, most certifications, etc.).
+  specialization?: string
 }
 
 export interface SocialLink {
