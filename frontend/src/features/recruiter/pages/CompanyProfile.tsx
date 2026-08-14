@@ -115,9 +115,17 @@ export function CompanyProfile() {
     setIsUploading(true)
 
     try {
+      // RecruiterApi.uploadCompanyLogo() already unwraps the response
+      // envelope down to its `data` payload (`{ company }`) -- this was
+      // checking `res.success`/`res.data?.company` on top of that, i.e. one
+      // unwrap too many. Those fields never exist on the already-unwrapped
+      // object, so this branch was always false and showed "Failed to
+      // upload logo image." even on a genuinely successful upload (the
+      // backend logs confirm the DB write and audit log happened every
+      // time; only this success check was wrong).
       const res = await RecruiterApi.uploadCompanyLogo(file)
-      if (res && res.success && res.data?.company) {
-        setLogoUrl(res.data.company.logoUrl || null)
+      if (res?.company) {
+        setLogoUrl(res.company.logoUrl || null)
       } else {
         setLogoError("Failed to upload logo image.")
       }
@@ -131,8 +139,9 @@ export function CompanyProfile() {
   const handleLogoDelete = async () => {
     setIsUploading(true)
     try {
+      // Same double-unwrap fix as handleLogoChange above.
       const res = await RecruiterApi.deleteCompanyLogo()
-      if (res && res.success) {
+      if (res?.company) {
         setLogoUrl(null)
         setLogoError(null)
       }
