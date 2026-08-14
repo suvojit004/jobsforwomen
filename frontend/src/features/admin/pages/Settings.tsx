@@ -5,6 +5,7 @@ import { zodResolver } from "@hookform/resolvers/zod"
 import * as z from "zod"
 import { Settings as SettingsIcon, ShieldAlert, ShieldCheck, Save, AlertCircle, Lock, Camera, Loader2, Trash2 } from "lucide-react"
 import { DashboardCard } from "@/components/shared/DashboardCard"
+import { QrCode } from "@/components/shared/QrCode"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
 import { AdminApi } from "../services/adminApi"
@@ -614,11 +615,14 @@ export function Settings() {
                   Scan this with your authenticator app (Google Authenticator, Authy, 1Password, etc.), or enter the
                   secret manually, then confirm with the 6-digit code it shows.
                 </p>
-                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-900 space-y-1.5">
-                  <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase">Manual entry secret</p>
-                  <p className="text-xs font-mono font-bold text-slate-900 dark:text-white break-all">{enrollSecret}</p>
-                  <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase pt-1">otpauth URI</p>
-                  <p className="text-[10px] font-mono text-slate-500 dark:text-slate-400 break-all">{enrollOtpauthUri}</p>
+                <div className="flex flex-col items-center gap-3 sm:flex-row sm:items-start">
+                  <QrCode value={enrollOtpauthUri} size={160} />
+                  <div className="w-full rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-900 space-y-1.5">
+                    <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase">Manual entry secret</p>
+                    <p className="text-xs font-mono font-bold text-slate-900 dark:text-white break-all">{enrollSecret}</p>
+                    <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase pt-1">otpauth URI</p>
+                    <p className="text-[10px] font-mono text-slate-500 dark:text-slate-400 break-all">{enrollOtpauthUri}</p>
+                  </div>
                 </div>
                 <input
                   type="text"
