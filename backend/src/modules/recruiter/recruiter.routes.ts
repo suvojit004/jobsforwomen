@@ -7,7 +7,7 @@ import {
   requireOwnership,
   requirePermission,
 } from "../rbac/rbac.middleware"
-import { uploadLogoMiddleware, uploadPerkDocumentMiddleware, uploadGalleryPhotoMiddleware, uploadOfferLetterMiddleware } from "../../shared/middleware/upload.middleware"
+import { uploadLogoMiddleware, uploadPerkDocumentMiddleware, uploadGalleryPhotoMiddleware, uploadOfferLetterMiddleware, uploadAvatarMiddleware } from "../../shared/middleware/upload.middleware"
 import { recruiterRateLimiter, uploadRateLimiter } from "../../shared/middleware/rateLimit.middleware"
 
 const router = Router()
@@ -28,6 +28,10 @@ router.get("/analytics", controller.getAnalytics)
 router.post("/company/onboard", controller.onboardCompany)
 router.post("/company/logo", uploadRateLimiter, uploadLogoMiddleware, controller.uploadCompanyLogo)
 router.delete("/company/logo", controller.deleteCompanyLogo)
+
+// Recruiter profile photo upload & delete
+router.post("/avatar", uploadRateLimiter, uploadAvatarMiddleware, controller.uploadAvatar)
+router.delete("/avatar", controller.deleteAvatar)
 
 // Company Profile expansion -- office photo gallery + workplace
 // policies. Gated behind requireApprovedCompany like Perks, since this is

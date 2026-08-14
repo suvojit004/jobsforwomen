@@ -274,6 +274,7 @@ export class RecruiterService {
       recruiterProfile: {
         fullName: profile.fullName,
         phone: profile.phone,
+        avatarUrl: profile.avatarUrl,
         user: { email: profile.user.email },
       },
       jobStatistics: jobCounts,
@@ -1473,6 +1474,89 @@ export class RecruiterService {
     })
 
     return updatedPrefs
+  }
+
+  // ==========================================
+  // AVATAR (PROFILE PHOTO) MANAGEMENT SERVICES
+  // ==========================================
+  async updateAvatar(userId: string, fileDetails: { url: string; publicId: string }, context?: ServiceContext) {
+    const profile = await prisma.recruiterProfile.findUnique({
+      where: { userId },
+    })
+    if (!profile) {
+      throw new Error("Recruiter profile not found")
+    }
+
+    const oldPublicId = profile.avatarPublicId
+
+    const updated = await prisma.recruiterProfile.update({
+      where: { userId },
+      data: {
+        avatarUrl: fileDetails.url,
+        avatarPublicId: fileDetails.publicId,
+      },
+    })
+
+    // Same safe-replacement order as candidate/company asset uploads: point
+    // the DB at the new asset first, only delete the old one after that
+    // succeeds -- and only if it's actually a different file (deterministic
+    // filename means a re-upload usually overwrites the same path).
+    if (oldPublicId && oldPublicId !== fileDetails.publicId) {
+      try {
+        await deleteFile(oldPublicId, false)
+      } catch (err: any) {
+        logger.warn(`[FileStorage] Failed to delete previous recruiter avatar asset: ${err.message}`)
+      }
+    }
+
+    EventBus.publish("AuditCreated", {
+      ...context,
+      category: "RECRUITER",
+      action: "UPDATE_AVATAR",
+      entity: "RecruiterProfile",
+      entityId: profile.id,
+      oldValue: { avatarUrl: profile.avatarUrl },
+      newValue: { avatarUrl: updated.avatarUrl },
+    })
+
+    return updated
+  }
+
+  async deleteAvatar(userId: string, context?: ServiceContext) {
+    const profile = await prisma.recruiterProfile.findUnique({
+      where: { userId },
+    })
+    if (!profile) {
+      throw new Error("Recruiter profile not found")
+    }
+
+    if (profile.avatarPublicId) {
+      try {
+        await deleteFile(profile.avatarPublicId, false)
+      } catch (err: any) {
+        logger.warn(`[FileStorage] Failed to delete recruiter avatar asset: ${err.message}`)
+      }
+    }
+
+    const updated = await prisma.recruiterProfile.update({
+      where: { userId },
+      data: {
+        avatarUrl: null,
+        avatarPublicId: null,
+      },
+    })
+
+    EventBus.publish("AuditCreated", {
+      ...context,
+      category: "RECRUITER",
+      action: "DELETE_AVATAR",
+      entity: "RecruiterProfile",
+      entityId: profile.id,
+      oldValue: { avatarUrl: profile.avatarUrl },
+      newValue: { avatarUrl: null },
+    })
+
+    return updated
   }
 
   async updateCompanyLogo(userId: string, logoDetails: { url: string; publicId: string; metadata?: any }, context?: ServiceContext) {

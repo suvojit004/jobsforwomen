@@ -8,6 +8,7 @@ const CompanyPerkRequests = lazy(() => import("@/features/admin/pages/CompanyPer
 const CandidateManagement = lazy(() => import("@/features/admin/pages/CandidateManagement").then(m => ({ default: m.CandidateManagement })))
 const CompanyDetails = lazy(() => import("@/features/admin/pages/CompanyDetails").then(m => ({ default: m.CompanyDetails })))
 const CandidateDetails = lazy(() => import("@/features/admin/pages/CandidateDetails").then(m => ({ default: m.CandidateDetails })))
+const RecruiterDetails = lazy(() => import("@/features/admin/pages/RecruiterDetails").then(m => ({ default: m.RecruiterDetails })))
 const JobModeration = lazy(() => import("@/features/admin/pages/JobModeration").then(m => ({ default: m.JobModeration })))
 const UserModeration = lazy(() => import("@/features/admin/pages/UserModeration").then(m => ({ default: m.UserModeration }))) // Users
 const ReportsAnalytics = lazy(() => import("@/features/admin/pages/ReportsAnalytics").then(m => ({ default: m.ReportsAnalytics })))
@@ -33,6 +34,10 @@ export function AdminRoutes() {
         <Route path="candidate-management" element={<CandidateManagement />} />
         <Route path="company-details" element={<CompanyDetails />} />
         <Route path="candidate-details" element={<CandidateDetails />} />
+        {/* Deep-link-only, same as candidate-details/company-details above --
+            reached via UserModeration.tsx's Recruiters tab. Deliberately no
+            sidebar nav entry (per explicit instruction). */}
+        <Route path="recruiter-details" element={<RecruiterDetails />} />
         <Route path="job-moderation" element={<JobModeration />} />
         <Route path="users" element={<UserModeration />} />
         <Route path="reports-analytics" element={<ReportsAnalytics />} />

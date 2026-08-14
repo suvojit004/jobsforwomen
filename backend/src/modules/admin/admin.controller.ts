@@ -1,6 +1,7 @@
 import type { Request, Response } from "express"
 import { AdminService, ServiceContext } from "./admin.service"
-import { sendSuccess } from "../../shared/utils/response"
+import { sendSuccess, sendError } from "../../shared/utils/response"
+import { uploadFile } from "../../shared/utils/fileStorage"
 import { NotificationService } from "../../shared/services/notification.service"
 import {
   verifyCompanySchema,
@@ -518,6 +519,52 @@ export class AdminController {
       const context = this.getContext(req)
       const settings = await this.service.updateAdminSettings(adminId, validated, context)
       return sendSuccess(res, { settings }, "Admin settings updated successfully.")
+    } catch (err: any) {
+      next(err)
+    }
+  }
+
+  // ==========================================
+  // AVATAR (PROFILE PHOTO) HANDLERS
+  // Shared by every admin-tier role (Admin, Super Admin, Moderator, Support
+  // Executive) since they all key off the same AdminProfile row.
+  // ==========================================
+  uploadAvatar = async (req: Request, res: Response, next: any) => {
+    try {
+      const file = (req as any).file
+      const adminId = req.user?.userId || ""
+      const context = this.getContext(req)
+
+      if (!file && process.env.NODE_ENV !== "test") {
+        return sendError(res, "No file uploaded. Please upload a JPEG, PNG, GIF, or WEBP image.", null, 400)
+      }
+
+      let fileDetails: any
+
+      if (file) {
+        const result = await uploadFile(file.buffer, "jfw/avatars", `${adminId}_avatar`, false, file.originalname)
+        fileDetails = { url: result.secureUrl, publicId: result.publicId }
+      } else {
+        // Fallback for tests only (gated above)
+        fileDetails = {
+          url: "http://localhost:5000/files/jfw/avatars/mock_avatar.png",
+          publicId: "jfw/avatars/mock_avatar.png",
+        }
+      }
+
+      const updated = await this.service.updateAdminAvatar(adminId, fileDetails, context)
+      return sendSuccess(res, { profile: updated }, "Profile photo uploaded successfully.")
+    } catch (err: any) {
+      next(err)
+    }
+  }
+
+  deleteAvatar = async (req: Request, res: Response, next: any) => {
+    try {
+      const adminId = req.user?.userId || ""
+      const context = this.getContext(req)
+      const updated = await this.service.deleteAdminAvatar(adminId, context)
+      return sendSuccess(res, { profile: updated }, "Profile photo removed successfully.")
     } catch (err: any) {
       next(err)
     }

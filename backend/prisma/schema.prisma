@@ -259,22 +259,26 @@ model CandidateProfile {
 }
 
 model RecruiterProfile {
-  id        String  @id @default(uuid())
-  userId    String  @unique
-  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  companyId String
-  company   Company @relation(fields: [companyId], references: [id])
-  fullName  String
-  phone     String?
-  verified  Boolean @default(false)
-  jobs      Job[]
+  id             String  @id @default(uuid())
+  userId         String  @unique
+  user           User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  companyId      String
+  company        Company @relation(fields: [companyId], references: [id])
+  fullName       String
+  phone          String?
+  verified       Boolean @default(false)
+  avatarUrl      String?
+  avatarPublicId String?
+  jobs           Job[]
 }
 
 model AdminProfile {
-  id       String @id @default(uuid())
-  userId   String @unique
-  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-  fullName String
+  id             String  @id @default(uuid())
+  userId         String  @unique
+  user           User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  fullName       String
+  avatarUrl      String?
+  avatarPublicId String?
 }
 
 model Industry {

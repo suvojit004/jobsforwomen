@@ -359,6 +359,18 @@ export const RecruiterApi = {
     return res?.data
   },
 
+  async uploadAvatar(file: File) {
+    const formData = new FormData()
+    formData.append("avatar", file)
+    const res = await apiClient.post("/api/v1/recruiters/avatar", formData)
+    return res?.data?.profile || res?.data
+  },
+
+  async deleteAvatar() {
+    const res = await apiClient.delete("/api/v1/recruiters/avatar")
+    return res?.data?.profile || res?.data
+  },
+
   // Company Profile expansion -- office photo gallery + policies
   async uploadGalleryPhoto(file: File, caption?: string) {
     const formData = new FormData()

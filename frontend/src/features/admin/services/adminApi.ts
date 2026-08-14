@@ -171,6 +171,22 @@ export const AdminApi = {
     return res?.data?.settings || res?.data || {}
   },
 
+  // Profile photo -- shared by every admin-tier role (Admin, Super Admin,
+  // Moderator, Support Executive), since they all key off the same
+  // AdminProfile row. Previously no admin-tier role had any avatar support
+  // at all (no schema column, no endpoint, no UI).
+  async uploadAvatar(file: File) {
+    const formData = new FormData()
+    formData.append("avatar", file)
+    const res = await apiClient.post("/api/v1/admins/avatar", formData)
+    return res?.data?.profile || res?.data
+  },
+
+  async deleteAvatar() {
+    const res = await apiClient.delete("/api/v1/admins/avatar")
+    return res?.data?.profile || res?.data
+  },
+
   // Platform-wide "Inactivity Session Timeout" policy -- readable by any
   // admin-tier role, writable only by a Super Admin (backend 403s otherwise).
   async getSecuritySettings() {

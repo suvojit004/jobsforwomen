@@ -43,6 +43,7 @@ interface AdminSocialLink {
 interface AdminCandidate {
   id: string
   fullName: string
+  avatarUrl: string | null
   email: string
   title: string
   phone: string
@@ -103,6 +104,7 @@ export function CandidateDetails() {
         const formatted: AdminCandidate[] = (data || []).map((u: any) => ({
           id: u.id,
           fullName: u.candidateProfile?.fullName || u.email.split("@")[0],
+          avatarUrl: u.candidateProfile?.avatarUrl || null,
           email: u.email,
           title: u.candidateProfile?.title || "Working Professional",
           phone: u.candidateProfile?.phone || "Not specified",
@@ -182,9 +184,17 @@ export function CandidateDetails() {
             <DashboardCard className="p-6 space-y-6">
               <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
                 <div className="flex items-center gap-3">
-                  <div className="size-12 rounded-xl bg-violet-100 text-[#6B2C91] dark:bg-pink-900/20 dark:text-pink-300 flex items-center justify-center font-black text-lg shrink-0">
-                    {selectedCandidate.fullName.charAt(0)}
-                  </div>
+                  {selectedCandidate.avatarUrl ? (
+                    <img
+                      src={selectedCandidate.avatarUrl}
+                      alt={selectedCandidate.fullName}
+                      className="size-12 rounded-xl object-cover shrink-0"
+                    />
+                  ) : (
+                    <div className="size-12 rounded-xl bg-violet-100 text-[#6B2C91] dark:bg-pink-900/20 dark:text-pink-300 flex items-center justify-center font-black text-lg shrink-0">
+                      {selectedCandidate.fullName.charAt(0)}
+                    </div>
+                  )}
                   <div>
                     <h2 className="text-lg font-black text-slate-950 dark:text-white">
                       {selectedCandidate.fullName}

@@ -7,7 +7,8 @@ import {
   requirePermission,
   requireAll,
 } from "../rbac/rbac.middleware"
-import { adminRateLimiter } from "../../shared/middleware/rateLimit.middleware"
+import { adminRateLimiter, uploadRateLimiter } from "../../shared/middleware/rateLimit.middleware"
+import { uploadAvatarMiddleware } from "../../shared/middleware/upload.middleware"
 import { enforceAdminSessionTimeout, enforceTwoFactorPolicy } from "../../shared/middleware/securityPolicy.middleware"
 import { ADMIN_TIER_ROLES } from "../../shared/constants/roles"
 
@@ -246,6 +247,13 @@ router.put("/platform-settings", requireAll(requireRole(USER_MGMT_ROLES), requir
 // Personal preferences and notifications for Admin
 router.get("/settings", controller.getAdminSettings)
 router.put("/settings", controller.updateAdminSettings)
+
+// Profile photo upload & delete -- shared by every admin-tier role (Admin,
+// Super Admin, Moderator, Support Executive) since they all self-manage via
+// this same router-level ADMIN_TIER_ROLES gate.
+router.post("/avatar", uploadRateLimiter, uploadAvatarMiddleware, controller.uploadAvatar)
+router.delete("/avatar", controller.deleteAvatar)
+
 router.get("/notifications", controller.getAdminNotifications)
 router.put("/notifications/read-all", controller.markAllAdminNotificationsRead)
 router.put("/notifications/:id/read", controller.markAdminNotificationRead)

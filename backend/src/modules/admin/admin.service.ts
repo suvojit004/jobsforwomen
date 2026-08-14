@@ -2616,6 +2616,7 @@ export class AdminService {
     return {
       name: user.adminProfile?.fullName || "",
       email: user.email,
+      avatarUrl: user.adminProfile?.avatarUrl || null,
       preferences: user.preferences || {},
     }
   }
@@ -2660,6 +2661,103 @@ export class AdminService {
         newValue: { name: data.name.trim() },
       })
     }
+
+    return this.getAdminSettings(adminId)
+  }
+
+  // ==========================================
+  // AVATAR (PROFILE PHOTO) MANAGEMENT SERVICES
+  // Shared by every admin-tier role (Admin, Super Admin, Moderator, Support
+  // Executive) -- they all key off the same AdminProfile row, distinguished
+  // only by their entry in the roles join table, not by separate profiles.
+  // ==========================================
+  async updateAdminAvatar(adminId: string, fileDetails: { url: string; publicId: string }, context?: ServiceContext) {
+    const user = await prisma.user.findUnique({
+      where: { id: adminId },
+      include: { adminProfile: true },
+    })
+    if (!user) {
+      throw new Error("Admin account not found")
+    }
+
+    // Same defensive create-if-missing fallback as updateAdminSettings --
+    // every admin creation path already creates an AdminProfile row, but
+    // this keeps the avatar upload from hard-failing if that ever drifts.
+    const oldPublicId = user.adminProfile?.avatarPublicId || null
+
+    const updated = await prisma.adminProfile.upsert({
+      where: { userId: adminId },
+      update: {
+        avatarUrl: fileDetails.url,
+        avatarPublicId: fileDetails.publicId,
+      },
+      create: {
+        userId: adminId,
+        fullName: user.email,
+        avatarUrl: fileDetails.url,
+        avatarPublicId: fileDetails.publicId,
+      },
+    })
+
+    // Safe-replacement order: DB already points at the new asset above,
+    // only delete the old one now, and only if it's actually different.
+    if (oldPublicId && oldPublicId !== fileDetails.publicId) {
+      try {
+        await deleteFile(oldPublicId, false)
+      } catch (err: any) {
+        logger.warn(`[FileStorage] Failed to delete previous admin avatar asset: ${err.message}`)
+      }
+    }
+
+    EventBus.publish("AuditCreated", {
+      ...context,
+      operatorId: adminId,
+      category: "ADMIN",
+      action: "UPDATE_AVATAR",
+      entity: "AdminProfile",
+      entityId: updated.id,
+      oldValue: { avatarUrl: user.adminProfile?.avatarUrl || null },
+      newValue: { avatarUrl: updated.avatarUrl },
+    })
+
+    return this.getAdminSettings(adminId)
+  }
+
+  async deleteAdminAvatar(adminId: string, context?: ServiceContext) {
+    const user = await prisma.user.findUnique({
+      where: { id: adminId },
+      include: { adminProfile: true },
+    })
+    if (!user || !user.adminProfile) {
+      throw new Error("Admin profile not found")
+    }
+
+    if (user.adminProfile.avatarPublicId) {
+      try {
+        await deleteFile(user.adminProfile.avatarPublicId, false)
+      } catch (err: any) {
+        logger.warn(`[FileStorage] Failed to delete admin avatar asset: ${err.message}`)
+      }
+    }
+
+    const updated = await prisma.adminProfile.update({
+      where: { userId: adminId },
+      data: {
+        avatarUrl: null,
+        avatarPublicId: null,
+      },
+    })
+
+    EventBus.publish("AuditCreated", {
+      ...context,
+      operatorId: adminId,
+      category: "ADMIN",
+      action: "DELETE_AVATAR",
+      entity: "AdminProfile",
+      entityId: updated.id,
+      oldValue: { avatarUrl: user.adminProfile.avatarUrl },
+      newValue: { avatarUrl: null },
+    })
 
     return this.getAdminSettings(adminId)
   }

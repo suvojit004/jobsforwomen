@@ -43,8 +43,10 @@ interface CandidateUser {
 interface RecruiterUser {
   id: string
   name: string
+  avatarUrl: string | null
   email: string
   company: string
+  companyLogoUrl: string | null
   // Needed to resolve a job-transfer target when deleting a recruiter who
   // still owns jobs -- recruiterProfileId is what Job.recruiterId actually
   // points at (not the User id), and companyId is required so the transfer
@@ -130,7 +132,11 @@ export function UserModeration() {
 
       setCandidates((candidatesList || []).map((u: any) => ({
         id: u.id,
-        name: u.fullName || u.email.split("@")[0],
+        // Was `u.fullName`, which doesn't exist on the raw prisma User row
+        // this endpoint returns (fullName only ever lives on the profile) --
+        // so this always silently fell back to the email-prefix, regardless
+        // of what the candidate's real name was.
+        name: u.candidateProfile?.fullName || u.email.split("@")[0],
         email: u.email,
         role: u.candidateProfile?.title || "Working Professional",
         careerBreak: !!(u as ProfileWithCareerBreak).candidateProfile?.careerBreak?.hasBreak,
@@ -140,9 +146,14 @@ export function UserModeration() {
 
       setRecruiters((recruitersList || []).map((u: any) => ({
         id: u.id,
-        name: u.fullName || u.email.split("@")[0],
+        // Same fix as candidates above -- `u.fullName` doesn't exist on the
+        // raw row, so every recruiter name here always fell back to their
+        // email prefix (e.g. "srivastavarishitkumar") instead of their real name.
+        name: u.recruiterProfile?.fullName || u.email.split("@")[0],
+        avatarUrl: u.recruiterProfile?.avatarUrl || null,
         email: u.email,
         company: u.recruiterProfile?.company?.name || "No Company Assigned",
+        companyLogoUrl: u.recruiterProfile?.company?.logoUrl || null,
         recruiterProfileId: u.recruiterProfile?.id || "",
         companyId: u.recruiterProfile?.companyId || null,
         verified: !!u.recruiterProfile?.verified,
@@ -349,6 +360,7 @@ export function UserModeration() {
 
   const goToCandidateDetails = (candidateId: string) => navigate(`/admin/candidate-details?candidateId=${candidateId}`)
   const goToCompanyDetails = (companyId: string) => navigate(`/admin/company-details?companyId=${companyId}`)
+  const goToRecruiterDetails = (recruiterId: string) => navigate(`/admin/recruiter-details?recruiterId=${recruiterId}`)
 
   // DataTable column definitions
   const candidateColumns: ColumnDef<CandidateUser>[] = [
@@ -463,25 +475,47 @@ export function UserModeration() {
     {
       header: "Recruiter Info",
       cell: (row) => (
-        <div className="space-y-0.5">
-          {row.companyId ? (
+        <div className="flex items-center gap-2.5">
+          {row.avatarUrl ? (
+            <img src={row.avatarUrl} alt={row.name} className="size-8 rounded-full object-cover shrink-0" />
+          ) : (
+            <div className="size-8 rounded-full bg-violet-100 text-[#6B2C91] dark:bg-pink-900/20 dark:text-pink-300 flex items-center justify-center font-black text-xs shrink-0">
+              {row.name.charAt(0).toUpperCase()}
+            </div>
+          )}
+          <div className="space-y-0.5 min-w-0">
             <button
               type="button"
-              onClick={() => goToCompanyDetails(row.companyId as string)}
+              onClick={() => goToRecruiterDetails(row.id)}
               className="font-bold text-slate-900 dark:text-white hover:text-[#6B2C91] dark:hover:text-pink-300 hover:underline text-left"
             >
               {row.name}
             </button>
-          ) : (
-            <p className="font-bold text-slate-900 dark:text-white">{row.name}</p>
-          )}
-          <p className="text-[10px] text-slate-400 dark:text-slate-500 font-semibold">{row.email}</p>
+            <p className="text-[10px] text-slate-400 dark:text-slate-500 font-semibold truncate">{row.email}</p>
+          </div>
         </div>
       ),
     },
     {
       header: "Company",
-      accessorKey: "company",
+      cell: (row) => (
+        <div className="flex items-center gap-2">
+          {row.companyLogoUrl ? (
+            <img src={row.companyLogoUrl} alt={row.company} className="size-6 rounded object-cover shrink-0 border border-slate-100 dark:border-slate-800" />
+          ) : null}
+          {row.companyId ? (
+            <button
+              type="button"
+              onClick={() => goToCompanyDetails(row.companyId as string)}
+              className="font-semibold text-slate-800 dark:text-slate-200 hover:text-[#6B2C91] dark:hover:text-pink-300 hover:underline text-left"
+            >
+              {row.company}
+            </button>
+          ) : (
+            <span className="font-semibold text-slate-500 dark:text-slate-400">{row.company}</span>
+          )}
+        </div>
+      ),
     },
     {
       header: "Verification Status",

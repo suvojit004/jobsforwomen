@@ -587,6 +587,16 @@ export class AuthService {
           user.recruiterProfile?.fullName ||
           user.adminProfile?.fullName ||
           undefined,
+        // Same fix as fullName above, for the avatar image now rendered
+        // next to it in Navbar.tsx's top-right corner (see AvatarImage
+        // addition there) -- previously this shape never surfaced any
+        // avatarUrl, so the top-right corner could never show a picture even
+        // for a candidate who'd already uploaded one via ProfileHeader.tsx.
+        avatarUrl:
+          user.candidateProfile?.avatarUrl ||
+          user.recruiterProfile?.avatarUrl ||
+          user.adminProfile?.avatarUrl ||
+          undefined,
         status: user.status,
         roles,
         permissions,
@@ -647,6 +657,12 @@ export class AuthService {
         user.candidateProfile?.fullName ||
         user.recruiterProfile?.fullName ||
         user.adminProfile?.fullName ||
+        undefined,
+      // Same fix as fullName above, for Navbar.tsx's top-right avatar image.
+      avatarUrl:
+        user.candidateProfile?.avatarUrl ||
+        user.recruiterProfile?.avatarUrl ||
+        user.adminProfile?.avatarUrl ||
         undefined,
       status: user.status,
       roles,

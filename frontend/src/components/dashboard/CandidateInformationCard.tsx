@@ -1,5 +1,5 @@
 import { Edit3, Mail, MapPin, Phone } from "lucide-react"
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { DashboardCard } from "@/components/dashboard/DashboardCard"
 
@@ -17,6 +17,10 @@ type CandidateInformationCardProps = {
     noticePeriod: string
     profileCompletion: number
     skills: string[]
+    // Dashboard.tsx has always mapped this in from the profile response, but
+    // this card never accepted or rendered it -- so the widget only ever
+    // showed initials even for a candidate who'd already uploaded a photo.
+    avatarUrl?: string
   }
   onEdit?: () => void
 }
@@ -64,6 +68,7 @@ export function CandidateInformationCard({ candidate, onEdit }: CandidateInforma
       <div className="grid gap-4 md:grid-cols-[1.2fr_1fr]">
         <div className="flex gap-4">
           <Avatar className="size-20 sm:size-24">
+            {candidate.avatarUrl && <AvatarImage src={candidate.avatarUrl} alt={candidate.fullName} />}
             <AvatarFallback className="bg-gradient-to-br from-pink-100 via-white to-violet-200 text-xl font-bold text-[#6B2C91] dark:from-pink-500/20 dark:via-slate-900 dark:to-violet-500/25 dark:text-pink-100">
               {initials}
             </AvatarFallback>

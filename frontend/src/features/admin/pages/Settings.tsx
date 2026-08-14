@@ -1,14 +1,18 @@
-import { useState, useEffect, type ChangeEvent, type FormEvent } from "react"
+import { useRef, useState, useEffect, type ChangeEvent, type FormEvent } from "react"
 import { toast } from "sonner"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import * as z from "zod"
-import { Settings as SettingsIcon, ShieldAlert, ShieldCheck, Save, AlertCircle, Lock } from "lucide-react"
+import { Settings as SettingsIcon, ShieldAlert, ShieldCheck, Save, AlertCircle, Lock, Camera, Loader2, Trash2 } from "lucide-react"
 import { DashboardCard } from "@/components/shared/DashboardCard"
 import { Button } from "@/components/ui/button"
+import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
 import { AdminApi } from "../services/adminApi"
 import { isValidPassword, PASSWORD_HELP_TEXT } from "@/utils/validators"
 import { useAuth } from "@/contexts/AuthContext"
+
+const AVATAR_ALLOWED_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"]
+const AVATAR_MAX_SIZE_BYTES = 2 * 1024 * 1024 // 2MB, matches backend uploadAvatarMiddleware limit
 
 // `email` is read-only display-only: no role on the platform (candidate,
 // recruiter, or admin) has any self-service way to change their real login
@@ -95,6 +99,14 @@ export function Settings() {
   const [disablePassword, setDisablePassword] = useState("")
   const [disableSubmitting, setDisableSubmitting] = useState(false)
 
+  // Profile photo -- shared by every admin-tier role (Admin, Super Admin,
+  // Moderator, Support Executive) since they all key off the same
+  // AdminProfile row. Mirrors ProfileHeader.tsx's candidate avatar pattern.
+  const [avatarUrl, setAvatarUrl] = useState("")
+  const [avatarUploading, setAvatarUploading] = useState(false)
+  const [avatarDeleting, setAvatarDeleting] = useState(false)
+  const avatarInputRef = useRef<HTMLInputElement>(null)
+
   const {
     register,
     handleSubmit,
@@ -115,6 +127,7 @@ export function Settings() {
     async function loadSettings() {
       try {
         const setts = await AdminApi.getSettings()
+        setAvatarUrl(setts.avatarUrl || "")
         reset({
           name: setts.name || "",
           email: setts.email || "",
@@ -181,6 +194,55 @@ export function Settings() {
       setForceTwoFactor(previousValue)
     } finally {
       setForceTwoFactorSaving(false)
+    }
+  }
+
+  const handlePickAvatar = () => {
+    if (avatarUploading || avatarDeleting) return
+    avatarInputRef.current?.click()
+  }
+
+  const handleAvatarSelected = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    // Reset the input immediately so selecting the same file again still fires onChange
+    e.target.value = ""
+    if (!file) return
+
+    if (!AVATAR_ALLOWED_TYPES.includes(file.type)) {
+      toast.error("Unsupported file type. Please upload a JPEG, PNG, GIF, or WEBP image.")
+      return
+    }
+    if (file.size > AVATAR_MAX_SIZE_BYTES) {
+      toast.error("File is too large. Maximum photo size is 2MB.")
+      return
+    }
+
+    setAvatarUploading(true)
+    try {
+      const updated = await AdminApi.uploadAvatar(file)
+      setAvatarUrl(updated?.avatarUrl || "")
+      await refreshSession()
+      toast.success("Profile photo updated successfully.")
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to upload profile photo. Please try again.")
+    } finally {
+      setAvatarUploading(false)
+    }
+  }
+
+  const handleDeleteAvatar = async () => {
+    if (avatarUploading || avatarDeleting) return
+    if (!window.confirm("Remove your profile photo?")) return
+    setAvatarDeleting(true)
+    try {
+      await AdminApi.deleteAvatar()
+      setAvatarUrl("")
+      await refreshSession()
+      toast.success("Profile photo removed successfully.")
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to remove profile photo. Please try again.")
+    } finally {
+      setAvatarDeleting(false)
     }
   }
 
@@ -303,6 +365,50 @@ export function Settings() {
                 <h3 className="text-xs font-black text-slate-900 uppercase dark:text-white">
                   Administrator Profile Details
                 </h3>
+              </div>
+
+              {/* Profile photo -- shared by every admin-tier role. Previously
+                  no admin-tier role had any avatar support at all. */}
+              <div className="flex items-center gap-4">
+                <div className="group/avatar-upload relative shrink-0">
+                  <Avatar className="size-16 border-2 border-violet-100 dark:border-slate-800">
+                    {avatarUrl && <AvatarImage src={avatarUrl} alt={user?.fullName || "Administrator"} />}
+                    <AvatarFallback className="bg-gradient-to-br from-pink-100 via-white to-violet-200 text-lg font-bold text-[#6B2C91] dark:from-pink-500/20 dark:via-slate-900 dark:to-violet-500/25 dark:text-pink-100">
+                      {(user?.fullName || user?.email || "A").charAt(0).toUpperCase()}
+                    </AvatarFallback>
+                  </Avatar>
+                  <input
+                    ref={avatarInputRef}
+                    type="file"
+                    accept="image/jpeg,image/png,image/gif,image/webp"
+                    className="hidden"
+                    onChange={handleAvatarSelected}
+                  />
+                  <button
+                    type="button"
+                    onClick={handlePickAvatar}
+                    disabled={avatarUploading || avatarDeleting}
+                    title={avatarUrl ? "Replace photo" : "Upload photo"}
+                    className="absolute inset-0 flex items-center justify-center rounded-full bg-slate-950/0 text-white opacity-0 transition-opacity duration-150 hover:bg-slate-950/45 hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none disabled:cursor-not-allowed"
+                  >
+                    {avatarUploading ? <Loader2 className="size-4 animate-spin" /> : <Camera className="size-4" />}
+                  </button>
+                  {avatarUrl && (
+                    <button
+                      type="button"
+                      onClick={handleDeleteAvatar}
+                      disabled={avatarUploading || avatarDeleting}
+                      title="Remove photo"
+                      className="absolute -right-1 -bottom-1 flex size-6 items-center justify-center rounded-full border-2 border-white bg-red-600 text-white shadow-sm hover:bg-red-700 disabled:cursor-not-allowed dark:border-slate-900"
+                    >
+                      {avatarDeleting ? <Loader2 className="size-3 animate-spin" /> : <Trash2 className="size-3" />}
+                    </button>
+                  )}
+                </div>
+                <div>
+                  <p className="text-xs font-black text-slate-900 dark:text-white">Profile Photo</p>
+                  <p className="text-[10px] font-semibold text-slate-400 dark:text-slate-500">JPEG, PNG, GIF, or WEBP. Max 2MB.</p>
+                </div>
               </div>
 
               {success && (

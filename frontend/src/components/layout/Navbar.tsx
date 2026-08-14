@@ -10,7 +10,7 @@ import {
   Settings,
   Sun,
 } from "lucide-react"
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -158,6 +158,11 @@ export function Navbar({ onMenuClick }: { onMenuClick: () => void }) {
                 aria-label="Open profile menu"
               >
                 <Avatar size="lg">
+                  {/* Previously only ever rendered the initials fallback --
+                      no AvatarImage existed here at all, so even a user with
+                      a fully uploaded profile photo never saw it in the
+                      top-right corner. */}
+                  {user?.avatarUrl && <AvatarImage src={user.avatarUrl} alt={nameLabel} />}
                   <AvatarFallback className="bg-gradient-to-br from-pink-100 to-violet-200 text-sm font-bold text-[#6B2C91] dark:from-pink-500/20 dark:to-violet-500/25 dark:text-pink-100">
                     {getInitials()}
                   </AvatarFallback>
