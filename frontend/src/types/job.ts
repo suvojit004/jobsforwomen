@@ -6,6 +6,10 @@ export interface Job {
   company: string
   companyCode: string
   logoTone: JobLogoTone
+  // Lives here (not just on ExtendedJob) so JobCard.tsx -- which is typed
+  // against this base Job, not ExtendedJob -- can render the real company
+  // logo instead of always falling back to the colored-initials placeholder.
+  companyLogoUrl?: string | null
   salary: string
   location: string
   experience: string
@@ -34,7 +38,6 @@ export interface ExtendedJob extends Job {
   skills?: string[]
   companyDescription?: string
   companyWebsite?: string
-  companyLogoUrl?: string | null
   department?: string
   recruiter?: JobRecruiter | null
   // Only populated by getJobById (single-job detail fetch), which knows

@@ -49,7 +49,7 @@ function JobCardComponent({
       className="cursor-pointer rounded-xl border border-slate-200/70 bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.05)] transition-shadow hover:shadow-[0_16px_34px_rgba(107,44,145,0.13)] dark:border-slate-800 dark:bg-slate-900/72 dark:hover:shadow-[0_18px_40px_rgba(0,0,0,0.35)]"
     >
       <div className="flex items-start gap-3">
-        <CompanyLogo code={job.companyCode} tone={job.logoTone} />
+        <CompanyLogo code={job.companyCode} tone={job.logoTone} logoUrl={job.companyLogoUrl} alt={job.company} />
         <div className="min-w-0 flex-1">
           <h3 className="truncate text-sm font-extrabold text-slate-950 dark:text-white hover:text-[#6B2C91] dark:hover:text-pink-200 transition-colors">
             <Link to={detailsHref} onClick={(e) => e.stopPropagation()}>{job.title}</Link>

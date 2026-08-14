@@ -154,6 +154,8 @@ export function ApplicationTimeline({ application, onClose, onWithdrawn, onReapp
                     : "purple"
             }
             className="size-11"
+            logoUrl={application.companyLogoUrl}
+            alt={application.company}
           />
           <div className="min-w-0">
             <h4 className="text-sm font-extrabold text-slate-950 dark:text-white truncate">

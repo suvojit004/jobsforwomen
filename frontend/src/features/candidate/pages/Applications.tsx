@@ -172,6 +172,8 @@ export function Applications() {
                                             : "purple"
                                     }
                                     className="size-8"
+                                    logoUrl={app.companyLogoUrl}
+                                    alt={app.company}
                                   />
                                   <span className="text-xs font-extrabold text-slate-950 dark:text-white truncate max-w-32">
                                     {app.company}
@@ -249,6 +251,8 @@ export function Applications() {
                                     : "purple"
                             }
                             className="size-10"
+                            logoUrl={app.companyLogoUrl}
+                            alt={app.company}
                           />
                           <div className="min-w-0 flex-1">
                             <h4 className="text-xs font-bold text-slate-900 dark:text-white truncate">

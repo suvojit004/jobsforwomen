@@ -136,6 +136,8 @@ export function MyApplications({ applications = [] }: MyApplicationsProps) {
                           code={application.companyCode}
                           tone="purple"
                           className="size-8"
+                          logoUrl={application.companyLogoUrl}
+                          alt={application.company}
                         />
                         <span className="text-xs font-extrabold text-slate-950 dark:text-white">
                           {application.company}

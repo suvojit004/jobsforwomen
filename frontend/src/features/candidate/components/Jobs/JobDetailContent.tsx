@@ -80,7 +80,13 @@ export function JobDetailContent({
       <DashboardCard className="p-5">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex items-start gap-4">
-            <CompanyLogo code={job.companyCode} tone={job.logoTone} className="size-14 sm:size-16" />
+            <CompanyLogo
+              code={job.companyCode}
+              tone={job.logoTone}
+              className="size-14 sm:size-16"
+              logoUrl={job.companyLogoUrl}
+              alt={job.company}
+            />
             <div className="space-y-1">
               <h1 className="text-lg sm:text-xl font-extrabold text-slate-950 dark:text-white leading-snug">
                 {job.title}
