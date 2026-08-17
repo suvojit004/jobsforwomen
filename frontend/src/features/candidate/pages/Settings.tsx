@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react"
+import { useRef, useState, useEffect } from "react"
 import { useTheme } from "next-themes"
 import { motion } from "framer-motion"
 import { toast } from "sonner"
@@ -13,8 +13,12 @@ import {
   Upload,
   Check,
   AlertTriangle,
+  Camera,
+  Loader2,
+  Trash2,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
 import { DashboardCard } from "@/components/dashboard/DashboardCard"
 import { QrCode } from "@/components/shared/QrCode"
 import { candidateApi } from "../services/candidateApi"
@@ -37,6 +41,16 @@ export function Settings() {
   const [phone, setPhone] = useState("")
   const [bio, setBio] = useState("")
   const [saveSuccess, setSaveSuccess] = useState(false)
+
+  // Profile photo -- this card previously had a permanently-disabled
+  // "Upload Photo (Coming Soon)" stub button, even though real avatar
+  // upload has existed for a while (see ProfileHeader.tsx on the Profile
+  // page, which this never got wired up to match). Same
+  // candidateApi.uploadAvatar/deleteAvatar backing both.
+  const [avatarUrl, setAvatarUrl] = useState("")
+  const [avatarUploading, setAvatarUploading] = useState(false)
+  const [avatarDeleting, setAvatarDeleting] = useState(false)
+  const avatarInputRef = useRef<HTMLInputElement>(null)
 
   // Security states
   const [currentPassword, setCurrentPassword] = useState("")
@@ -88,6 +102,7 @@ export function Settings() {
           setEmail(prof.user?.email || "")
           setPhone(prof.phone || "")
           setBio(prof.bio || "")
+          setAvatarUrl(prof.avatarUrl || "")
         }
         if (setts) {
           setEmailNewJobs(!!setts.emailNewJobs)
@@ -132,6 +147,56 @@ export function Settings() {
       // successful one, since no error ever reached the user.
       console.error("Failed to update profile", err)
       toast.error(err?.message || "Couldn't save your changes. Please try again.")
+    }
+  }
+
+  const handlePickAvatar = () => {
+    if (avatarUploading || avatarDeleting) return
+    avatarInputRef.current?.click()
+  }
+
+  const handleAvatarSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    // Reset the input immediately so selecting the same file again still fires onChange
+    e.target.value = ""
+    if (!file) return
+
+    const allowedTypes = ["image/jpeg", "image/png", "image/gif", "image/webp"]
+    if (!allowedTypes.includes(file.type)) {
+      toast.error("Unsupported file type. Please upload a JPEG, PNG, GIF, or WEBP image.")
+      return
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error("File is too large. Maximum photo size is 2MB.")
+      return
+    }
+
+    setAvatarUploading(true)
+    try {
+      const updated = await candidateApi.uploadAvatar(file)
+      setAvatarUrl(updated?.avatarUrl || "")
+      await refreshSession()
+      toast.success("Profile photo updated successfully.")
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to upload profile photo. Please try again.")
+    } finally {
+      setAvatarUploading(false)
+    }
+  }
+
+  const handleDeleteAvatar = async () => {
+    if (avatarUploading || avatarDeleting) return
+    if (!window.confirm("Remove your profile photo?")) return
+    setAvatarDeleting(true)
+    try {
+      await candidateApi.deleteAvatar()
+      setAvatarUrl("")
+      await refreshSession()
+      toast.success("Profile photo removed successfully.")
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to remove profile photo. Please try again.")
+    } finally {
+      setAvatarDeleting(false)
     }
   }
 
@@ -333,12 +398,47 @@ export function Settings() {
                 Personal Information
               </h2>
               <form onSubmit={handleAccountSubmit} className="space-y-4">
-                {/* Photo trigger */}
+                {/* Photo trigger -- was a permanently-disabled "Coming Soon"
+                    stub even though real avatar upload has existed since
+                    ProfileHeader.tsx (Profile page); now wired to the same
+                    candidateApi.uploadAvatar/deleteAvatar. */}
                 <div className="flex items-center gap-4 pb-4 border-b border-slate-100 dark:border-slate-800">
-                  <div className="size-16 rounded-full bg-gradient-to-br from-pink-100 to-violet-200 text-[#6B2C91] dark:from-pink-500/20 dark:to-violet-500/25 dark:text-pink-100 flex items-center justify-center font-black text-xl select-none">
-                    {fullName
-                      ? fullName.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase()
-                      : "JW"}
+                  <div className="group/avatar-upload relative shrink-0">
+                    <Avatar className="size-16 border-2 border-violet-100 dark:border-slate-800">
+                      {avatarUrl && <AvatarImage src={avatarUrl} alt={fullName || "Profile photo"} />}
+                      <AvatarFallback className="bg-gradient-to-br from-pink-100 to-violet-200 text-xl font-black text-[#6B2C91] dark:from-pink-500/20 dark:to-violet-500/25 dark:text-pink-100">
+                        {fullName
+                          ? fullName.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase()
+                          : "JW"}
+                      </AvatarFallback>
+                    </Avatar>
+                    <input
+                      ref={avatarInputRef}
+                      type="file"
+                      accept="image/jpeg,image/png,image/gif,image/webp"
+                      className="hidden"
+                      onChange={handleAvatarSelected}
+                    />
+                    <button
+                      type="button"
+                      onClick={handlePickAvatar}
+                      disabled={avatarUploading || avatarDeleting}
+                      title={avatarUrl ? "Replace photo" : "Upload photo"}
+                      className="absolute inset-0 flex items-center justify-center rounded-full bg-slate-950/0 text-white opacity-0 transition-opacity duration-150 hover:bg-slate-950/45 hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none disabled:cursor-not-allowed"
+                    >
+                      {avatarUploading ? <Loader2 className="size-4 animate-spin" /> : <Camera className="size-4" />}
+                    </button>
+                    {avatarUrl && (
+                      <button
+                        type="button"
+                        onClick={handleDeleteAvatar}
+                        disabled={avatarUploading || avatarDeleting}
+                        title="Remove photo"
+                        className="absolute -right-1 -bottom-1 flex size-6 items-center justify-center rounded-full border-2 border-white bg-red-600 text-white shadow-sm hover:bg-red-700 disabled:cursor-not-allowed dark:border-slate-900"
+                      >
+                        {avatarDeleting ? <Loader2 className="size-3 animate-spin" /> : <Trash2 className="size-3" />}
+                      </button>
+                    )}
                   </div>
                   <div className="space-y-1">
                     <p className="text-xs font-extrabold text-slate-800 dark:text-slate-200">Profile picture</p>
@@ -347,12 +447,13 @@ export function Settings() {
                       variant="outline"
                       size="sm"
                       className="h-8 text-xs font-bold gap-1.5"
-                      disabled
-                      title="Profile photo upload isn't available yet"
+                      disabled={avatarUploading || avatarDeleting}
+                      onClick={handlePickAvatar}
                     >
-                      <Upload className="size-3.5" />
-                      Upload Photo (Coming Soon)
+                      {avatarUploading ? <Loader2 className="size-3.5 animate-spin" /> : <Upload className="size-3.5" />}
+                      {avatarUploading ? "Uploading..." : avatarUrl ? "Replace Photo" : "Upload Photo"}
                     </Button>
+                    <p className="text-[10px] font-semibold text-slate-400 dark:text-slate-500">JPEG, PNG, GIF, or WEBP. Max 2MB.</p>
                   </div>
                 </div>
 
