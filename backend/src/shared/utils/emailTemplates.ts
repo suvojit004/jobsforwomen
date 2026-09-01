@@ -35,12 +35,14 @@ export function adminRoleLabel(roleNames: string[]): string {
 export interface AdminAccountCreatedParams {
   fullName: string
   email: string
-  // Plaintext, deliberately: this account is activated immediately by a
-  // Super Admin (admin.service.ts's createAdmin) with no "set your own
-  // password" step, so this email is the only place the recipient can learn
-  // their password. See createAdmin's comment on EventBus.publish for the
-  // handling tradeoff this implies.
-  password: string
+  // The account is created with passwordHash: null (admin.service.ts's
+  // createAdmin) rather than a Super-Admin-chosen password, so the recipient
+  // sets their own via this token-based link -- the same PasswordReset
+  // mechanism/token used by the ordinary forgot-password flow, just fired
+  // proactively at account-creation time instead of on request. Nothing
+  // sensitive ever passes through the EventBus payload, the BullMQ job, or
+  // this email.
+  setPasswordLink: string
   roleNames: string[]
   loginLink: string
 }
@@ -167,6 +169,34 @@ export interface OfferReleasedParams {
 const BRAND_PURPLE = "#6B2C91"
 const BRAND_PINK = "#EC4899"
 
+// No HTML-escaping utility existed anywhere in this file (or the rest of
+// shared/utils/) -- every dynamic value interpolated into these templates
+// (company names, job titles, notes/comments, names, digest lists) was
+// dropped straight into the HTML with no escaping at all, so a company name,
+// job title, admin note, or recruiter-entered field containing `<`, `&`, or
+// `"` could break the surrounding markup or, in the worst case, inject
+// arbitrary HTML/script into an email an admin, recruiter, or candidate
+// opens. `esc()` is the single chokepoint every raw dynamic value now routes
+// through before being embedded in template literals.
+function esc(value: unknown): string {
+  return String(value ?? "").replace(/[&<>"']/g, (ch) => {
+    switch (ch) {
+      case "&":
+        return "&amp;"
+      case "<":
+        return "&lt;"
+      case ">":
+        return "&gt;"
+      case '"':
+        return "&quot;"
+      case "'":
+        return "&#39;"
+      default:
+        return ch
+    }
+  })
+}
+
 // Duplicated from email.ts's frontendBaseUrl() rather than imported -- email.ts
 // already imports EmailTemplates from this file, so importing back from
 // email.ts would create a circular dependency. Kept in sync manually; both
@@ -196,7 +226,7 @@ function statusBadge(status: string): string {
     submitted: { bg: "#DBEAFE", fg: "#1E40AF", label: "Submitted" },
   }
   const s = styles[normalized] || { bg: "#F1F5F9", fg: "#475569", label: status }
-  return `<span style="display:inline-block; background-color:${s.bg}; color:${s.fg}; font-size:12px; font-weight:700; letter-spacing:0.3px; text-transform:uppercase; padding:4px 12px; border-radius:999px;">${s.label}</span>`
+  return `<span style="display:inline-block; background-color:${s.bg}; color:${s.fg}; font-size:12px; font-weight:700; letter-spacing:0.3px; text-transform:uppercase; padding:4px 12px; border-radius:999px;">${esc(s.label)}</span>`
 }
 
 function ctaButton(link: string, label: string, color = BRAND_PURPLE): string {
@@ -204,8 +234,8 @@ function ctaButton(link: string, label: string, color = BRAND_PURPLE): string {
     <table role="presentation" cellpadding="0" cellspacing="0" style="margin:24px 0;">
       <tr>
         <td style="border-radius:8px;" bgcolor="${color}">
-          <a href="${link}" target="_blank" style="display:inline-block; padding:12px 28px; font-size:14px; font-weight:700; color:#ffffff; text-decoration:none; border-radius:8px;">
-            ${label}
+          <a href="${esc(link)}" target="_blank" style="display:inline-block; padding:12px 28px; font-size:14px; font-weight:700; color:#ffffff; text-decoration:none; border-radius:8px;">
+            ${esc(label)}
           </a>
         </td>
       </tr>
@@ -234,7 +264,7 @@ function renderShell(opts: { preheader: string; heading: string; bodyHtml: strin
 </style>
 </head>
 <body style="margin:0; padding:0; background-color:#F8FAFC; font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif;">
-  <span style="display:none; max-height:0; overflow:hidden; opacity:0;">${opts.preheader}</span>
+  <span style="display:none; max-height:0; overflow:hidden; opacity:0;">${esc(opts.preheader)}</span>
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#F8FAFC; padding:32px 0;">
     <tr>
       <td align="center">
@@ -246,7 +276,7 @@ function renderShell(opts: { preheader: string; heading: string; bodyHtml: strin
           </tr>
           <tr>
             <td class="jfw-padding" style="padding:32px;">
-              <h1 style="margin:0 0 16px; font-size:20px; font-weight:800; color:#0F172A;">${opts.heading}</h1>
+              <h1 style="margin:0 0 16px; font-size:20px; font-weight:800; color:#0F172A;">${esc(opts.heading)}</h1>
               <div style="font-size:14px; line-height:1.7; color:#334155;">
                 ${opts.bodyHtml}
               </div>
@@ -287,43 +317,44 @@ export const EmailTemplates = {
       preheader: `You've been invited to join JobsForWomen as a ${params.roleName}.`,
       heading: "Staff Onboarding Invitation",
       bodyHtml: `
-        <p>You have been invited to join the JobsForWomen administration team as a <strong>${params.roleName}</strong>.</p>
+        <p>You have been invited to join the JobsForWomen administration team as a <strong>${esc(params.roleName)}</strong>.</p>
         <p>Click the button below to accept the invitation and complete your profile setup:</p>
         ${ctaButton(params.invitationLink, "Accept Invitation", "#4A5568")}
         <p style="font-size:12px; color:#94A3B8; margin-top:20px; padding-top:16px; border-top:1px solid #E2E8F0;">
-          Already have a JobsForWomen account? <a href="${params.loginLink}" style="color:${BRAND_PURPLE}; font-weight:700; text-decoration:none;">Log in here</a> instead.
+          Already have a JobsForWomen account? <a href="${esc(params.loginLink)}" style="color:${BRAND_PURPLE}; font-weight:700; text-decoration:none;">Log in here</a> instead.
         </p>
       `,
     }),
 
   // Admin Management: a Super Admin created this account directly (no
-  // self-serve "accept invite" step -- see invitation above for that flow),
-  // so it ships the recipient's login credentials plus a straight-to-login
-  // button, and a password-change nudge since the password was chosen by
-  // someone else.
+  // self-serve "accept invite" step -- see invitation above for that flow).
+  // The account is created with no password set, so instead of shipping
+  // credentials this ships the recipient's username plus a "Set Your
+  // Password" link (the same PasswordReset token/page the ordinary
+  // forgot-password flow uses), so no secret ever needs to travel through
+  // the EventBus payload, the BullMQ job data, or this email body.
   adminAccountCreated: (params: AdminAccountCreatedParams): string => {
     const roleLabel = adminRoleLabel(params.roleNames)
     return renderShell({
-      preheader: `Your JobsForWomen ${roleLabel} account is ready.`,
+      preheader: `Your JobsForWomen ${roleLabel} account is ready -- set your password to get started.`,
       heading: `Your ${roleLabel} Account Is Ready`,
       bodyHtml: `
-        <p>Hi ${params.fullName},</p>
-        <p>A ${roleLabel} account has been created for you on JobsForWomen with the following role${
+        <p>Hi ${esc(params.fullName)},</p>
+        <p>A ${esc(roleLabel)} account has been created for you on JobsForWomen with the following role${
           params.roleNames.length > 1 ? "s" : ""
-        }: <strong>${params.roleNames.join(", ")}</strong>.</p>
+        }: <strong>${esc(params.roleNames.join(", "))}</strong>.</p>
         <table role="presentation" cellpadding="0" cellspacing="0" style="margin:16px 0; width:100%; background-color:#F8FAFC; border:1px solid #E2E8F0; border-radius:8px;">
           <tr>
             <td style="padding:12px 16px;">
               <p style="margin:0 0 4px; font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:0.3px; color:#94A3B8;">Username</p>
-              <p style="margin:0 0 12px; font-weight:700; color:#0F172A;">${params.email}</p>
-              <p style="margin:0 0 4px; font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:0.3px; color:#94A3B8;">Password</p>
-              <p style="margin:0; font-weight:700; color:#0F172A; font-family: ui-monospace, Menlo, monospace;">${params.password}</p>
+              <p style="margin:0; font-weight:700; color:#0F172A;">${esc(params.email)}</p>
             </td>
           </tr>
         </table>
-        ${ctaButton(params.loginLink, "Log In Now")}
+        <p>To get started, set your password using the secure link below:</p>
+        ${ctaButton(params.setPasswordLink, "Set Your Password")}
         <p style="font-size:12px; color:#94A3B8;">
-          For security, sign in and change this password as soon as possible. If you weren't expecting this account, contact your platform administrator.
+          This link expires in 7 days and can only be used once. Once your password is set, you can sign in at any time from the login page. If you weren't expecting this account, contact your platform administrator.
         </p>
       `,
     })
@@ -340,23 +371,23 @@ export const EmailTemplates = {
     const copyByStatus: Record<string, { heading: string; intro: string; preheader: string }> = {
       approved: {
         heading: "Your Company Is Verified!",
-        intro: `Great news -- <strong>${params.companyName}</strong>'s registration has been reviewed and approved. You can now sign in and start posting jobs.`,
+        intro: `Great news -- <strong>${esc(params.companyName)}</strong>'s registration has been reviewed and approved. You can now sign in and start posting jobs.`,
         preheader: `${params.companyName} has been approved. You can now log in.`,
       },
       rejected: {
         heading: "Registration Update Required",
-        intro: `<strong>${params.companyName}</strong>'s registration was not approved this time. Please review the feedback below and resubmit your registration.`,
+        intro: `<strong>${esc(params.companyName)}</strong>'s registration was not approved this time. Please review the feedback below and resubmit your registration.`,
         preheader: `${params.companyName}'s registration was not approved -- see details inside.`,
       },
       info_requested: {
         heading: "More Information Needed",
-        intro: `To continue verifying <strong>${params.companyName}</strong>, our team needs a bit more information or documentation from you.`,
+        intro: `To continue verifying <strong>${esc(params.companyName)}</strong>, our team needs a bit more information or documentation from you.`,
         preheader: `Action needed: more information required for ${params.companyName}.`,
       },
     }
     const copy = copyByStatus[normalized] || {
       heading: "Company Verification Update",
-      intro: `Your company profile for <strong>${params.companyName}</strong> has a status update.`,
+      intro: `Your company profile for <strong>${esc(params.companyName)}</strong> has a status update.`,
       preheader: `An update on ${params.companyName}'s verification status.`,
     }
 
@@ -369,7 +400,7 @@ export const EmailTemplates = {
         ${params.notes ? `
         <div style="background-color:#F8FAFC; border:1px solid #E2E8F0; border-radius:8px; padding:12px 16px; margin:16px 0;">
           <p style="margin:0 0 4px; font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:0.3px; color:#94A3B8;">Admin Note</p>
-          <p style="margin:0;">${params.notes}</p>
+          <p style="margin:0;">${esc(params.notes)}</p>
         </div>` : ""}
         ${params.actionLink ? `
         ${ctaButton(params.actionLink, params.actionLabel || "Take Action")}
@@ -392,23 +423,23 @@ export const EmailTemplates = {
     const copyByStatus: Record<string, { heading: string; intro: string; preheader: string }> = {
       approved: {
         heading: "Perk Claim Approved!",
-        intro: `Your claim for <strong>${params.perkName}</strong> has been verified and is now publicly displayed on <strong>${params.companyName}</strong>'s job listings.`,
+        intro: `Your claim for <strong>${esc(params.perkName)}</strong> has been verified and is now publicly displayed on <strong>${esc(params.companyName)}</strong>'s job listings.`,
         preheader: `${params.perkName} is now verified and public.`,
       },
       rejected: {
         heading: "Perk Claim Update Required",
-        intro: `Your claim for <strong>${params.perkName}</strong> was not approved this time. Please review the reason below and resubmit from your dashboard.`,
+        intro: `Your claim for <strong>${esc(params.perkName)}</strong> was not approved this time. Please review the reason below and resubmit from your dashboard.`,
         preheader: `${params.perkName} was not approved -- see the reason inside.`,
       },
       info_requested: {
         heading: "More Information Needed",
-        intro: `To verify your <strong>${params.perkName}</strong> claim, our team needs a bit more information or supporting documentation.`,
+        intro: `To verify your <strong>${esc(params.perkName)}</strong> claim, our team needs a bit more information or supporting documentation.`,
         preheader: `Action needed: more information required for ${params.perkName}.`,
       },
     }
     const copy = copyByStatus[normalized] || {
       heading: "Perk Verification Update",
-      intro: `<strong>${params.companyName}</strong>'s claim for <strong>${params.perkName}</strong> has a status update.`,
+      intro: `<strong>${esc(params.companyName)}</strong>'s claim for <strong>${esc(params.perkName)}</strong> has a status update.`,
       preheader: `An update on your ${params.perkName} claim.`,
     }
 
@@ -421,7 +452,7 @@ export const EmailTemplates = {
         ${params.comment ? `
         <div style="background-color:#F8FAFC; border:1px solid #E2E8F0; border-radius:8px; padding:12px 16px; margin:16px 0;">
           <p style="margin:0 0 4px; font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:0.3px; color:#94A3B8;">Admin Comment</p>
-          <p style="margin:0;">${params.comment}</p>
+          <p style="margin:0;">${esc(params.comment)}</p>
         </div>` : ""}
         ${params.actionLink ? ctaButton(params.actionLink, "View in Dashboard") : ""}
       `,
@@ -433,12 +464,12 @@ export const EmailTemplates = {
       preheader: `Your job posting "${params.jobTitle}" has been ${params.status}.`,
       heading: "Job Moderation Update",
       bodyHtml: `
-        <p>Your job posting for <strong>${params.jobTitle}</strong> has been reviewed.</p>
+        <p>Your job posting for <strong>${esc(params.jobTitle)}</strong> has been reviewed.</p>
         <p style="margin:16px 0;">${statusBadge(params.status === "approved" ? "approved" : "rejected")}</p>
         ${params.notes ? `
         <div style="background-color:#F8FAFC; border:1px solid #E2E8F0; border-radius:8px; padding:12px 16px; margin:16px 0;">
           <p style="margin:0 0 4px; font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:0.3px; color:#94A3B8;">Moderator Notes</p>
-          <p style="margin:0;">${params.notes}</p>
+          <p style="margin:0;">${esc(params.notes)}</p>
         </div>` : ""}
       `,
     }),
@@ -448,28 +479,28 @@ export const EmailTemplates = {
       preheader: `${params.companyName} scheduled an interview with you for ${params.jobTitle}.`,
       heading: "Interview Scheduled",
       bodyHtml: `
-        <p>Hi ${params.recipientName},</p>
-        <p>Good news! <strong>${params.companyName}</strong> has scheduled an interview with you for the <strong>${params.jobTitle}</strong> role.</p>
+        <p>Hi ${esc(params.recipientName)},</p>
+        <p>Good news! <strong>${esc(params.companyName)}</strong> has scheduled an interview with you for the <strong>${esc(params.jobTitle)}</strong> role.</p>
         <table role="presentation" cellpadding="0" cellspacing="0" style="margin:16px 0; width:100%;">
           <tr>
             <td style="padding:4px 0; font-size:11px; font-weight:800; text-transform:uppercase; color:#94A3B8; width:80px;">When</td>
-            <td style="padding:4px 0; font-weight:700; color:#0F172A;">${params.scheduledAt}${params.timezone ? ` (${params.timezone})` : ""}</td>
+            <td style="padding:4px 0; font-weight:700; color:#0F172A;">${esc(params.scheduledAt)}${params.timezone ? ` (${esc(params.timezone)})` : ""}</td>
           </tr>
           ${params.mode ? `
           <tr>
             <td style="padding:4px 0; font-size:11px; font-weight:800; text-transform:uppercase; color:#94A3B8; width:80px;">Mode</td>
-            <td style="padding:4px 0; font-weight:700; color:#0F172A;">${params.mode}</td>
+            <td style="padding:4px 0; font-weight:700; color:#0F172A;">${esc(params.mode)}</td>
           </tr>` : ""}
           ${params.location ? `
           <tr>
             <td style="padding:4px 0; font-size:11px; font-weight:800; text-transform:uppercase; color:#94A3B8; width:80px;">Where</td>
-            <td style="padding:4px 0; font-weight:700; color:#0F172A;">${params.location}</td>
+            <td style="padding:4px 0; font-weight:700; color:#0F172A;">${esc(params.location)}</td>
           </tr>` : ""}
         </table>
         ${params.notes ? `
         <div style="background-color:#F8FAFC; border:1px solid #E2E8F0; border-radius:8px; padding:12px 16px; margin:16px 0;">
           <p style="margin:0 0 4px; font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:0.3px; color:#94A3B8;">Notes from the recruiter</p>
-          <p style="margin:0;">${params.notes}</p>
+          <p style="margin:0;">${esc(params.notes)}</p>
         </div>` : ""}
         ${ctaButton(params.loginLink, "Log In to View")}
       `,
@@ -480,22 +511,22 @@ export const EmailTemplates = {
       preheader: `${params.statusHeading}: ${params.jobTitle} at ${params.companyName}.`,
       heading: params.statusHeading,
       bodyHtml: `
-        <p>Hi ${params.recipientName},</p>
-        <p>${params.statusMessage}</p>
+        <p>Hi ${esc(params.recipientName)},</p>
+        <p>${esc(params.statusMessage)}</p>
         <table role="presentation" cellpadding="0" cellspacing="0" style="margin:16px 0; width:100%;">
           <tr>
             <td style="padding:4px 0; font-size:11px; font-weight:800; text-transform:uppercase; color:#94A3B8; width:80px;">Role</td>
-            <td style="padding:4px 0; font-weight:700; color:#0F172A;">${params.jobTitle}</td>
+            <td style="padding:4px 0; font-weight:700; color:#0F172A;">${esc(params.jobTitle)}</td>
           </tr>
           <tr>
             <td style="padding:4px 0; font-size:11px; font-weight:800; text-transform:uppercase; color:#94A3B8; width:80px;">Company</td>
-            <td style="padding:4px 0; font-weight:700; color:#0F172A;">${params.companyName}</td>
+            <td style="padding:4px 0; font-weight:700; color:#0F172A;">${esc(params.companyName)}</td>
           </tr>
         </table>
         ${params.notes ? `
         <div style="background-color:#F8FAFC; border:1px solid #E2E8F0; border-radius:8px; padding:12px 16px; margin:16px 0;">
           <p style="margin:0 0 4px; font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:0.3px; color:#94A3B8;">Notes from the recruiter</p>
-          <p style="margin:0;">${params.notes}</p>
+          <p style="margin:0;">${esc(params.notes)}</p>
         </div>` : ""}
         ${ctaButton(params.loginLink, "Log In to View")}
       `,
@@ -506,11 +537,11 @@ export const EmailTemplates = {
       preheader: `${params.companyName} has released an offer for ${params.jobTitle}.`,
       heading: "You've Received an Offer!",
       bodyHtml: `
-        <p>Hi ${params.recipientName},</p>
-        <p>Congratulations! <strong>${params.companyName}</strong> has released an offer for the <strong>${params.jobTitle}</strong> role.</p>
+        <p>Hi ${esc(params.recipientName)},</p>
+        <p>Congratulations! <strong>${esc(params.companyName)}</strong> has released an offer for the <strong>${esc(params.jobTitle)}</strong> role.</p>
         <div style="background-color:#F8FAFC; border:1px solid #E2E8F0; border-radius:8px; padding:12px 16px; margin:16px 0;">
           <p style="margin:0 0 4px; font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:0.3px; color:#94A3B8;">Offer Details</p>
-          <p style="margin:0;">${params.offerDetails}</p>
+          <p style="margin:0;">${esc(params.offerDetails)}</p>
         </div>
         ${ctaButton(params.loginLink, "Log In to Respond")}
       `,
@@ -532,9 +563,9 @@ export const EmailTemplates = {
       preheader: `${params.jobsCount} new job recommendations for you today.`,
       heading: "Daily Jobs Digest",
       bodyHtml: `
-        <p>Hello ${params.recipientName}, here are today's matching job recommendations (${params.jobsCount}):</p>
+        <p>Hello ${esc(params.recipientName)}, here are today's matching job recommendations (${params.jobsCount}):</p>
         <ul style="padding-left:20px; margin:12px 0;">
-          ${params.jobs.map(j => `<li style="margin-bottom:6px;"><strong>${j.title}</strong> at ${j.companyName} (${j.location})</li>`).join("")}
+          ${params.jobs.map(j => `<li style="margin-bottom:6px;"><strong>${esc(j.title)}</strong> at ${esc(j.companyName)} (${esc(j.location)})</li>`).join("")}
         </ul>
       `,
     }),
@@ -544,9 +575,9 @@ export const EmailTemplates = {
       preheader: `Your weekly job highlights digest (${params.jobsCount} roles).`,
       heading: "Weekly Highlights Digest",
       bodyHtml: `
-        <p>Hello ${params.recipientName}, here are the weekly trending recommendations matching your skills:</p>
+        <p>Hello ${esc(params.recipientName)}, here are the weekly trending recommendations matching your skills:</p>
         <ul style="padding-left:20px; margin:12px 0;">
-          ${params.jobs.map(j => `<li style="margin-bottom:6px;"><strong>${j.title}</strong> at ${j.companyName} (${j.location})</li>`).join("")}
+          ${params.jobs.map(j => `<li style="margin-bottom:6px;"><strong>${esc(j.title)}</strong> at ${esc(j.companyName)} (${esc(j.location)})</li>`).join("")}
         </ul>
       `,
     }),
@@ -557,11 +588,11 @@ export const EmailTemplates = {
       preheader: `Your JobsForWomen account has been ${verb}.`,
       heading: `Your Account Has Been ${params.status}`,
       bodyHtml: `
-        <p>Hi ${params.fullName},</p>
+        <p>Hi ${esc(params.fullName)},</p>
         <p>Your JobsForWomen account has been <strong>${verb}</strong> by a platform administrator. While this is in effect, you won't be able to sign in or use the platform.</p>
         <p style="margin:16px 0;">${statusBadge(params.status)}</p>
         <div style="background-color:#FEF2F2; border:1px solid #FECACA; border-radius:8px; padding:12px 16px; margin:16px 0;">
-          <p style="margin:0; color:#991B1B;">For more details or to appeal this decision, please contact our support team at <a href="mailto:${params.supportEmail}" style="color:#991B1B; font-weight:700;">${params.supportEmail}</a>.</p>
+          <p style="margin:0; color:#991B1B;">For more details or to appeal this decision, please contact our support team at <a href="mailto:${esc(params.supportEmail)}" style="color:#991B1B; font-weight:700;">${esc(params.supportEmail)}</a>.</p>
         </div>
       `,
     })
@@ -572,12 +603,12 @@ export const EmailTemplates = {
       preheader: "Your JobsForWomen account has been reactivated.",
       heading: "Your Account Is Active Again",
       bodyHtml: `
-        <p>Hi ${params.fullName},</p>
+        <p>Hi ${esc(params.fullName)},</p>
         <p>Good news -- your JobsForWomen account has been <strong>reactivated</strong> by a platform administrator. You can sign back in and use the platform normally.</p>
         <p style="margin:16px 0;">${statusBadge("Active")}</p>
         ${ctaButton(params.loginLink, "Log In Now")}
         <div style="background-color:#F8FAFC; border:1px solid #E2E8F0; border-radius:8px; padding:12px 16px; margin:16px 0;">
-          <p style="margin:0; color:#475569;">Questions about what happened? Contact our support team at <a href="mailto:${params.supportEmail}" style="color:${BRAND_PURPLE}; font-weight:700;">${params.supportEmail}</a>.</p>
+          <p style="margin:0; color:#475569;">Questions about what happened? Contact our support team at <a href="mailto:${esc(params.supportEmail)}" style="color:${BRAND_PURPLE}; font-weight:700;">${esc(params.supportEmail)}</a>.</p>
         </div>
       `,
     }),
@@ -587,10 +618,10 @@ export const EmailTemplates = {
       preheader: "Your JobsForWomen account has been deleted.",
       heading: "Your Account Has Been Deleted",
       bodyHtml: `
-        <p>Hi ${params.fullName},</p>
+        <p>Hi ${esc(params.fullName)},</p>
         <p>Your JobsForWomen account and associated data have been permanently deleted by a platform administrator. This action cannot be undone, and you will need to register again if you'd like to use the platform in the future.</p>
         <div style="background-color:#F8FAFC; border:1px solid #E2E8F0; border-radius:8px; padding:12px 16px; margin:16px 0;">
-          <p style="margin:0; color:#475569;">If you believe this was done in error, please contact our support team at <a href="mailto:${params.supportEmail}" style="color:${BRAND_PURPLE}; font-weight:700;">${params.supportEmail}</a>.</p>
+          <p style="margin:0; color:#475569;">If you believe this was done in error, please contact our support team at <a href="mailto:${esc(params.supportEmail)}" style="color:${BRAND_PURPLE}; font-weight:700;">${esc(params.supportEmail)}</a>.</p>
         </div>
       `,
     }),

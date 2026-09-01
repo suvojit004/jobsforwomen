@@ -231,17 +231,15 @@ export function initEmailListener() {
   })
 
   // 6b. Admin/Moderator account created by a Super Admin (always send,
-  // transactional). Unlike EmployeeInvited above, this account has no
-  // "accept invite and set your own password" step -- admin.service.ts's
-  // createAdmin sets the password the Super Admin typed and activates the
-  // account immediately, so this email is the only way the new admin ever
-  // learns their credentials.
+  // transactional). This account has no password until the recipient sets
+  // one themselves -- admin.service.ts's createAdmin issues a PasswordReset
+  // token and this email carries the set-password link, not a secret.
   EventBus.subscribe("AdminAccountCreated", async (payload: any) => {
     logger.info(`[EmailListener] Enqueueing Admin Account Created email to: ${payload.email}`)
     await addJob("email", "sendAdminAccountCreated", {
       to: payload.email,
       fullName: payload.fullName,
-      password: payload.password,
+      setPasswordToken: payload.setPasswordToken,
       roleNames: payload.roleNames || [],
     })
   })

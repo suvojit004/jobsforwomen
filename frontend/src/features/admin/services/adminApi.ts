@@ -307,7 +307,7 @@ export const AdminApi = {
     return res?.data?.admins || []
   },
 
-  async createAdmin(payload: { email: string; fullName: string; password: string; roleNames: string[] }) {
+  async createAdmin(payload: { email: string; fullName: string; roleNames: string[] }) {
     const res = await apiClient.post("/api/v1/admins/management/admins", payload)
     return res?.data
   },

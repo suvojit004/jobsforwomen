@@ -254,14 +254,18 @@ export class EmailService {
   static async sendAdminAccountCreatedEmail(
     to: string,
     fullName: string,
-    password: string,
+    setPasswordToken: string,
     roleNames: string[]
   ): Promise<boolean> {
     const baseUrl = frontendBaseUrl()
+    // Same /auth/reset-password page the ordinary forgot-password flow uses
+    // (see sendPasswordResetEmail below) -- it just sets a password on the
+    // account rather than requiring one to already exist.
+    const setPasswordLink = `${baseUrl}/auth/reset-password?token=${setPasswordToken}`
     const html = EmailTemplates.adminAccountCreated({
       fullName,
       email: to,
-      password,
+      setPasswordLink,
       roleNames,
       loginLink: `${baseUrl}/auth/login`,
     })

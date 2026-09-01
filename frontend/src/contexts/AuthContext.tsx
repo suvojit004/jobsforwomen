@@ -53,6 +53,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
 
+  // Shared by refreshSession() below (page-load bootstrap) and the
+  // "auth:session-refreshed" listener further down (api/client.ts's silent,
+  // request-triggered token refresh) -- both need the exact same
+  // fetch-/auth/me-and-update-state behavior, so it's factored out once
+  // instead of duplicated. Deliberately best-effort/non-throwing: a failure
+  // here just leaves the existing `user` state as-is rather than logging the
+  // user out -- the request that actually needed the token will surface its
+  // own error if the session is genuinely broken, this is just a sync.
+  const syncUserFromServer = async (): Promise<User | null> => {
+    try {
+      const meRes = await apiClient.get("/api/v1/auth/me")
+      if (meRes && meRes.success && meRes.data?.user) {
+        const fetchedUser = meRes.data.user
+        setUser(fetchedUser)
+        localStorage.setItem("userRole", fetchedUser.roles[0])
+        return fetchedUser
+      }
+    } catch (err) {
+      // Best-effort -- see comment above.
+    }
+    return null
+  }
+
   const refreshSession = async (): Promise<User | null> => {
     if (refreshSessionInFlight) return refreshSessionInFlight
 
@@ -62,14 +85,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (refreshRes && refreshRes.success && refreshRes.data?.accessToken) {
           const token = refreshRes.data.accessToken
           localStorage.setItem("jwt_token", token)
-
-          const meRes = await apiClient.get("/api/v1/auth/me")
-          if (meRes && meRes.success && meRes.data?.user) {
-            const fetchedUser = meRes.data.user
-            setUser(fetchedUser)
-            localStorage.setItem("userRole", fetchedUser.roles[0])
-            return fetchedUser
-          }
+          return await syncUserFromServer()
         }
       } catch (err) {
         localStorage.removeItem("jwt_token")
@@ -105,6 +121,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const handleSessionExpired = () => setUser(null)
     window.addEventListener("auth:session-expired", handleSessionExpired)
     return () => window.removeEventListener("auth:session-expired", handleSessionExpired)
+  }, [])
+
+  // apiClient dispatches this after its own silent, request-triggered token
+  // refresh succeeds (see tryRefreshToken in api/client.ts) -- that refresh
+  // only ever updated localStorage's token with no way to tell React about
+  // it, so `user` here (and everything reading it -- role-based nav,
+  // ProtectedRoute's allowedRoles check, permission-gated UI) could keep
+  // showing a stale roles/permissions snapshot from initial login for the
+  // entire lifetime of a long session, even after a token minted with a
+  // genuinely different snapshot (e.g. an admin changed this account's
+  // role/permissions mid-session) silently replaced it. Re-fetching here
+  // keeps `user` truthful without forcing a full page reload.
+  useEffect(() => {
+    const handleSessionRefreshed = () => {
+      syncUserFromServer()
+    }
+    window.addEventListener("auth:session-refreshed", handleSessionRefreshed)
+    return () => window.removeEventListener("auth:session-refreshed", handleSessionRefreshed)
   }, [])
 
   const login = async (email: string, password: string): Promise<User | TwoFactorChallenge> => {

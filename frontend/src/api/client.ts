@@ -54,6 +54,19 @@ async function tryRefreshToken(baseURL: string): Promise<boolean> {
         // to the REST refresh succeeding.
       }
 
+      // This silent, request-triggered refresh only ever updated
+      // localStorage's token -- unlike AuthContext's own refreshSession()
+      // (which runs on page load), it never told React about the new token,
+      // so `AuthContext.user` (roles/permissions, displayed throughout the
+      // UI and read by ProtectedRoute's role checks) kept whatever was set
+      // at initial login/mount indefinitely, even after this silent refresh
+      // picked up a genuinely different roles/permissions snapshot (e.g. an
+      // admin changed this account's role while the session was open). No
+      // router access from this module, so -- same pattern as
+      // handleSessionExpired below -- dispatch an event and let AuthContext
+      // own the actual re-fetch/setUser.
+      window.dispatchEvent(new Event("auth:session-refreshed"))
+
       return true
     } catch {
       return false

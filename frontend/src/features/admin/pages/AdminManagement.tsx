@@ -82,7 +82,7 @@ export function AdminManagement() {
 
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [creating, setCreating] = useState(false)
-  const [createForm, setCreateForm] = useState({ email: "", fullName: "", password: "", roleNames: [] as string[] })
+  const [createForm, setCreateForm] = useState({ email: "", fullName: "", roleNames: [] as string[] })
   const [createError, setCreateError] = useState<string | null>(null)
 
   const [rolesModalAdmin, setRolesModalAdmin] = useState<AdminRow | null>(null)
@@ -133,8 +133,8 @@ export function AdminManagement() {
   }, [roles])
 
   const handleCreateAdmin = async () => {
-    if (!createForm.email.trim() || !createForm.fullName.trim() || createForm.password.length < 8 || createForm.roleNames.length === 0) {
-      setCreateError("Fill in every field. Password must be at least 8 characters and at least one role must be selected.")
+    if (!createForm.email.trim() || !createForm.fullName.trim() || createForm.roleNames.length === 0) {
+      setCreateError("Fill in every field and select at least one role.")
       return
     }
     try {
@@ -142,7 +142,7 @@ export function AdminManagement() {
       setCreateError(null)
       await AdminApi.createAdmin(createForm)
       setShowCreateModal(false)
-      setCreateForm({ email: "", fullName: "", password: "", roleNames: [] })
+      setCreateForm({ email: "", fullName: "", roleNames: [] })
       await load()
     } catch (err: any) {
       console.error("Failed to create admin:", err)
@@ -427,16 +427,9 @@ export function AdminManagement() {
                   placeholder="jane@jobsforwomen.info"
                 />
               </div>
-              <div>
-                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Initial Password <span className="text-red-500">*</span></label>
-                <Input
-                  type="password"
-                  value={createForm.password}
-                  onChange={(e) => setCreateForm((f) => ({ ...f, password: e.target.value }))}
-                  className="text-xs h-9 mt-1"
-                  placeholder="At least 8 characters"
-                />
-              </div>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+                No password is set here -- the new account holder will receive an email with a secure link to set their own password.
+              </p>
               <div>
                 <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Roles <span className="text-red-500">*</span></label>
                 <div className="mt-1.5 flex flex-wrap gap-2">

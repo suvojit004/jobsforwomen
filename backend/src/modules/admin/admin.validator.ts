@@ -53,12 +53,14 @@ export const inviteEmployeeSchema = z.object({
 
 // Super Admin Admin Management module -- direct account provisioning
 // (distinct from the self-serve Employee Invitation flow above: this
-// creates the account and sets an initial password immediately, gated
-// entirely behind requireSuperAdmin at the route level).
+// creates the account, gated entirely behind requireSuperAdmin at the route
+// level). No password field -- the account is created with no password set,
+// and the recipient sets their own via a emailed set-password link (see
+// admin.service.ts's createAdmin), so a Super Admin never types, sees, or
+// transmits another user's password.
 export const createAdminSchema = z.object({
   email: z.string().email("Invalid email format"),
   fullName: z.string().min(2, "Full name must be at least 2 characters"),
-  password: z.string().min(8, "Password must be at least 8 characters"),
   roleNames: z.array(z.string().min(1)).min(1, "At least one role is required"),
 })
 

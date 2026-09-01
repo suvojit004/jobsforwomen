@@ -1,0 +1,92 @@
+/* JFW Landing Page -- ported from the standalone jobsforwomen/index.html
+   design (Tailwind CDN + vanilla JS original). Only the parts that aren't
+   expressible as Tailwind utility classes live here: keyframes, the
+   particle/reveal/modal mechanics, and the two custom font stacks. Every
+   custom color in the original design (plum/rose/rose-light/rose-deep) is
+   used as a literal Tailwind arbitrary value (e.g. bg-[#1a0d2e]) directly in
+   LandingPage.tsx instead of a named theme token, and font-serif/font-sans
+   are intentionally NOT reused here -- this app's own Tailwind v4 theme
+   already defines those two utility names (generic serif stack / Geist
+   Variable respectively), so reusing them would fight the app's global
+   theme depending on stylesheet load order. jfw-serif/jfw-sans below are
+   unique names that exist only in this file, so there's no collision risk
+   with the rest of the app. This file is imported only by LandingPage.tsx. */
+
+.jfw-landing { scroll-behavior: smooth; }
+.jfw-landing, .jfw-landing * { -webkit-font-smoothing: antialiased; }
+
+.jfw-serif { font-family: "Cormorant Garamond", serif; }
+.jfw-sans  { font-family: "DM Sans", sans-serif; }
+
+/* Particles */
+.jfw-particles { position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 0; overflow: hidden; }
+.jfw-particle  { position: absolute; border-radius: 50%; animation: jfw-pfloat linear infinite; opacity: 0; }
+@keyframes jfw-pfloat {
+  0%   { transform: translateY(100vh) scale(0); opacity: 0; }
+  10%  { opacity: 1; }
+  90%  { opacity: .4; }
+  100% { transform: translateY(-10vh) scale(1); opacity: 0; }
+}
+
+/* Scroll-reveal */
+.jfw-reveal         { opacity: 0; transform: translateY(28px); transition: opacity .65s ease, transform .65s ease; }
+.jfw-reveal.visible { opacity: 1; transform: translateY(0); }
+.jfw-rd1 { transition-delay: .1s; }
+.jfw-rd2 { transition-delay: .2s; }
+.jfw-rd3 { transition-delay: .3s; }
+.jfw-rd4 { transition-delay: .4s; }
+
+/* Keyframe animations */
+@keyframes jfw-fadeUp   { from { opacity: 0; transform: translateY(26px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes jfw-orbpulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.1); } }
+@keyframes jfw-blink    { 0%, 100% { opacity: 1; } 50% { opacity: .3; } }
+@keyframes jfw-scrollp  { 0%, 100% { opacity: .4; } 50% { opacity: 1; } }
+@keyframes jfw-bounce-d { 0%, 80%, 100% { transform: translateY(0); } 40% { transform: translateY(-7px); } }
+@keyframes jfw-msgIn    { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes jfw-shimmer  { 0% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }
+
+.jfw-anim-1 { animation: jfw-fadeUp .8s .10s ease both; }
+.jfw-anim-2 { animation: jfw-fadeUp .8s .22s ease both; }
+.jfw-anim-3 { animation: jfw-fadeUp .8s .32s ease both; }
+.jfw-anim-4 { animation: jfw-fadeUp .8s .42s ease both; }
+.jfw-anim-5 { animation: jfw-fadeUp .8s .52s ease both; }
+.jfw-anim-6 { animation: jfw-fadeUp .8s .90s ease both; }
+
+/* Decorative */
+.jfw-orb   { position: absolute; border-radius: 50%; filter: blur(80px); animation: jfw-orbpulse 6s ease-in-out infinite; }
+.jfw-sline { width: 1px; height: 36px; background: linear-gradient(to bottom, transparent, #e891b0); animation: jfw-scrollp 2s ease-in-out infinite; }
+
+/* Nav */
+.jfw-nav-btn        { background: transparent; border: none; font-family: "DM Sans", sans-serif; font-size: .78rem; letter-spacing: .06em; text-transform: uppercase; color: rgba(240, 230, 246, .62); padding: .5rem 1rem; border-radius: 30px; cursor: pointer; transition: all .2s; }
+.jfw-nav-btn:hover,
+.jfw-nav-btn.active { color: #fff; background: rgba(232, 145, 176, .12); }
+
+/* Modal */
+.jfw-modal-overlay        { position: fixed; inset: 0; background: rgba(10, 5, 20, .85); backdrop-filter: blur(8px); z-index: 500; display: none; align-items: center; justify-content: center; padding: 2rem; }
+.jfw-modal-overlay.open   { display: flex !important; }
+.jfw-notify-overlay       { position: fixed; inset: 0; background: rgba(10, 5, 20, .8); backdrop-filter: blur(8px); z-index: 500; display: none; align-items: center; justify-content: center; }
+.jfw-notify-overlay.open  { display: flex; }
+
+/* Typing */
+.jfw-msg.typing span { display: inline-block; width: 6px; height: 6px; background: #e891b0; border-radius: 50%; margin: 0 2px; animation: jfw-bounce-d 1.2s ease-in-out infinite; }
+.jfw-msg.typing span:nth-child(2) { animation-delay: .2s; }
+.jfw-msg.typing span:nth-child(3) { animation-delay: .4s; }
+
+/* Chat */
+.jfw-msg      { max-width: 84%; padding: .85rem 1.1rem; border-radius: 14px; font-size: .86rem; line-height: 1.68; animation: jfw-msgIn .28s ease; }
+.jfw-msg.ai   { background: rgba(90, 58, 138, .5); border: 1px solid rgba(232, 145, 176, .14); color: #f0e6f6; align-self: flex-start; border-radius: 3px 14px 14px 14px; }
+.jfw-msg.user { background: #d4709a; color: white; align-self: flex-end; border-radius: 14px 3px 14px 14px; }
+
+/* Scrollbar */
+.jfw-thin-scroll { scrollbar-width: thin; scrollbar-color: rgba(232, 145, 176, .3) transparent; }
+
+/* Premium badge shimmer */
+.jfw-premium-badge { position: relative; overflow: hidden; }
+.jfw-premium-badge::after { content: ''; position: absolute; top: 0; left: 0; width: 50%; height: 100%; background: linear-gradient(to right, transparent, rgba(255, 255, 255, .15), transparent); animation: jfw-shimmer 2.5s ease-in-out infinite; }
+
+/* Card hover */
+.jfw-feature-card { transition: all .3s ease; }
+.jfw-feature-card:hover { transform: translateY(-6px); box-shadow: 0 20px 60px rgba(212, 112, 154, .18); }
+
+/* Founder avatar */
+.jfw-favatar img { display: block; width: 100%; height: 100%; object-fit: cover; object-position: center top; }

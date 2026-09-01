@@ -243,13 +243,13 @@ async function handleEmailJob(jobName: string, data: any) {
     return
   }
 
-  const { to, token, roleName, roleNames, fullName, password, companyName, status, notes, jobTitle, recipientName, jobs, scheduledAt, location, timezone, mode, offerDetails, actionLink, actionLabel, perkName, comment, statusHeading, statusMessage } = data
+  const { to, token, roleName, roleNames, fullName, setPasswordToken, companyName, status, notes, jobTitle, recipientName, jobs, scheduledAt, location, timezone, mode, offerDetails, actionLink, actionLabel, perkName, comment, statusHeading, statusMessage } = data
   if (jobName === "sendWelcome") {
     await EmailService.sendWelcomeEmail(to, token)
   } else if (jobName === "sendEmployeeInvitation") {
     await EmailService.sendEmployeeInvitation(to, token, roleName)
   } else if (jobName === "sendAdminAccountCreated") {
-    await EmailService.sendAdminAccountCreatedEmail(to, fullName, password, roleNames || [])
+    await EmailService.sendAdminAccountCreatedEmail(to, fullName, setPasswordToken, roleNames || [])
   } else if (jobName === "sendCompanyVerification") {
     await EmailService.sendCompanyVerificationEmail(to, companyName, status, notes, actionLink, actionLabel)
   } else if (jobName === "sendPerkVerification") {

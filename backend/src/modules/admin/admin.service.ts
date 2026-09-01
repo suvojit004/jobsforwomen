@@ -16,7 +16,6 @@ import { socketMetrics } from "../../shared/socket/socket"
 import { storageMetrics } from "../../shared/utils/fileStorage"
 import { emailMetrics } from "../../shared/utils/email"
 import { AppError } from "../../shared/middleware/errorHandler"
-import { hashPassword } from "../../shared/utils/password"
 import { invalidateSecurityPolicyCache } from "../../shared/middleware/securityPolicy.middleware"
 import env from "../../shared/config/env"
 import {
@@ -2341,7 +2340,7 @@ export class AdminService {
 
   async createAdmin(
     operatorId: string,
-    data: { email: string; fullName: string; password: string; roleNames: string[] },
+    data: { email: string; fullName: string; roleNames: string[] },
     context?: ServiceContext,
     operatorRoles: string[] = []
   ) {
@@ -2370,14 +2369,17 @@ export class AdminService {
       throw new AppError("An administrator account must be granted at least one admin-tier role.", 400)
     }
 
-    const passwordHash = await hashPassword(data.password)
     const operator = await prisma.user.findUnique({ where: { id: operatorId } })
 
     const created = await prisma.$transaction(async (tx) => {
       const user = await tx.user.create({
         data: {
           email: data.email,
-          passwordHash,
+          // No password set at creation -- the recipient sets their own via
+          // the emailed set-password link below, so a Super Admin never
+          // types, sees, or transmits another user's password. User.passwordHash
+          // is nullable specifically to support this (and OAuth-only users).
+          passwordHash: null,
           // Admin-created accounts skip the email-verification / company
           // -approval gates that candidate/recruiter self-registration goes
           // through -- a Super Admin vouching for the account IS the
@@ -2404,20 +2406,29 @@ export class AdminService {
       newValue: { email: created.email, fullName: data.fullName, roleNames },
     })
 
+    // Reuses the same PasswordReset token mechanism the ordinary
+    // forgot-password flow uses (see auth.service.ts's forgotPassword),
+    // just generated proactively at creation time instead of on request --
+    // the recipient's own "Set Your Password" link, not a secret chosen by
+    // the Super Admin. Generous 7-day expiry since this is initial account
+    // activation, not a time-sensitive reset.
+    const setPasswordToken = crypto.randomBytes(32).toString("hex")
+    const setPasswordExpiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+    await prisma.passwordReset.create({
+      data: { email: created.email, token: setPasswordToken, expiresAt: setPasswordExpiresAt },
+    })
+
     // Notification.listener.ts subscribes to this to welcome the new admin
     // in-app (Admin Management spec's "Notifications: on account created").
     // email.listener.ts also subscribes to this same event to send the new
-    // admin their login credentials -- this account has no self-serve
-    // "set your own password" step (unlike inviteEmployee's token flow), so
-    // the plaintext password is included here deliberately: it's the only
-    // way this admin ever learns it. It exists only transiently in the
-    // in-process EventBus payload and the resulting BullMQ job until the
-    // email send completes, never written to the database or logged.
+    // admin their set-password link -- this account has no password until
+    // the recipient sets one themselves, so nothing sensitive ever travels
+    // through the in-process EventBus payload or the resulting BullMQ job.
     EventBus.publish("AdminAccountCreated", {
       userId: created.id,
       email: created.email,
       fullName: data.fullName,
-      password: data.password,
+      setPasswordToken,
       roleNames,
       context,
     })
