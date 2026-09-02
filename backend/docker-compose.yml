@@ -26,6 +26,14 @@ services:
       # file is still there.
       - DISK_MOUNT_PATH=/app/uploads
       - BACKEND_URL=http://localhost:5000
+      # Lets the `web` service's origin (http://localhost:8080, the
+      # frontend container's published port -- see below) through CORS for
+      # both REST (app.ts) and Socket.IO (shared/socket/socket.ts), which
+      # both read CLIENT_URL/FRONTEND_URL. This is additive: app.ts also
+      # hardcodes localhost:5173, so `npm run dev` on the frontend still
+      # works unaffected alongside this container.
+      - CLIENT_URL=http://localhost:8080
+      - FRONTEND_URL=http://localhost:8080
       # LOCAL/TEST ONLY -- lets a seeded load-test account skip the
       # email-verification link so it can log in immediately. auth.service.ts
       # only honors this for accounts already in PendingVerification status;
@@ -41,6 +49,34 @@ services:
     networks:
       - app-net
       - db-net
+    restart: unless-stopped
+
+  # Frontend static build, served by the nginx image defined in
+  # frontend/Dockerfile. This is the SAME production Dockerfile used for
+  # real deploys -- there's no dev-server/HMR mode here, so editing frontend
+  # source requires `docker compose up --build web` to see the change.
+  # For day-to-day frontend development, run `npm run dev` in frontend/
+  # instead and leave this service stopped; it exists so the full stack
+  # (frontend + api + db + redis) can be brought up with one command when
+  # you actually want to test the production-style build end to end.
+  web:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+      args:
+        # BUILD-TIME arg -- Vite bakes this into the JS bundle, so it must
+        # be the URL the BROWSER can reach, not an internal Docker hostname
+        # like "http://api:5000". The api service above publishes 5000 to
+        # the host, so localhost:5000 is correct here. Changing this later
+        # requires rebuilding the image (`docker compose build web`); a
+        # plain `docker compose up` reuses the already-baked bundle.
+        VITE_API_URL: http://localhost:5000
+    ports:
+      - "8080:8080"
+    depends_on:
+      - api
+    networks:
+      - app-net
     restart: unless-stopped
 
   db:
