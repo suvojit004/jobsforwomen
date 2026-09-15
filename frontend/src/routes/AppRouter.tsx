@@ -8,7 +8,6 @@ import { RecruiterRoutes } from "./RecruiterRoutes"
 import { AdminRoutes } from "./AdminRoutes"
 import { AuthRoutes } from "./AuthRoutes"
 import { ProtectedRoute } from "./ProtectedRoute"
-import { LandingPage } from "@/features/landing/LandingPage"
 import { OAuthCallback } from "@/features/auth/pages/OAuthCallback"
 import { CompanyVerification } from "@/features/auth/pages/CompanyVerification"
 import { NotFoundPage } from "@/components/shared/errors/NotFoundPage"
@@ -49,11 +48,13 @@ export function DashboardRedirect() {
 export function AppRouter() {
   return (
     <Routes>
-      {/* Public Pages */}
-      <Route path="/" element={<LandingPage />} />
-      <Route path="/about" element={<Navigate to="/#about" replace />} />
-      <Route path="/contact" element={<Navigate to="/#contact" replace />} />
-      <Route path="/faq" element={<Navigate to="/#faq" replace />} />
+      {/* No standalone home page -- this app is hosted on a subdomain and
+          reached only via hyperlinks pointing directly at specific routes
+          (e.g. /auth/login, /auth/register/candidate) from elsewhere. "/"
+          itself just routes through the same dynamic redirector as the
+          catch-all below: authenticated users land on their dashboard,
+          ProtectedRoute bounces everyone else to /auth/login. */}
+      <Route path="/" element={<DashboardRedirect />} />
 
       {/* Google OAuth handoff -- backend's googleCallback redirects here with
           ?token=<accessToken> after a successful login. Must be registered
