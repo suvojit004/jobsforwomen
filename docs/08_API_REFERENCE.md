@@ -189,7 +189,7 @@ Registration is split into **two role-specific endpoints**. There is no single `
   * **`InterviewScheduled` and `Offer Released` are not accepted here** — they require structured data and have their own endpoints:
     * **`POST /api/v1/recruiters/applications/:id/interview`** — schedules an interview (captures scheduled time, timezone, mode, location/meeting link, notes).
     * **`POST /api/v1/recruiters/applications/:id/offer`** — releases an offer; accepts `multipart/form-data` with an optional offer-letter file.
-    * **`POST /api/v1/recruiters/applications/:id/conversation`** — starts a chat thread with the candidate.
+  * There is **no** conversation/chat-thread endpoint. Real-time chat has been removed from the running application — see [6. Backend](06_BACKEND.md) §6.3. The `Conversation` route this section previously documented (`POST .../conversation`) does not exist in `recruiter.routes.ts`.
 
 ---
 

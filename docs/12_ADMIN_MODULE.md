@@ -44,8 +44,9 @@ Admin controls user accounts inside `UserModeration.tsx`:
 
 Platform feature states are toggled dynamically inside `FeatureConfigs.tsx`:
 * Features are managed via the `FeatureFlag` table.
-* **Core Flags**: `chat_enabled`, `email_automation`, `push_notifications`, `advanced_analytics`, `mfa_enforced`.
-* Admin can click key toggles to immediately enable or disable features globally.
+* **The only flag actually seeded and surfaced today is `email_automation`.** `chat_enabled`, `push_notifications`, `advanced_analytics`, `experimental_sockets`, and `mfa_enforced` are deliberately excluded by `AdminService.getFeatureFlags()` (a `RETIRED_UNIMPLEMENTED_FLAG_KEYS` filter) and no longer seeded by `seed.ts` — nothing in the codebase ever branched on them (no push delivery mechanism, no analytics gate, no MFA-enforcement check in the login flow), and real-time chat itself has since been removed from the app (see [6. Backend](06_BACKEND.md) §6.3). Any pre-existing rows for these keys in an older database are left dormant rather than deleted, so they simply stop appearing on this page after an upgrade.
+* Two-factor authentication (per-user opt-in TOTP) **is** fully implemented — enrollment, login challenge, and disable — but it is not gated by a feature flag at all; every user can enable it individually from their own Settings page. See `backend/src/modules/auth/auth.routes.ts` (`/2fa/enroll/start`, `/2fa/enroll/confirm`, `/2fa/verify`, `/2fa/disable`).
+* Admin can click the remaining live toggle (`email_automation`) to immediately enable or disable automated mailing globally.
 
 ---
 

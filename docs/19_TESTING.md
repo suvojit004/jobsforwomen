@@ -35,7 +35,7 @@ New integration tests verified in `email.test.ts` include:
 3. **Missing ID Handling**: Ensures a response without a `MessageId` fails.
 4. **Permanent vs Transient**: Confirms a sandbox `MessageRejected` surfaces as `PermanentEmailError` (retries skipped) while `TooManyRequestsException` stays retryable.
 5. **Transport Check**: Confirms `verifyEmailTransport()` uses `GetAccount` and never consumes sending quota.
-4. **Queue Worker Propagation**: Verifies that email delivery failures propagate up, causing the BullMQ worker job to fail.
+6. **Queue Worker Propagation**: Verifies that email delivery failures propagate up, causing the BullMQ worker job to fail.
 
 ---
 
@@ -53,7 +53,8 @@ Before pushing changes to staging, verify the following:
 | **Recruiter** | Post Job | Fill forms, post job, and redirect. | Redirects to `/recruiter/manage-jobs`, status is `pending_approval`. |
 | **Admin** | Moderation | Admin approves job. Recruiter and matching candidates receive notifications. | Real-time counts increment; notifications database entry is created. |
 | **Sockets** | Re-auth | Token refreshes while Socket is open. | Socket updates token and reconnects without losing listeners. |
-| **Messaging** | Optimistic send | Send a chat message. | Bubble appears instantly, dimmed with a clock icon, then resolves to a normal timestamp on confirmation. |
 | **Loading** | Skeletons | Hard-refresh any dashboard or list page. | A content-shaped skeleton renders — never a blank screen or raw "Loading..." text. |
 | **Files** | Persistence | Upload a file, redeploy, reopen it. | File still opens. Failure here means `DISK_MOUNT_PATH` is not on persistent storage. |
 | **Files** | Signed URL expiry | Leave a page open >1 hour, click a private file link. | 403 with an "expired link" message; reloading the page restores access. |
+
+> The regression table previously included a "Messaging — Optimistic send" chat row. Real-time chat has been removed from the application (no socket handlers, no routes, no frontend UI — see [6. Backend](06_BACKEND.md) §6.3), so that scenario is no longer testable and was removed from this checklist.

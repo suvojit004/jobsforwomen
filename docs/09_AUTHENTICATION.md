@@ -31,7 +31,7 @@ sequenceDiagram
    * Signed with `env.JWT_REFRESH_SECRET`.
    * Has a lifetime of 7 days (`JWT_REFRESH_EXPIRY`).
    * Stored in a database record (`RefreshToken` model) mapping the user connection.
-   * Sent to the client via a secure, `HttpOnly`, `SameSite=Lax` browser cookie (`jid`). This prevents cross-site scripting (XSS) extraction of the refresh token.
+   * Sent to the client via an `HttpOnly` browser cookie (`jid`), `Secure` in every non-local environment. `SameSite` is `None` in production (the SPA and API are on different origins) and `Lax` for local development — see [18. Security](18_SECURITY.md) §18.2 for the full flag breakdown. This prevents cross-site scripting (XSS) extraction of the refresh token.
 
 ---
 

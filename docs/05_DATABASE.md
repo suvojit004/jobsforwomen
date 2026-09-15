@@ -55,10 +55,11 @@ erDiagram
 * **`Application`**: Candidate applications for jobs.
 * **`SavedJob`**: Job bookmarks saved by candidates.
 
-### 4. Communications & Messaging
-* **`Conversation`**: Handles real-time messaging channels.
-* **`ConversationParticipant`**: Associates users to conversations.
-* **`Message`**: Stores messages with content, senderId, and `readAt` timestamps.
+### 4. Communications & Messaging (dormant)
+* **`Conversation`**: Was used for real-time messaging channels.
+* **`ConversationParticipant`**: Associated users to conversations.
+* **`Message`**: Stored messages with content, senderId, and `readAt` timestamps.
+* > **These three models are no longer used by the running application.** Real-time chat was removed from both the backend (no routes, no socket handlers — see [6. Backend](06_BACKEND.md) §6.3) and the frontend. The tables and Prisma models were deliberately left in place rather than dropped — no migration removes them — but nothing in the current codebase reads from or writes to them.
 
 ---
 

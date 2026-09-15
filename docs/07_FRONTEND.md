@@ -1,6 +1,6 @@
 # 7. Frontend Documentation
 
-The frontend is a single-page application (SPA) built using React 18, TypeScript, and Vite. It compiles cleanly with zero TypeScript errors.
+The frontend is a single-page application (SPA) built using React 19, TypeScript, and Vite. It compiles cleanly with zero TypeScript errors.
 
 ---
 

@@ -88,7 +88,9 @@ A local full stack (API + Postgres + Redis) is available via `backend/docker-com
 
 ---
 
-## 16.5 Recipe: Render (current deployment)
+## 16.5 Recipe: Render (historical — pre-cutover deployment)
+
+> As of the AWS EC2 cutover documented in §16.7 and [OPERATIONS_RUNBOOK.md](OPERATIONS_RUNBOOK.md) §4–5, this is **no longer the current production recipe**, and the Render Postgres / Upstash Redis instances it describes have been **fully decommissioned** — Postgres and Redis both now run locally on the same EC2 server as the application (see §16.7 and the runbook's migration note). This recipe is kept here purely as a working, independent alternative should the platform move back to a managed host.
 
 **Backend — Web Service**
 
@@ -103,7 +105,7 @@ Render specifics worth knowing: disks are single-instance only (no autoscaling);
 
 * Build `npm run build`, output `dist`, set `VITE_API_URL`, and redeploy after changing it.
 
-**Managed services**: Render PostgreSQL, and Redis from Upstash (`rediss://`) or Render Key Value.
+**Managed services**: Render PostgreSQL, and Redis from Upstash (`rediss://`) or Render Key Value. *(Historical — see the note at the top of this section: the current deployment, §16.7, runs both locally on the EC2 host instead.)*
 
 ---
 
@@ -133,15 +135,21 @@ AWS-specific gotchas:
 
 ---
 
-## 16.7 Recipe: Any Docker host / VPS
+## 16.7 Recipe: Any Docker host / VPS (current production deployment)
 
-1. Provision Postgres and Redis (managed, or additional containers).
+> This is what the platform actually runs today: both containers from §16.4 on a self-managed AWS EC2 instance, fronted by two host-level nginx instances that terminate TLS via Let's Encrypt/Certbot for `jobsforwomen.info` (frontend) and `api.jobsforwomen.info` (backend). See [OPERATIONS_RUNBOOK.md](OPERATIONS_RUNBOOK.md) for the full operational picture — that file is authoritative if it and this page ever diverge.
+
+1. Provision Postgres and Redis. **Current production setup:** both run locally on the same EC2 host (not a managed provider) — confirm `DATABASE_URL`/`REDIS_URL` point at `localhost` (or the Docker network's internal hostname, if run as additional containers) on the live server.
 2. Run the two images from §16.4, with a named volume or bind mount for uploads.
-3. Terminate TLS and reverse-proxy with nginx — `backend/nginx.conf` is a working starting point (HTTP→HTTPS redirect, TLS 1.2/1.3, HSTS, gzip, `client_max_body_size 10M` matching Multer, and a `/socket.io/` location with WebSocket upgrade headers and 86400s timeouts).
-4. Issue certificates with Certbot; the config already includes the `/.well-known/acme-challenge/` location. Verify the renewal timer is active — an expired certificate is a total outage.
+3. Terminate TLS and reverse-proxy with nginx. Two working host-level configs exist in the repo, install either the same way (`sudo cp <file> /etc/nginx/sites-available/...`, symlink into `sites-enabled`, then `certbot --nginx -d <domain>`):
+   * **`backend/nginx.conf`** — the API reverse proxy for `api.jobsforwomen.info`: HTTP→HTTPS redirect, TLS 1.2/1.3, HSTS, gzip, `client_max_body_size 10M` matching Multer, and a `/socket.io/` location with WebSocket upgrade headers and 86400s timeouts.
+   * **`frontend/nginx.host.conf`** — the frontend domain (`jobsforwomen.info` + `www`), reverse-proxying to the frontend *container* on `127.0.0.1:8080`. This is distinct from `frontend/nginx.conf`, which runs **inside** that container and does the actual SPA serving/fallback.
+   * **`frontend/nginx.static.host.conf`** — an alternative to `nginx.host.conf` that skips the frontend container entirely and serves a `npm run build` output directly from the host filesystem (`/var/www/jobsforwomen.info`). A deploy under this approach is "rebuild, `cp -r dist/* /var/www/...`" rather than "build and run an image." Pick one of these two frontend approaches, not both.
+4. Issue certificates with Certbot; both host configs already include the `/.well-known/acme-challenge/` location. Verify the renewal timer is active — an expired certificate is a total outage.
 5. `docker exec` into the API container and run `npx prisma migrate deploy`.
 
 > The CSP in `backend/nginx.conf` sets `script-src 'none'; style-src 'none'`, which blocks the Swagger UI at `/api/v1/api-docs` from rendering. Relax it for that path or accept that the docs page will not load in production.
+> `frontend/nginx.host.conf` ships with its CSP header commented out/unset entirely — unlike the backend's lockdown policy, the frontend needs `script-src`/`style-src`/`connect-src` open enough for the React bundle and its calls back to the API to actually run.
 
 ---
 

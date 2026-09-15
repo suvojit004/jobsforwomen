@@ -2,9 +2,11 @@
 
 **Audience:** any engineer who has never seen this codebase and has been handed a production incident.
 **Scope:** everything you need to understand the system, deploy it, diagnose a failure, and repair it.
-**Last verified against source:** 27 July 2026.
+**Last verified against source:** 27 July 2026. **Compute hosting has since changed — see the note below.**
 
 This document is self-contained. You do not need to read the other files in `docs/` to use it — they provide topic-by-topic detail, this provides the operational picture. The rest of `docs/` was audited and corrected against source on the same date; if the two ever diverge, trust this file.
+
+> **⚠ Deployment migration note (confirmed):** Everywhere below that says the backend runs on Render and the frontend on Vercel, or that Postgres/Redis are Render Postgres/Upstash, describes the deployment as of 27 July 2026 — **that infrastructure has since been fully decommissioned.** Current state, confirmed directly: production compute (both the API and frontend containers, per §4.2/§4.3) runs on a **self-managed AWS EC2 instance** behind nginx (`backend/nginx.conf`, `frontend/nginx.host.conf`/`nginx.static.host.conf`) with Let's Encrypt/Certbot TLS, reachable at `https://jobsforwomen.info` / `https://api.jobsforwomen.info` (§4.6, §5). **PostgreSQL and Redis now run locally on that same server** — not Render Postgres, not Upstash. Every instruction below that assumes a Render dashboard (Shell, Disks, Events → Redeploy, Logs tab, database Backups) or an Upstash console is describing infrastructure that **no longer exists**; the equivalent actions on the current server are SSH in, then `docker logs` / `docker exec` for the containers, and native `pg_dump`/`redis-cli`/systemd tooling for the locally-running Postgres and Redis. §10.2, §10.3, §8 (rollback), and §15 (maintenance) below still describe the old Render/Upstash-specific steps in places and should be read with this in mind — corrected inline where marked.
 
 ---
 
@@ -13,12 +15,12 @@ This document is self-contained. You do not need to read the other files in `doc
 | | |
 |---|---|
 | **What it is** | A job platform for women. Three roles: Candidate, Recruiter, Admin. |
-| **Backend** | Express 5 + TypeScript on Node 22.x. Containerized; currently deployed on **Render**. Platform-neutral — see §4. |
-| **Frontend** | React 19 + Vite SPA. Containerized; currently deployed on **Vercel**. |
-| **Database** | PostgreSQL (currently Render), accessed via Prisma 6.19.3. |
-| **Cache/Queue** | Redis (currently Upstash, `rediss://`). Used for rate limiting, permission cache, BullMQ jobs, and Socket.IO fanout. |
+| **Backend** | Express 5 + TypeScript on Node 22.x. Containerized; currently deployed on a **self-managed AWS EC2 instance** (Docker + nginx, `api.jobsforwomen.info`) — see the migration note above and §4.6. Platform-neutral — see §4. |
+| **Frontend** | React 19 + Vite SPA. Containerized; currently deployed on the same **AWS EC2 instance** behind nginx (`jobsforwomen.info`) — see the migration note above and §4.6. |
+| **Database** | PostgreSQL, self-hosted locally on the production server (not Render — see the migration note above), accessed via Prisma 6.19.3. |
+| **Cache/Queue** | Redis, self-hosted locally on the production server (not Upstash — see the migration note above). Used for rate limiting, permission cache, BullMQ jobs, and Socket.IO fanout. |
 | **Email** | AWS SES v2, region `ap-south-1`, sending domain `mail.jobsforwomen.info`. |
-| **File storage** | **Local disk** on a persistent volume (currently a Render Persistent Disk). Migrated off Cloudinary; no third-party storage remains. |
+| **File storage** | **Local disk** on a persistent volume — a Docker named volume on the EC2 host (not a Render Persistent Disk — see the migration note above). Migrated off Cloudinary; no third-party storage remains. |
 | **Real-time** | Socket.IO, namespaces `/candidate`, `/recruiter`, `/admin`. |
 
 **First three commands in any incident:**
@@ -37,14 +39,16 @@ curl https://<backend-host>/health    # full subsystem breakdown (JSON)
 
 ```
                     ┌──────────────────────┐
-   Browser ────────▶│  Vercel (React SPA)  │
+   Browser ────────▶│ nginx :443 (EC2) →   │
+                    │ React SPA container  │
                     └──────────┬───────────┘
                                │ HTTPS + WSS
-                               │ VITE_API_URL
+                               │ VITE_API_URL = api.jobsforwomen.info
                     ┌──────────▼───────────┐
-                    │  API host (Render /  │
-                    │  ECS / VPS) :5000    │
-                    │                      │
+                    │  nginx :443 (EC2) →  │
+                    │  API container :5000 │
+                    │  (current — see §4.6;│
+                    │  was Render/ECS/VPS) │
                     │  ├─ REST /api/v1/*   │
                     │  ├─ Files /files/*   │
                     │  ├─ Socket.IO        │
@@ -99,8 +103,9 @@ curl https://<backend-host>/health    # full subsystem breakdown (JSON)
 
 | | Backend | Frontend |
 |---|---|---|
-| **Production (current)** | Render web service | Vercel |
-| **Known deployed host** | `https://jobsforwomen-266w.onrender.com` | `https://jobs-for-women-ob43.vercel.app` |
+| **Production (current)** | Docker container on self-managed AWS EC2, behind nginx | Docker container (or static build — see §16.7) on the same EC2 host, behind nginx |
+| **Known deployed host** | `https://api.jobsforwomen.info` | `https://jobsforwomen.info` |
+| **Prior deployment (pre-cutover, may still exist)** | `https://jobsforwomen-266w.onrender.com` (Render) | `https://jobs-for-women-ob43.vercel.app` (Vercel) |
 | **Local** | `http://localhost:5000` | `http://localhost:5173` |
 
 **CORS allowlist** is hardcoded in *two* places that must stay in sync: `backend/src/app.ts` and `backend/src/shared/socket/socket.ts`. Both allow `http://localhost:5173`, `http://localhost:3000`, `https://jobs-for-women-ob43.vercel.app`, plus whatever `CLIENT_URL` and `FRONTEND_URL` are set to. **If you add a new frontend domain, you must add it to both files or REST will work while WebSockets silently fail.**
@@ -118,7 +123,7 @@ Validated by Zod at boot in `backend/src/shared/config/env.ts`. **If validation 
 | `DATABASE_URL` | PostgreSQL connection string. |
 | `JWT_ACCESS_SECRET` | Min 8 chars. **Also signs file-download URLs** — see §10.4 before rotating. |
 | `JWT_REFRESH_SECRET` | Min 8 chars. |
-| `REDIS_URL` | Upstash `rediss://` URL. |
+| `REDIS_URL` | Local Redis on the production server — `redis://` (no TLS needed for a same-host connection; Upstash's `rediss://` no longer applies — see the migration note above). |
 | `SES_FROM` | Sender identity on the SES-verified domain. |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_CALLBACK_URL` | OAuth. |
 
@@ -137,7 +142,7 @@ Validated by Zod at boot in `backend/src/shared/config/env.ts`. **If validation 
 
 ### Optional
 
-`CLIENT_URL`, `FRONTEND_URL` (both feed the CORS allowlist), `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`, `SUPPORT_EMAIL`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` (required on Render — no instance role), `AWS_SES_REGION` (default `ap-south-1`), `SES_MAX_SEND_RATE_PER_SEC` (default `1`), `SES_CONFIGURATION_SET`, `SNS_TOPIC_ARN`.
+`CLIENT_URL`, `FRONTEND_URL` (both feed the CORS allowlist), `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` (leftover from the pre-cutover Upstash setup — not applicable now that Redis is self-hosted; see the migration note above), `SUPPORT_EMAIL`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` (required unless the EC2 instance has an IAM instance role attached with SES permissions — confirm which is actually configured), `AWS_SES_REGION` (default `ap-south-1`), `SES_MAX_SEND_RATE_PER_SEC` (default `1`), `SES_CONFIGURATION_SET`, `SNS_TOPIC_ARN`.
 
 ### Dangerous — never set in production
 
@@ -155,7 +160,7 @@ Validated by Zod at boot in `backend/src/shared/config/env.ts`. **If validation 
 
 ## 4. Deployment
 
-This section is platform-neutral. §4.1 states what *any* host must provide; §4.4–4.6 give concrete recipes for Render (the current deployment), AWS, and any Docker host. The current deployment is Render (backend) + Vercel (frontend), but nothing in the application is coupled to either.
+This section is platform-neutral. §4.1 states what *any* host must provide; §4.4–4.6 give concrete recipes for Render, AWS, and any Docker host. **The current production deployment is §4.6** — a self-managed AWS EC2 instance running both containers behind nginx (see the migration note in the header). §4.4 (Render) and §4.5 (AWS-managed) remain as working alternative recipes; nothing in the application is coupled to any specific host.
 
 ### 4.1 What any platform must provide
 
@@ -266,7 +271,7 @@ A `Content-Security-Policy` is present but **commented out**. A working policy h
 
 > **Verification status:** the frontend image has **not been built end-to-end** — no Docker daemon was available in the authoring environment. What *was* verified: `package-lock.json` exists (so `npm ci` will resolve), TypeScript compiles clean (`tsc --noEmit -p tsconfig.app.json`, which is the `tsc -b` half of `npm run build`), and `vite build` starts and enters transformation without configuration errors. `vite.config.ts` sets no `build.outDir`/`assetsDir` overrides, so Vite's defaults (`dist/` and `dist/assets/`) apply — which is what `nginx.conf` assumes. **Run `docker build` once locally before relying on this image.**
 
-### 4.4 Recipe — Render (current deployment)
+### 4.4 Recipe — Render (prior/alternative deployment)
 
 Render auto-deploys on push to `main` of `https://github.com/Rks052004/JobsForWomen.git`.
 
@@ -285,7 +290,7 @@ Render auto-deploys on push to `main` of `https://github.com/Rks052004/JobsForWo
 
 **Frontend — Vercel.** Build `npm run build`, output `dist`, set `VITE_API_URL`, redeploy after changing it. `vercel.json` already contains the SPA rewrite — do not remove it.
 
-**Managed services:** Render PostgreSQL; Redis from Upstash (`rediss://`) or Render Key Value.
+**Managed services:** Render PostgreSQL; Redis from Upstash (`rediss://`) or Render Key Value. *(Historical — the current production deployment, §4.6, runs Postgres and Redis locally on the EC2 host instead. See the migration note at the top of this document.)*
 
 ### 4.5 Recipe — AWS
 
@@ -311,21 +316,29 @@ The same architecture maps onto AWS as follows. Persistent storage is the only g
 - **EFS burst credits** are worth watching if upload volume grows; bursting throughput is fine at current scale.
 - **Moving uploads to S3** is what unlocks multi-task scaling. The change is contained: `shared/utils/fileStorage.ts` is the only module touching the filesystem, and its HMAC signed-URL layer maps cleanly onto S3 presigned URLs.
 
-### 4.6 Recipe — any Docker host or VPS
+### 4.6 Recipe — any Docker host or VPS (current production deployment)
 
-1. Provision PostgreSQL and Redis (managed, or as additional containers).
+**This is what is actually running today**, on a self-managed AWS EC2 instance. See the migration note at the top of this document.
+
+1. Provision PostgreSQL and Redis. **Confirmed current setup:** both run locally on the same EC2 host (not managed — Render Postgres and Upstash have been fully decommissioned). `DATABASE_URL` and `REDIS_URL` on the live host point at `localhost` (or the Docker bridge network's internal hostname if Postgres/Redis are containers rather than native host services — confirm which on the box itself).
 2. Run both images from §4.2 and §4.3, with a named volume or bind mount for uploads.
-3. Terminate TLS and reverse-proxy with nginx. `backend/nginx.conf` is a working starting point: HTTP→HTTPS redirect, TLS 1.2/1.3, HSTS, gzip, `client_max_body_size 10M` (matching Multer's cap), and a `/socket.io/` location with upgrade headers and 86400s timeouts.
-4. Issue certificates with Certbot — the config already includes the `/.well-known/acme-challenge/` location. **Verify the renewal timer is active** (`systemctl list-timers | grep certbot`); an expired certificate is a total outage.
+3. Terminate TLS and reverse-proxy with nginx. Two host-level configs ship in the repo — install either the way `frontend/nginx.host.conf`'s own header comments describe (`sudo cp <file> /etc/nginx/sites-available/<domain>`, symlink into `sites-enabled`, `certbot --nginx -d <domain> -d www.<domain>`):
+   * **`backend/nginx.conf`** — `api.jobsforwomen.info`: HTTP→HTTPS redirect, TLS 1.2/1.3, HSTS, gzip, `client_max_body_size 10M` (matching Multer's cap), and a `/socket.io/` location with upgrade headers and 86400s timeouts.
+   * **`frontend/nginx.host.conf`** — `jobsforwomen.info` + `www`, reverse-proxying to the frontend container on `127.0.0.1:8080`. Not to be confused with `frontend/nginx.conf`, which runs *inside* that container.
+   * **`frontend/nginx.static.host.conf`** — the no-container alternative: serves a `npm run build` output copied straight to `/var/www/jobsforwomen.info` on the host. Simpler deploys (`cp -r dist/*`, no image rebuild) at the cost of losing the container's isolation. Use one frontend approach, not both.
+4. Issue certificates with Certbot — both host configs already include the `/.well-known/acme-challenge/` location. **Verify the renewal timer is active** (`systemctl list-timers | grep certbot`); an expired certificate is a total outage.
 5. `docker exec` into the API container and run `npx prisma migrate deploy`.
 
 > The CSP in `backend/nginx.conf` sets `script-src 'none'; style-src 'none'`, which blocks the Swagger UI at `/api/v1/api-docs` from rendering. Relax it for that path or accept that the docs page will not load.
+> `frontend/nginx.host.conf` ships with its CSP commented out/unset — the frontend needs `script-src`/`connect-src` open enough for the React bundle and its API calls to work, unlike the backend's deliberately locked-down policy.
 
 ---
 
 ## 5. Final deployment on the company domain
 
-The current deployment uses platform-provided hostnames (`*.onrender.com`, `*.vercel.app`). Moving to the company's own domain touches seven places. Missing any one of them produces a partially-working site, which is harder to debug than a clean failure.
+> **Status: this cutover has been carried out.** Production now serves `jobsforwomen.info` / `api.jobsforwomen.info` directly from the EC2 host (§4.6), not the platform-provided `*.onrender.com` / `*.vercel.app` hostnames this section was originally written against. The checklist below is kept as the record of what the cutover required — useful if the domain, certificates, or CORS allowlist ever need to be reconstructed or audited, or if the company migrates to a *different* host in the future. Treat "Moving to the company's own domain touches seven places" as *the seven places that were touched*, not a pending task list.
+
+Moving to the company's own domain touches seven places. Missing any one of them produces a partially-working site, which is harder to debug than a clean failure.
 
 The repo already anticipates this layout — `backend/nginx.conf` and `backend/src/shared/utils/swagger.ts` both reference `api.jobsforwomen.info`:
 
@@ -342,18 +355,17 @@ Work in this order. Steps 2–6 can be done before DNS moves, so the switch itse
 
 | Record | Points at |
 |---|---|
-| `jobsforwomen.info` → A / ALIAS | Vercel (or your static host) |
-| `www` → CNAME | Vercel |
-| `api` → CNAME (Render) or A (VPS) | Backend host |
+| `jobsforwomen.info` → A / ALIAS | **Actual: the EC2 host** (VPS path below), not Vercel |
+| `www` → CNAME | The EC2 host |
+| `api` → A | The EC2 host |
 
 Allow for propagation before testing; a stale resolver cache looks exactly like an outage.
 
 **2. TLS**
 
-- *Render / Vercel:* add the custom domain in the dashboard; certificates are issued and renewed automatically.
-- *VPS:* `backend/nginx.conf` is already written for Let's Encrypt, including the `/.well-known/acme-challenge/` location and an HTTP→HTTPS 301. Issue the certificate with `certbot certonly --webroot -w /var/www/certbot -d api.jobsforwomen.info`, then confirm the renewal timer is active (`systemctl list-timers | grep certbot`). An expired certificate is a total outage.
+Certbot/Let's Encrypt on the VPS is what was actually used (not Render/Vercel's dashboard-managed certificates, which applied only to the now-decommissioned prior deployment): `backend/nginx.conf` and `frontend/nginx.host.conf` are already written for Let's Encrypt, including the `/.well-known/acme-challenge/` location and an HTTP→HTTPS 301. Certificates were issued with `certbot --nginx -d <domain> -d www.<domain>` (or `certbot certonly --webroot -w /var/www/certbot -d api.jobsforwomen.info` for the API host). Confirm the renewal timer is active (`systemctl list-timers | grep certbot`) — an expired certificate is a total outage.
 
-**3. Backend environment variables** (Render dashboard, or the container's `--env-file`)
+**3. Backend environment variables** (the container's `--env-file` on the EC2 host — there is no Render dashboard any more)
 
 | Variable | Set to |
 |---|---|
@@ -382,7 +394,7 @@ Setting `CLIENT_URL` / `FRONTEND_URL` covers this without a code change, since b
 
 ### 5.2 VPS-specific notes
 
-If the company hosts the API themselves rather than on Render, `backend/nginx.conf` is a working reverse-proxy config: HTTP→HTTPS redirect, TLS 1.2/1.3, HSTS, gzip, `client_max_body_size 10M` (matching Multer's cap), a `/socket.io/` location with WebSocket upgrade headers and 86400s timeouts, and proxying to `localhost:5000`.
+This is the current setup: the company hosts the API itself on the EC2 instance rather than on Render. `backend/nginx.conf` is the working reverse-proxy config actually in use: HTTP→HTTPS redirect, TLS 1.2/1.3, HSTS, gzip, `client_max_body_size 10M` (matching Multer's cap), a `/socket.io/` location with WebSocket upgrade headers and 86400s timeouts, and proxying to `localhost:5000`.
 
 Two things to fix before using it as-is:
 
@@ -427,9 +439,9 @@ Track each row as pass/fail with the date and who ran it. Anything failing is a 
 
 Run each role's full journey on the deployed environment, not locally.
 
-**Candidate:** register → verify email → complete profile past the 70% threshold → browse and filter jobs → save a job → apply → upload a resume → reopen the uploaded resume → message a recruiter → receive a reply → check notifications → reset password.
+**Candidate:** register → verify email → complete profile past the 70% threshold → browse and filter jobs → save a job → apply → upload a resume → reopen the uploaded resume → check notifications → reset password. *(Real-time chat has been removed from the app — see §12.8 — so there is no "message a recruiter" step to test.)*
 
-**Recruiter:** register → company verification submitted → (admin approves) → log in → post a job → (admin approves job) → view applicants → download a resume → shortlist → schedule an interview → release an offer with an attached offer letter → message a candidate → invite a team member and have them accept.
+**Recruiter:** register → company verification submitted → (admin approves) → log in → post a job → (admin approves job) → view applicants → download a resume → shortlist → schedule an interview → release an offer with an attached offer letter → invite a team member and have them accept.
 
 **Admin:** log in → approve/reject a company → approve/reject a job → approve a perk request → view System Health (every subsystem green) → view activity logs → manage users → create another admin.
 
@@ -437,7 +449,7 @@ Run each role's full journey on the deployed environment, not locally.
 
 | Area | What to verify |
 |---|---|
-| **Real-time** | Two browsers, two accounts, same conversation — messages arrive without refresh. Unread badges increment on the *inactive* conversation |
+| **Real-time** | Two browsers, two accounts — a triggering action (e.g. admin approves a job) delivers a live notification to the affected user without refresh, and the unread badge increments. (Chat/messaging has been removed from the app — see §12.8 — there is no conversation to test here.) |
 | **File lifecycle** | Upload, reopen after >1 hour (link should 403 and recover on page reload), replace, delete. Confirm files survive a redeploy — this is the persistent-disk test and the highest-consequence one |
 | **Email** | Every template actually arrives from the verified domain and its links point at the production frontend, not localhost |
 | **Auth edges** | Expired access token auto-refreshes without a visible error; blocked/suspended accounts are refused with the right message; recruiter with an unapproved company cannot log in |
@@ -466,6 +478,7 @@ Do not let these surface as surprises after handover. Each is documented in §12
 - Single-instance only; cannot horizontally scale while files are on a persistent disk (§12.5)
 - Images stored unoptimized (§12.4)
 - No malware scanning on uploads (§12.7)
+- Real-time chat has been removed from the app; sockets now carry notifications only (§12.8)
 
 ---
 
@@ -475,7 +488,7 @@ Do not let these surface as surprises after handover. Each is documented in §12
 2. `cd frontend && npx tsc --noEmit -p tsconfig.app.json` — clean.
 3. `npx prisma migrate status` — no unexpected drift.
 4. Confirm `JWT_ACCESS_SECRET` / `JWT_REFRESH_SECRET` are not the development placeholder values.
-5. Confirm `BYPASS_EMAIL_VERIFICATION` is **not** set on Render.
+5. Confirm `BYPASS_EMAIL_VERIFICATION` is **not** set in the production `.env`/environment on the EC2 host.
 6. Confirm Google OAuth authorized redirect URI matches `GOOGLE_CALLBACK_URL` exactly.
 7. Take a database backup if the deploy includes a migration.
 
@@ -489,8 +502,10 @@ Do not let these surface as surprises after handover. Each is documented in §12
 
 ```bash
 git revert <bad-commit-sha>
-git push origin main          # Render auto-deploys the revert
+git push origin main
 ```
+
+There is no Render auto-deploy any more (see the migration note at the top of this document) — pushing `main` does not by itself redeploy the EC2 host. After pushing, SSH in and pull + rebuild/restart the affected container(s), e.g. `git pull && docker compose up --build -d` against whatever compose file is actually running there.
 
 **Only if you must erase history (solo repo, nothing depends on the commit):**
 
@@ -499,11 +514,11 @@ git reset --hard <last-good-sha>
 git push --force origin main
 ```
 
-Render also supports redeploying a previous build directly from the dashboard (service → Events → Redeploy), which is faster than a git round-trip when you need the bleeding to stop immediately.
+Then redeploy on the EC2 host the same way (pull + rebuild/restart) — there is no dashboard "redeploy a previous build" button on a self-managed host; the fastest way to stop the bleeding is `git checkout <last-good-sha>` on the server directly and rebuild from there, rather than round-tripping through GitHub.
 
 ### Database rollback
 
-Prisma has no automatic down-migration. Restore from a Render Postgres backup (dashboard → database → Backups) and then re-apply migrations forward. **Take a manual backup before any migration that drops or renames a column.**
+Prisma has no automatic down-migration. Postgres is now self-hosted on the EC2 server (not Render — see the migration note at the top of this document), so there is no dashboard backup panel to restore from. Restore from whatever backup mechanism is actually configured on the server (e.g. a scheduled `pg_dump` written to disk or off-host storage — confirm one exists and is tested; this document cannot confirm that from the repo alone) and then re-apply migrations forward. **Take a manual backup (`pg_dump`) before any migration that drops or renames a column.**
 
 ### What rollback does *not* undo
 
@@ -541,7 +556,7 @@ Work top to bottom. Stop at the first check that fails and jump to the linked se
    └─ "everything is slow" ───────▶ §10.1, then §10.2
 ```
 
-**Where to find logs:** Render dashboard → service → Logs (live tail). Locally, `backend/logs/error.log` and `backend/logs/combined.log`. Every log line carries a correlation ID as `[CID: <id>]` — grep by that to follow a single request end-to-end.
+**Where to find logs:** on the current EC2 deployment, `docker logs -f <container-name>` (or `docker compose logs -f` from wherever the compose file lives on the host) — there is no Render dashboard any more (see the migration note at the top of this document). Locally, `backend/logs/error.log` and `backend/logs/combined.log`. Every log line carries a correlation ID as `[CID: <id>]` — grep by that to follow a single request end-to-end.
 
 ---
 
@@ -549,22 +564,21 @@ Work top to bottom. Stop at the first check that fails and jump to the linked se
 
 ### 10.1 API down or crash-looping
 
-**Symptoms:** `/live` times out; Render shows repeated restarts.
+**Symptoms:** `/live` times out; the API container keeps restarting (`docker ps` shows a low uptime / restart count climbing).
 
 | Cause | How to confirm | Fix |
 |---|---|---|
-| Missing/invalid env var | Log shows `❌ Invalid environment configuration:` then a Zod field dump, then exit | Add the missing variable in Render → Environment; redeploy |
+| Missing/invalid env var | Log shows `❌ Invalid environment configuration:` then a Zod field dump, then exit (`docker logs <container>`) | Add the missing variable to the `.env`/`--env-file` on the EC2 host, then `docker compose up -d` (or `docker restart`) to pick it up |
 | Uncaught exception | Log shows `Uncaught Exception thrown:` + stack. `server.ts` calls `process.exit(1)` on these by design | Read the stack, fix or revert the offending commit (§8) |
-| Cold start (free tier only) | First request after idle takes 30–60s then succeeds | Not a fault. Upgrade off free tier to eliminate |
 | Port already bound | `EADDRINUSE` | Only a local problem; kill the stale process |
 
-The process handles `SIGTERM`/`SIGINT` gracefully (`server.close()` then exit 0), so a normal Render restart should never truncate in-flight requests.
+The process handles `SIGTERM`/`SIGINT` gracefully (`server.close()` then exit 0), so a normal container restart (`docker restart`, or a rolling `docker compose up -d` after a rebuild) should never truncate in-flight requests.
 
 ### 10.2 Database
 
 **Symptoms:** `/ready` returns 503; `/health` shows `database.status: "DOWN"`; API returns 500s broadly.
 
-1. Check Render → database → status and connection count. Render Postgres has a connection cap; exhausting it presents as intermittent failures rather than a clean outage.
+1. Postgres is self-hosted on the EC2 server (see the migration note at the top of this document) — there is no Render dashboard to check. SSH in and check the local Postgres service status and active connection count directly (`SELECT count(*) FROM pg_stat_activity;`), and confirm `max_connections` in `postgresql.conf` against what the app and any other processes on the box actually need.
 2. Check for long-running queries:
    ```sql
    SELECT pid, state, query_start, query
@@ -573,7 +587,7 @@ The process handles `SIGTERM`/`SIGINT` gracefully (`server.close()` then exit 0)
    ORDER BY query_start;
    ```
    Terminate a stuck one with `SELECT pg_terminate_backend(<pid>);`.
-3. Check migration drift: `npx prisma migrate status` from the Render Shell.
+3. Check migration drift: SSH into the EC2 host and run `docker exec <api-container> npx prisma migrate status` (no Render Shell any more — see the migration note at the top of this document).
 4. If Prisma Client is out of sync with the schema (errors like *"property does not exist on type"* at build, or unexpected column errors at runtime), run `npx prisma generate` and redeploy.
 
 **Always run Prisma commands from inside `backend/`.** Running them at the repo root prompts to install Prisma v7 and will not find the schema.
@@ -593,7 +607,7 @@ The process handles `SIGTERM`/`SIGINT` gracefully (`server.close()` then exit 0)
 
 So: *"emails stopped but the site works"* is a classic Redis-down signature.
 
-**Fix:** verify the Upstash instance is up and `REDIS_URL` is correct (note the `rediss://` scheme — double `s`, TLS). Restart the Render service after correcting it; the Redis client and Socket.IO adapter are only wired at boot.
+**Fix:** Redis is self-hosted on the same EC2 server (not Upstash — see the migration note at the top of this document), so `REDIS_URL` should be a plain `redis://` connection to `localhost` (or the container's internal hostname), not `rediss://`. SSH in and verify the local Redis process/container is actually running (`redis-cli ping`), then restart the API container after correcting `REDIS_URL`; the Redis client and Socket.IO adapter are only wired at boot.
 
 ### 10.4 File storage
 
@@ -643,7 +657,7 @@ Flow: `EventBus.publish` → email listener → `addJob("email", ...)` → BullM
 | `MessageRejected: Email address is not verified` | Sandbox recipient restriction | Verify the recipient in the SES console, or wait for production access |
 | `TooManyRequestsException` | Exceeded 1 send/sec | Worker is limited to `SES_MAX_SEND_RATE_PER_SEC` (default 1) with `concurrency: 1`. Lower it if this recurs; raise it once production access grants a higher rate |
 | Sends work early in the day, fail later | 240/24h quota exhausted | `npm run email:test` prints `SentLast24Hours` vs `Max24HourSend` |
-| `CredentialsProviderError` | No credentials resolved | Set `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` — Render has no instance role |
+| `CredentialsProviderError` | No credentials resolved | Set `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` on the EC2 host, unless it has an IAM instance role attached with SES permissions — confirm which is actually configured |
 | `MessageRejected` about the identity, despite a verified domain | Wrong region | Confirm `AWS_SES_REGION` matches where the domain was verified |
 | Emails skipped, log says `email_automation feature flag is disabled` | Admin turned off the `email_automation` feature flag | Re-enable in the admin panel. `sendWelcome` and `sendPasswordReset` are **exempt** and always send — deliberately, so nobody gets locked out |
 | Job failed once and went straight to the DLQ | A permanent rejection, converted to BullMQ `UnrecoverableError` | Expected behaviour — see §10.6 |
@@ -691,7 +705,7 @@ The frontend does **single-flight refresh**: the first 401 triggers one `POST /a
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| Infinite redirect to `/auth/login` | Refresh cookie missing/rejected — usually `SameSite=None` without `Secure`, or a domain mismatch | Confirm `NODE_ENV=production` on Render (it drives the cookie flags) and that the frontend origin is in the CORS allowlist in **both** `app.ts` and `socket.ts` |
+| Infinite redirect to `/auth/login` | Refresh cookie missing/rejected — usually `SameSite=None` without `Secure`, or a domain mismatch | Confirm `NODE_ENV=production` in the API container's environment on the EC2 host (it drives the cookie flags) and that the frontend origin is in the CORS allowlist in **both** `app.ts` and `socket.ts` |
 | "Please verify your email address first" | Account still `PendingVerification` | Have the user click the verification link, or set status directly: `UPDATE "User" SET status = 'Active' WHERE email = '...';` |
 | Recruiter can't log in | Company not yet approved — checked in `assertRecruiterCompanyApproved()` | Approve the company in the admin panel. The error message states which state it's in (`rejected`, `info_requested`, or pending) |
 | Google OAuth callback error | `GOOGLE_CALLBACK_URL` doesn't exactly match the URI registered in Google Cloud Console | Align them, including scheme and trailing path |
@@ -707,11 +721,15 @@ Socket.IO is attached to the HTTP server in `server.ts` via `initSocket(server)`
 
 | Symptom | Check |
 |---|---|
-| Chat/notifications dead for everyone | Is the process up (§10.1)? Is the token valid — an expired JWT fails the handshake |
+| Real-time notifications dead for everyone | Is the process up (§10.1)? Is the token valid — an expired JWT fails the handshake |
 | Works for some users, not others | Redis adapter not attached → no cross-instance fanout. Log shows `[SocketIO] Failed to attach Redis adapter` or `Redis client unavailable`. Currently single-instance so this is latent, but it becomes a live bug the moment a second instance exists |
 | Handshake rejected from a new domain | CORS allowlist in `socket.ts` — separate from `app.ts` (§2) |
 
+> **Chat is not a socket feature here.** Sockets today carry only real-time notification delivery, connection presence (`online_users` in Redis), and per-socket rate limiting. There is no `join:conversation`, `typing`, or `message:send` handler — see §12.8.
+
 ### 10.9 Frontend
+
+> The two rows below reference Vercel, per the pre-cutover deployment (§0 migration note). On the current EC2 deployment, the equivalent fixes are: rebuild the frontend image with `--build-arg VITE_API_URL=...` and redeploy the container (§4.3), and confirm the SPA fallback in whichever host nginx config is active — `frontend/nginx.conf` (containerized) or `frontend/nginx.static.host.conf` (static host) — has `try_files $uri $uri/ /index.html` (§4.6).
 
 | Symptom | Cause | Fix |
 |---|---|---|
@@ -745,7 +763,7 @@ All limits are overridable per environment via `RATE_LIMIT_<TIER>_MAX` and `RATE
 
 **The single most common diagnostic mistake:** the global tier (100/60s) is *stricter* than most others and runs first. A client firing 150 requests to walk the candidate tier's budget will be rejected at ~100 by the **global** limiter, not the candidate one. Check `X-RateLimit-Limit` on the 429 to see which tier actually rejected you. Pace requests below 100/min to reach any higher tier's boundary.
 
-**Legitimate users hitting 429s?** Raise the relevant `RATE_LIMIT_*_MAX` in Render's environment settings and restart. Check first whether it's really the global tier that's biting.
+**Legitimate users hitting 429s?** Raise the relevant `RATE_LIMIT_*_MAX` in the `.env`/`--env-file` on the EC2 host and restart the API container. Check first whether it's really the global tier that's biting.
 
 ---
 
@@ -783,17 +801,30 @@ Cloudinary used to resize and compress public images (800×800 cap, auto quality
 
 ### 12.5 File uploads block horizontal scaling
 
-Restated because it constrains every future infrastructure decision: a Render Persistent Disk cannot be shared between instances. The service is single-instance until file storage moves to object storage.
+Restated because it constrains every future infrastructure decision: the uploads volume — a Docker named volume on the current EC2 host (previously a Render Persistent Disk) — cannot be shared between instances either way. The service is single-instance until file storage moves to object storage.
 
 ### 12.6 Documentation currency
 
 The `docs/` set was audited and corrected on 27 July 2026: every Cloudinary reference was replaced with the local-disk model, the dangerous `prisma db push --force-reset` command was removed from `16_DEPLOYMENT.md`, and missing environment variables (`SMTP_HOST`/`SMTP_USER`, all seven `RATE_LIMIT_*` tiers, `DISK_MOUNT_PATH`, `BACKEND_URL`) were documented.
+
+**A second accuracy pass was done 15 September 2026**, correcting three things the 27 July audit missed or that changed afterward: (1) production compute moved from Render/Vercel to a self-managed AWS EC2 instance — see the migration note at the top of this document and §4.6; (2) real-time chat/messaging was removed from the application entirely — see §12.8; (3) two-factor authentication, previously documented as an unimplemented flag/mockup, is in fact fully implemented as a real, per-user opt-in TOTP flow — see `docs/12_ADMIN_MODULE.md` §12.4 and `docs/24_COMPLETE_FEATURE_MATRIX.md`. That pass did not independently re-verify every Render-specific operational detail (Shell/Disks/Logs instructions) against the live EC2 host — see the migration note for what remains to be confirmed by whoever operates the infrastructure.
 
 This runbook remains the authoritative operational reference; the numbered docs are the topic-by-topic detail. If they ever diverge again, trust this file and correct the other.
 
 ### 12.7 Malware scanning is not implemented
 
 `scanFileForVirus()` performs magic-byte structural validation only — it confirms file content matches the declared MIME type, catching a renamed executable. It is **not** antivirus. No ClamAV/VirusTotal-style scanning is wired in. The function's own log line says so explicitly. Do not represent this as malware protection.
+
+### 12.8 Real-time chat has been removed from the application
+
+`Conversation`, `ConversationParticipant`, and `Message` are still real models in `schema.prisma` with real tables in the database, and older documentation (including earlier drafts of this runbook and the numbered `docs/` files) describes a working candidate↔recruiter chat feature built on them. **That feature no longer exists in the running application.** Confirmed by direct inspection, not inference:
+
+- `backend/src/shared/socket/socket.ts` has no `join:conversation`, `typing`, or `message:send` handler — only connection auth, presence tracking, personal-room join, rate limiting, and disconnect.
+- No route in `recruiter.routes.ts` or `candidate.routes.ts` references conversations.
+- No chat UI exists in the frontend (`frontend/src`) beyond incidental landing-page copy.
+- `chat_enabled` was added to `AdminService.RETIRED_UNIMPLEMENTED_FLAG_KEYS` and removed from `seed.ts`'s seeded flags, with an explicit comment: *"Real-time chat was isolated and removed from the app... the Conversation/Message/ConversationParticipant tables and any pre-existing FeatureFlag row are deliberately left in place (nothing left in the app reaches either), just no longer seeded or surfaced."*
+
+The tables were left in the schema deliberately rather than migrated away — treat them as dormant, not as evidence the feature is still live. Sockets today exist for real-time **notifications** only (see §10.8). If chat is reintroduced later, this note (and the matching ones in `docs/05_DATABASE.md`, `docs/06_BACKEND.md`, `docs/08_API_REFERENCE.md`, `docs/12_ADMIN_MODULE.md`, `docs/19_TESTING.md`, and `docs/24_COMPLETE_FEATURE_MATRIX.md`) should be reverted alongside it.
 
 ---
 
@@ -873,9 +904,9 @@ k6 run candidate-rate-limit.js \
 If you prefer JMeter or ApacheBench, the same two constraints apply:
 
 1. **Pace below 100 req/min** or the global tier rejects you before you reach any higher tier's boundary (§11).
-2. **Set a 60-second request timeout** — a free-tier Render cold start takes 30–60s on the first request and is not a failure.
+2. **Set a reasonable request timeout** — this no longer needs to account for a free-tier cold start (the EC2 deployment doesn't spin down when idle), but keep a sane margin (10–15s) for normal network variance.
 
-Seed accounts need `status = 'Active'`. On Render, where `BYPASS_EMAIL_VERIFICATION` is (correctly) unset, register the account then activate it directly:
+Seed accounts need `status = 'Active'`. Since `BYPASS_EMAIL_VERIFICATION` is (correctly) unset in production, register the account then activate it directly:
 
 ```sql
 UPDATE "User" SET status = 'Active' WHERE email = '<loadtest account>';
@@ -891,9 +922,9 @@ UPDATE "User" SET status = 'Active' WHERE email = '<loadtest account>';
 |---|---|---|
 | Check dead-letter queue depth | Weekly | Admin System Health page, or `AuditLog` where `action = 'QUEUE_JOB_FAILED_DLQ'` |
 | Orphan asset audit | Monthly | `runOrphanAssetCleanup()` — read-only; review before deleting anything manually |
-| Database backup before schema change | Every time | Render → database → Backups |
+| Database backup before schema change | Every time | Postgres is self-hosted on the EC2 server (not Render — see the migration note at the top of this document); run `pg_dump` directly and copy the output off-host before any migration that drops or renames a column |
 | Dependency updates | Quarterly | Run inside `backend/` or `frontend/` respectively, never at the repo root |
-| Disk usage check | Monthly | Render → service → Disks. Growth is unbounded (§12.4) |
+| Disk usage check | Monthly | `df -h` on the EC2 host, and `docker system df` for container/volume usage — no Render dashboard any more (see the migration note at the top of this document). Growth is unbounded (§12.4) |
 
 **Secret rotation:**
 
@@ -902,7 +933,7 @@ UPDATE "User" SET status = 'Active' WHERE email = '<loadtest account>';
 | `JWT_ACCESS_SECRET` | Logs out all users **and** invalidates all file-download links (§10.4) |
 | `JWT_REFRESH_SECRET` | Logs out all users |
 | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | Email stops until updated; verify with `npm run email:test` |
-| `GOOGLE_CLIENT_SECRET` | Google login breaks until updated in both Render and Google Cloud Console |
+| `GOOGLE_CLIENT_SECRET` | Google login breaks until updated in both the EC2 host's environment and Google Cloud Console |
 
 **Node version** is pinned to `22.x`. Do not move to 24+ without verifying native modules (`bcrypt` in particular) build cleanly.
 
@@ -933,7 +964,7 @@ UPDATE "User" SET status = 'Active' WHERE email = '<loadtest account>';
 # Health
 curl https://<backend-host>/health | jq
 
-# Apply migrations (Render Shell)
+# Apply migrations (SSH into the EC2 host, then docker exec into the API container)
 npx prisma migrate deploy
 
 # Migration status
@@ -951,4 +982,4 @@ git revert HEAD && git push origin main
 
 ### Escalation checklist
 
-Before escalating, collect: the correlation ID (`[CID: ...]`) from the failing request, the `/health` JSON, the Render deploy SHA, and the last 100 log lines around the first error. That set answers most of the follow-up questions immediately.
+Before escalating, collect: the correlation ID (`[CID: ...]`) from the failing request, the `/health` JSON, the currently-deployed git commit SHA on the EC2 host (`git rev-parse HEAD` or the image tag actually running), and the last 100 log lines around the first error. That set answers most of the follow-up questions immediately.

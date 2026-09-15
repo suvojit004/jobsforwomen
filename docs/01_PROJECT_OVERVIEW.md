@@ -28,16 +28,16 @@ The platform is designed with a modern Node.js backend and a React single-page a
 graph TD
     Client["React Frontend (SPA)"] <-->|REST API / Socket.IO| Server["Express Backend"]
     Server <-->|ORM| DB[("PostgreSQL")]
-    Server <-->|BullMQ / Cache| Redis[("Upstash Redis")]
+    Server <-->|BullMQ / Cache| Redis[("Redis (self-hosted on the production server)")]
     Server -->|File Storage| Disk[("Local Disk / Persistent Volume")]
     Server -->|Emails| SES[("AWS SES v2")]
 ```
 
 ### Core Technologies:
-* **Frontend**: React 18, TypeScript, Vite, Framer Motion, Tailwind CSS, Lucide icons, Sonner (Toasts).
+* **Frontend**: React 19, TypeScript, Vite, Framer Motion, Tailwind CSS, Lucide icons, Sonner (Toasts).
 * **Backend**: Node.js, Express, TypeScript, Zod (Validations), Multer (Multipart parser).
 * **Database & ORM**: PostgreSQL, Prisma ORM.
-* **Asynchronous Tasks & Caching**: Redis (Upstash / Memory), BullMQ (Queue processing).
+* **Asynchronous Tasks & Caching**: Redis (self-hosted on the production server; in-process fallback when unavailable), BullMQ (Queue processing).
 * **Real-Time WebSockets**: Socket.IO.
 * **File Storage**: Local disk on a persistent volume, served via a signed-URL route (`/files/jfw/...`). Migrated off Cloudinary; no third-party storage provider is used.
 * **External Providers**: AWS SES (Transactional emails, region `ap-south-1`), Google (OAuth).

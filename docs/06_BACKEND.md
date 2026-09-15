@@ -37,11 +37,8 @@ Middlewares are located in `backend/src/modules/rbac/rbac.middleware.ts` and `ba
 Real-time capabilities are driven by **Socket.IO** (implemented in `backend/src/shared/socket/socket.ts`; note `src/sockets/` is an empty placeholder directory). It is attached to the HTTP server by `initSocket(server)` in `server.ts`:
 * **Namespaces**: The server establishes separate Socket namespaces for candidates (`/candidate`), recruiters (`/recruiter`), and admins (`/admin`).
 * **Authentication**: Incoming socket requests must pass the `auth.token` parameter. The socket middleware decodes the JWT and validates the signature, joining the socket connection into a specific room named after their `userId`.
-* **Events**:
-  * `join:conversation`: Connects users to messaging threads.
-  * `typing`: Broadcasts typing indicators to other members.
-  * `message:send`: Processes incoming messages, writes them to PostgreSQL, and broadcasts them to conversation rooms.
-  * `notification`: Used to emit platform updates dynamically.
+* **What sockets are actually used for today: real-time notifications only.** Per-connection responsibilities are presence tracking (adds/removes the user from a Redis `online_users` set), joining the personal `user:<userId>` room, a per-socket rate limiter (15 events/5s), and clean disconnect handling. The server pushes updates with `io.of(namespace).to(userId).emit("notification", payload)` (see [11. Notifications](11_NOTIFICATIONS.md)).
+* > **Real-time chat/messaging has been removed from the running application.** There is no `join:conversation`, `typing`, or `message:send` handler in `socket.ts`, no conversation routes in the candidate/recruiter modules, and no chat UI in the frontend — confirmed by grep, not just by this doc's prior wording. The `Conversation`, `ConversationParticipant`, and `Message` Prisma models still exist in `schema.prisma` and their tables still exist in the database (per an explicit comment in `seed.ts` and `AdminService.getFeatureFlags`), but nothing in the current codebase writes to or reads from them. Treat any older documentation, prior reports, or diagrams describing live chat as describing a feature that existed at an earlier point in the project's history, not the current running system.
 
 ---
 

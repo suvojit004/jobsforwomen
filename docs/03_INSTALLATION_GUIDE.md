@@ -49,9 +49,9 @@ npx prisma migrate dev --name init
 ```
 
 ### Step 5: Seed the Database
-Seed the database with default roles, permissions, department lists, and the default Super Admin login:
+Seed the database with default roles, permissions, department lists, and the default Super Admin login. There is no `npm run seed` script in `package.json` — use Prisma's own seed runner, which picks up the `prisma.seed` entry already configured there:
 ```bash
-npm run seed
+npx prisma db seed
 ```
 *(Default Super Admin: Email `admin@jobsforwomen.info` | Password `admin123`)*
 
@@ -88,7 +88,7 @@ Navigate to the `frontend/` directory and execute:
 cd frontend
 npm run dev
 ```
-The Vite development server boots, typically hosting the UI at `http://localhost:3000` (or `http://localhost:5173`).
+The Vite development server boots, hosting the UI at `http://localhost:5173` (Vite's default — `vite.config.ts` sets no custom `server.port`).
 
 ---
 

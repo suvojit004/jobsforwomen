@@ -14,7 +14,7 @@ This guide helps new engineers get started with development on the platform.
    * Navigate to `backend/`.
    * Install packages: `npm install`.
    * Apply database schemas: `npx prisma generate` and `npx prisma migrate dev`.
-   * Seed tables: `npm run seed`.
+   * Seed tables: `npx prisma db seed` (there is no `npm run seed` script — this uses the `prisma.seed` entry in `package.json`).
 4. **Boot Services**:
    * Start backend dev server: `npm run dev` inside `backend/`.
    * Start frontend dev server: `npm run dev` inside `frontend/`.

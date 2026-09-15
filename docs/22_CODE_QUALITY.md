@@ -2,6 +2,8 @@
 
 This report evaluates the codebase architecture, performance, security metrics, and technical debt.
 
+> **Note on the scores below:** these are a qualitative, reviewer-assigned assessment, not output from a static-analysis tool or a measured benchmark. Treat the percentages as relative indicators ("architecture is stronger than scaling readiness") rather than precise, reproducible metrics — no coverage tool, linter score, or security scanner run in this repository produces these specific numbers.
+
 ---
 
 ## 22.1 Architecture Quality Scores

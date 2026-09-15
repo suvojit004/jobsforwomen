@@ -19,10 +19,9 @@ Both the backend and frontend systems require environment variables to operate. 
 
 ### 3. Caching & Message Queues
 * **`REDIS_URL`**: (Required) Connection URL for Redis. Used for BullMQ queues, rate-limit counters, permission cache checks, and Socket.IO cross-instance fanout.
-  * Example (local): `"redis://127.0.0.1:6379"`
-  * Example (Upstash/TLS): `"rediss://default:<token>@<host>.upstash.io:6379"` — note the double `s` in `rediss://`.
-* **`UPSTASH_REDIS_REST_URL`**: (Optional) Upstash HTTP URL for serverless Redis environments.
-* **`UPSTASH_REDIS_REST_TOKEN`**: (Optional) Upstash HTTP authentication token.
+  * Example (local, and current production — self-hosted on the same server as the API): `"redis://127.0.0.1:6379"`
+  * Example (TLS, e.g. a managed provider): `"rediss://default:<token>@<host>:6379"` — note the double `s` in `rediss://`. Not used in the current deployment (Redis is self-hosted, no TLS needed for a same-host connection).
+* **`UPSTASH_REDIS_REST_URL`** / **`UPSTASH_REDIS_REST_TOKEN`**: (Optional) Only relevant if Redis is a serverless Upstash instance reached over HTTP. Unused in the current deployment.
 
 ### 4. JWT Authentication
 * **`JWT_ACCESS_SECRET`**: (Required) String secret used to sign short-lived access tokens. Must be minimum 8 characters (prefer 32+ cryptographically random bytes).

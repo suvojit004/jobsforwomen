@@ -50,7 +50,7 @@ Platform operations dispatch events to the backend **`EventBus`** (a Node.js Eve
 
 ## 11.3 Real-Time WebSockets namespaces & Rooms
 
-Live alerts are routed via custom namespace controllers (`backend/src/sockets/`):
+Live alerts are routed via custom namespace controllers (`backend/src/shared/socket/`; note `src/sockets/` on disk is an empty placeholder — see [2. Repository Structure](02_REPOSITORY_STRUCTURE.md)):
 1. On socket connection, the client authenticates using their JWT token.
 2. The user is automatically joined to a room named after their unique database ID: `socket.join(userId)`.
 3. When `NotificationListener` triggers, it determines the recipient's user ID and emits:

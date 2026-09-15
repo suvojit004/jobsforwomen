@@ -35,7 +35,7 @@ When scaling HTTP web servers horizontally, Socket.IO connections face room sync
 
 ## 21.3 Caching & Queue Optimization
 
-* **Redis Clustering**: Replace the single Upstash Redis instance with a cluster to scale memory capacity and write throughput.
+* **Redis Clustering**: Replace the single, self-hosted Redis instance (currently running locally on the same EC2 server as the API — see [OPERATIONS_RUNBOOK.md](OPERATIONS_RUNBOOK.md)) with a cluster or a managed provider to scale memory capacity, write throughput, and to decouple its availability from the API host's.
 * **BullMQ Concurrency**:
   * Workers currently run **inside the API process** — `shared/queue/queue.ts` registers them as an import side-effect, and `app.ts` imports it. Job processing therefore competes with request handling for the same event loop, and restarting the API restarts the workers.
   * Increase the concurrency option on BullMQ workers:
