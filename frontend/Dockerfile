@@ -63,3 +63,10 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
   CMD wget -q --spider http://localhost:8080/healthz || exit 1
 
 CMD ["nginx", "-g", "daemon off;"]
+
+LABEL "traefik.enable"="true" \
+      "traefik.http.routers.jfw.rule"="Host(`portal.jobsforwomen.info`)" \
+      "traefik.http.routers.jfw.entrypoints"="websecure" \
+      "traefik.http.routers.jfw.tls"="true" \
+      "traefik.http.routers.jfw.tls.certresolver"="letsencrypt" \
+      "traefik.http.services.jfw.loadbalancer.server.port"="8080"
