@@ -39,7 +39,7 @@ const SAMPLE_RENDERERS: Record<string, () => string> = {
     EmailTemplates.adminAccountCreated({
       fullName: "Jane Doe",
       email: "jane@example.com",
-      password: "T3mp-Passw0rd!",
+      setPasswordLink: "http://localhost:5173/auth/set-password?token=sample-token",
       roleNames: ["Moderator"],
       loginLink: "http://localhost:5173/auth/login",
     }),
