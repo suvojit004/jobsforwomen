@@ -1,0 +1,149 @@
+# =============================================================================
+# JobsForWomen -- PRODUCTION compose file (Hostinger VPS).
+#
+# This is NOT the same file as backend/docker-compose.yml -- that one is the
+# local/dev stack (throwaway Postgres+Redis containers, BYPASS_EMAIL_VERIFICATION
+# set, VITE_API_URL hardcoded to localhost:5000). Running that one here would
+# reproduce the exact "Google OAuth redirects to localhost" bug we just fixed.
+#
+# What this file deliberately does NOT include: db/redis services. Postgres
+# and Redis run natively on this VPS (not in Docker) -- confirmed, not an
+# assumption. Only `api`, `web`, and a one-off `migrate` service are defined.
+#
+# --------------------------------------------------------------------------
+# PRE-FLIGHT (do these once, by hand, before the first `docker compose up`):
+#
+#   1. Stop/remove any containers started with plain `docker run` previously
+#      (jfw-api, jfw-web, or whatever they were named):
+#        docker stop jfw-api jfw-web 2>/dev/null; docker rm jfw-api jfw-web 2>/dev/null
+#
+#   2. Confirm the uploads volume name below (`jfw_uploads`) matches whatever
+#      already has your real uploaded files in it:
+#        docker volume ls | grep uploads
+#      If it's named differently, either rename it or change `external: true`
+#      below to point at the real name -- do NOT let compose create a new
+#      empty volume with this name, or every existing upload becomes
+#      unreachable (the files are still on disk, just orphaned).
+#
+#   3. Confirm `.env` (repo root, alongside this file) has DATABASE_URL and
+#      REDIS_URL pointing at wherever the containers can actually reach your
+#      host-native Postgres/Redis from -- plain `localhost` inside a
+#      container means the container itself, NOT the host. On Linux Docker
+#      Engine you likely need `host.docker.internal` (mapped below via
+#      extra_hosts) rather than `localhost`/`127.0.0.1` in those two URLs.
+#      If your current running containers already work, your .env is
+#      probably already set correctly -- just confirm, don't blindly change it.
+#
+#   4. Confirm `.env` has BACKEND_URL, CLIENT_URL, FRONTEND_URL, and
+#      GOOGLE_CALLBACK_URL all set to https://portal.jobsforwomen.info (with
+#      GOOGLE_CALLBACK_URL as https://portal.jobsforwomen.info/api/v1/auth/google/callback)
+#      -- single domain for everything here, not the split
+#      jobsforwomen.info/api.jobsforwomen.info subdomains the repo's existing
+#      nginx configs and docs assume. See the routing note on `api`/`web`
+#      below -- this domain choice needs a matching nginx change that this
+#      compose file alone does not provide.
+#
+# DEPLOY (every time, going forward):
+#
+#   docker compose -f docker-compose.prod.yml up --build -d
+#
+# That single command now does what used to be three manual steps (build,
+# run, then remember to `docker exec ... npx prisma migrate deploy`): the
+# `migrate` service runs and must exit 0 before `api` is even started, so
+# there is no window where the app runs against an unmigrated schema.
+# =============================================================================
+
+services:
+  # ---------------------------------------------------------------------------
+  # One-off migration runner. Builds/reuses the same image as `api`, runs
+  # `prisma migrate deploy`, then exits. `restart: "no"` is deliberate -- this
+  # is meant to run once per deploy, not loop or stay up.
+  # ---------------------------------------------------------------------------
+  migrate:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: jobsforwomen-api:latest
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+    # Reach host-native Postgres/Redis from inside the container. Requires
+    # DATABASE_URL/REDIS_URL in .env to use `host.docker.internal`, not
+    # `localhost` -- see pre-flight step 3 above. Remove this (and the
+    # matching block on `api` below) if Postgres/Redis are reached some
+    # other way on this VPS (e.g. --network host, or a real LAN IP already
+    # in .env).
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    command: npx prisma migrate deploy
+    restart: "no"
+
+  # ---------------------------------------------------------------------------
+  # Backend API. Only starts once `migrate` has completed successfully.
+  # ---------------------------------------------------------------------------
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: jobsforwomen-api:latest
+    container_name: jobsforwomen-api
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+      - PORT=5000
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      # Bound to loopback only. Single-domain setup: portal.jobsforwomen.info
+      # is both the frontend and backend origin -- host nginx must route by
+      # PATH (e.g. /api/*, /socket.io/*, /files/*) to 127.0.0.1:5000, and
+      # everything else to the `web` container on :8080 (see note below).
+      # backend/nginx.conf as it currently exists in the repo proxies an
+      # entire separate subdomain (api.jobsforwomen.info) to this port --
+      # that config does NOT match this single-domain setup and needs
+      # replacing with a path-based one before this will actually work.
+      - "127.0.0.1:5000:5000"
+    volumes:
+      - jfw_uploads:/app/uploads
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # Frontend. VITE_API_URL is a BUILD-TIME arg (baked into the JS bundle) --
+  # this is exactly the value that was wrong when Google OAuth was redirecting
+  # to localhost. Single-domain setup confirmed: portal.jobsforwomen.info is
+  # both the frontend origin and the API origin, so this is the same domain
+  # as CLIENT_URL/FRONTEND_URL/BACKEND_URL in .env and GOOGLE_CALLBACK_URL's
+  # domain (must match what's registered in Google Cloud Console). Setting
+  # this only in `environment:` below would do nothing; Vite already compiled
+  # it into the bundle by the time the container starts.
+  # ---------------------------------------------------------------------------
+  web:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: https://portal.jobsforwomen.info
+    image: jobsforwomen-web:latest
+    container_name: jobsforwomen-web
+    ports:
+      # Bound to loopback only. frontend/nginx.host.conf as it currently
+      # exists in the repo reverse-proxies the WHOLE jobsforwomen.info domain
+      # here with no path carve-out for the API -- fine only if nothing under
+      # this domain needs to reach `api` (it does: /api/*, /socket.io/*,
+      # /files/*). See the routing note on `api` above.
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      - api
+    restart: unless-stopped
+
+volumes:
+  jfw_uploads:
+    external: true
+    # Must already exist with your real uploaded files in it -- see
+    # pre-flight step 2. `external: true` stops compose from silently
+    # creating a new empty volume with this name.
