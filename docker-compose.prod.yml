@@ -2,62 +2,159 @@
 # JobsForWomen -- PRODUCTION compose file (Hostinger VPS).
 #
 # This is NOT the same file as backend/docker-compose.yml -- that one is the
-# local/dev stack (throwaway Postgres+Redis containers, BYPASS_EMAIL_VERIFICATION
-# set, VITE_API_URL hardcoded to localhost:5000). Running that one here would
-# reproduce the exact "Google OAuth redirects to localhost" bug we just fixed.
+# local/dev stack (throwaway Postgres+Redis, BYPASS_EMAIL_VERIFICATION set,
+# VITE_API_URL hardcoded to localhost:5000). Running that one here would
+# reproduce the exact "Google OAuth redirects to localhost" bug already fixed
+# once.
 #
-# What this file deliberately does NOT include: db/redis services. Postgres
-# and Redis run natively on this VPS (not in Docker) -- confirmed, not an
-# assumption. Only `api`, `web`, and a one-off `migrate` service are defined.
+# ARCHITECTURE CHANGE from the previous version of this file: Postgres and
+# Redis are now CONTAINERIZED here (`db`, `redis` below), not host-native.
+# Previously this file deliberately had no db/redis services because
+# Postgres/Redis were confirmed running natively on this VPS. That is no
+# longer the assumption -- read the pre-flight section below in full before
+# deploying this, especially step 1.
 #
-# --------------------------------------------------------------------------
-# PRE-FLIGHT (do these once, by hand, before the first `docker compose up`):
+# =============================================================================
+# !! DATA MIGRATION WARNING -- READ BEFORE THE FIRST DEPLOY WITH THIS FILE !!
 #
-#   1. Stop/remove any containers started with plain `docker run` previously
-#      (jfw-api, jfw-web, or whatever they were named):
+# The `db` service below starts with a completely EMPTY Postgres database --
+# a fresh named volume, no tables, no rows. `migrate` will run every Prisma
+# migration against it and create the schema, but an empty schema, not your
+# real data. Your actual production data (users, companies, jobs,
+# applications, everything) currently lives in whatever Postgres install this
+# VPS was using before this file existed. If that was the host-native
+# Postgres from the prior setup, you MUST dump it and restore it into this
+# new containerized one BEFORE pointing real traffic at this stack, or it
+# will look exactly like every user and job vanished.
+#
+# From the VPS, before running `docker compose up` for the first time:
+#
+#   # 1. Dump the OLD database (adjust host/user/db name to match reality):
+#   pg_dump -h localhost -U postgres -d jobsforwomen -Fc -f jobsforwomen_backup.dump
+#
+#   # 2. Start ONLY the new db container (not api/migrate/web yet):
+#   docker compose -f docker-compose.prod.yml up -d db
+#   docker compose -f docker-compose.prod.yml logs -f db   # wait for "ready to accept connections"
+#
+#   # 3. Restore the dump INTO the new container:
+#   docker cp jobsforwomen_backup.dump jobsforwomen-db:/tmp/backup.dump
+#   docker exec jobsforwomen-db pg_restore -U postgres -d jobsforwomen --clean --if-exists /tmp/backup.dump
+#
+#   # 4. Only now bring up the rest of the stack:
+#   docker compose -f docker-compose.prod.yml up --build -d
+#
+# Skipping this turns "add containerized Postgres" into "silently lose
+# production data." If you're deploying this to a genuinely fresh/new server
+# with no existing data at all, ignore this section -- an empty database is
+# correct in that case.
+# =============================================================================
+#
+# PRE-FLIGHT (do these once, by hand, before the first real `docker compose up`):
+#
+#   1. Do the data migration above if this VPS has existing production data
+#      in a different Postgres instance (host-native or otherwise).
+#
+#   2. Stop/remove any containers started with plain `docker run` previously,
+#      and stop the OLD host-native Postgres/Redis once the data migration
+#      above is confirmed working (don't stop it before -- you need it
+#      running to pg_dump from it):
 #        docker stop jfw-api jfw-web 2>/dev/null; docker rm jfw-api jfw-web 2>/dev/null
+#        sudo systemctl stop postgresql redis-server   # only after step 1 is verified
+#        sudo systemctl disable postgresql redis-server
 #
-#   2. Confirm the uploads volume name below (`jfw_uploads`) matches whatever
+#   3. Confirm the uploads volume name below (`jfw_uploads`) matches whatever
 #      already has your real uploaded files in it:
 #        docker volume ls | grep uploads
 #      If it's named differently, either rename it or change `external: true`
 #      below to point at the real name -- do NOT let compose create a new
 #      empty volume with this name, or every existing upload becomes
-#      unreachable (the files are still on disk, just orphaned).
+#      unreachable (the files are still on disk, just orphaned). This is
+#      unrelated to the Postgres data migration above -- uploaded files and
+#      database rows are stored completely separately.
 #
-#   3. Confirm `.env` (repo root, alongside this file) has DATABASE_URL and
-#      REDIS_URL pointing at wherever the containers can actually reach your
-#      host-native Postgres/Redis from -- plain `localhost` inside a
-#      container means the container itself, NOT the host. On Linux Docker
-#      Engine you likely need `host.docker.internal` (mapped below via
-#      extra_hosts) rather than `localhost`/`127.0.0.1` in those two URLs.
-#      If your current running containers already work, your .env is
-#      probably already set correctly -- just confirm, don't blindly change it.
+#   4. Set POSTGRES_PASSWORD in `backend/.env` -- both `migrate` and `api`
+#      load their env from `backend/.env` (not a repo-root `.env`; there
+#      isn't one, and this avoids maintaining secrets in two places).
+#      POSTGRES_PASSWORD is used both to initialize the `db` container below
+#      AND must match the password portion of DATABASE_URL. Also update
+#      DATABASE_URL/REDIS_URL in `backend/.env` to point at the container
+#      service names now (`db`, `redis`), not `localhost` or
+#      `host.docker.internal`:
+#        DATABASE_URL="postgresql://postgres:${POSTGRES_PASSWORD}@db:5432/jobsforwomen?schema=public"
+#        REDIS_URL="redis://redis:6379"
 #
-#   4. Confirm `.env` has BACKEND_URL, CLIENT_URL, FRONTEND_URL, and
+#   5. Confirm `backend/.env` has BACKEND_URL, CLIENT_URL, FRONTEND_URL, and
 #      GOOGLE_CALLBACK_URL all set to https://portal.jobsforwomen.info (with
-#      GOOGLE_CALLBACK_URL as https://portal.jobsforwomen.info/api/v1/auth/google/callback)
-#      -- single domain for everything here, not the split
-#      jobsforwomen.info/api.jobsforwomen.info subdomains the repo's existing
-#      nginx configs and docs assume. See the routing note on `api`/`web`
-#      below -- this domain choice needs a matching nginx change that this
-#      compose file alone does not provide.
+#      GOOGLE_CALLBACK_URL as https://portal.jobsforwomen.info/api/v1/auth/google/callback).
+#      See portal.nginx.conf for the matching single-domain nginx routing.
 #
-# DEPLOY (every time, going forward):
+# DEPLOY (every time, going forward -- after the one-time migration above):
 #
 #   docker compose -f docker-compose.prod.yml up --build -d
 #
-# That single command now does what used to be three manual steps (build,
-# run, then remember to `docker exec ... npx prisma migrate deploy`): the
-# `migrate` service runs and must exit 0 before `api` is even started, so
-# there is no window where the app runs against an unmigrated schema.
+# `migrate` won't even start until `db` reports healthy, and `api` won't
+# start until `migrate` exits 0 -- so there's no window where the app runs
+# against an unreachable or unmigrated database.
 # =============================================================================
 
 services:
   # ---------------------------------------------------------------------------
+  # PostgreSQL. Real, persistent data now -- not the throwaway db in
+  # backend/docker-compose.yml. `pgdata` is a normal (non-external) named
+  # volume: compose creates it if missing, which is correct for THIS volume
+  # (unlike jfw_uploads below) as long as you've done the restore in the
+  # warning above first.
+  # ---------------------------------------------------------------------------
+  db:
+    image: postgres:15-alpine
+    container_name: jobsforwomen-db
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=jobsforwomen
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - db-net
+    ports:
+      # Loopback-only, optional -- lets you connect a GUI tool (psql/DBeaver)
+      # from the VPS's own shell or an SSH tunnel. Remove this block entirely
+      # for a slightly smaller attack surface if you don't need it.
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d jobsforwomen"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ---------------------------------------------------------------------------
+  # Redis. `--appendonly yes` persists queued BullMQ jobs / rate-limit state /
+  # permission cache across container restarts -- worth having now that this
+  # is the real production instance, not a disposable dev cache.
+  # ---------------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: jobsforwomen-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - redisdata:/data
+    networks:
+      - db-net
+    ports:
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ---------------------------------------------------------------------------
   # One-off migration runner. Builds/reuses the same image as `api`, runs
   # `prisma migrate deploy`, then exits. `restart: "no"` is deliberate -- this
-  # is meant to run once per deploy, not loop or stay up.
+  # is meant to run once per deploy, not loop or stay up. Won't even start
+  # until `db` reports healthy.
   # ---------------------------------------------------------------------------
   migrate:
     build:
@@ -65,22 +162,20 @@ services:
       dockerfile: Dockerfile
     image: jobsforwomen-api:latest
     env_file:
-      - .env
+      - backend/.env
     environment:
       - NODE_ENV=production
-    # Reach host-native Postgres/Redis from inside the container. Requires
-    # DATABASE_URL/REDIS_URL in .env to use `host.docker.internal`, not
-    # `localhost` -- see pre-flight step 3 above. Remove this (and the
-    # matching block on `api` below) if Postgres/Redis are reached some
-    # other way on this VPS (e.g. --network host, or a real LAN IP already
-    # in .env).
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+    networks:
+      - db-net
+    depends_on:
+      db:
+        condition: service_healthy
     command: npx prisma migrate deploy
     restart: "no"
 
   # ---------------------------------------------------------------------------
-  # Backend API. Only starts once `migrate` has completed successfully.
+  # Backend API. Only starts once `db`/`redis` are healthy AND `migrate` has
+  # completed successfully.
   # ---------------------------------------------------------------------------
   api:
     build:
@@ -89,25 +184,26 @@ services:
     image: jobsforwomen-api:latest
     container_name: jobsforwomen-api
     env_file:
-      - .env
+      - backend/.env
     environment:
       - NODE_ENV=production
       - PORT=5000
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+    networks:
+      - app-net
+      - db-net
     ports:
       # Bound to loopback only. Single-domain setup: portal.jobsforwomen.info
-      # is both the frontend and backend origin -- host nginx must route by
-      # PATH (e.g. /api/*, /socket.io/*, /files/*) to 127.0.0.1:5000, and
-      # everything else to the `web` container on :8080 (see note below).
-      # backend/nginx.conf as it currently exists in the repo proxies an
-      # entire separate subdomain (api.jobsforwomen.info) to this port --
-      # that config does NOT match this single-domain setup and needs
-      # replacing with a path-based one before this will actually work.
+      # is both the frontend and backend origin -- portal.nginx.conf routes
+      # by PATH (/api/*, /socket.io/*, /files/*, health probes) to this port,
+      # everything else to `web` on :8080.
       - "127.0.0.1:5000:5000"
     volumes:
       - jfw_uploads:/app/uploads
     depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
       migrate:
         condition: service_completed_successfully
     restart: unless-stopped
@@ -115,12 +211,9 @@ services:
   # ---------------------------------------------------------------------------
   # Frontend. VITE_API_URL is a BUILD-TIME arg (baked into the JS bundle) --
   # this is exactly the value that was wrong when Google OAuth was redirecting
-  # to localhost. Single-domain setup confirmed: portal.jobsforwomen.info is
-  # both the frontend origin and the API origin, so this is the same domain
-  # as CLIENT_URL/FRONTEND_URL/BACKEND_URL in .env and GOOGLE_CALLBACK_URL's
-  # domain (must match what's registered in Google Cloud Console). Setting
-  # this only in `environment:` below would do nothing; Vite already compiled
-  # it into the bundle by the time the container starts.
+  # to localhost. Must match GOOGLE_CALLBACK_URL's domain and what's
+  # registered in Google Cloud Console. Setting it only in `environment:`
+  # would do nothing; Vite already compiled it into the bundle by build time.
   # ---------------------------------------------------------------------------
   web:
     build:
@@ -130,20 +223,28 @@ services:
         VITE_API_URL: https://portal.jobsforwomen.info
     image: jobsforwomen-web:latest
     container_name: jobsforwomen-web
+    networks:
+      - app-net
     ports:
-      # Bound to loopback only. frontend/nginx.host.conf as it currently
-      # exists in the repo reverse-proxies the WHOLE jobsforwomen.info domain
-      # here with no path carve-out for the API -- fine only if nothing under
-      # this domain needs to reach `api` (it does: /api/*, /socket.io/*,
-      # /files/*). See the routing note on `api` above.
+      # Bound to loopback only -- portal.nginx.conf proxies everything not
+      # matched by an API path here.
       - "127.0.0.1:8080:8080"
     depends_on:
       - api
     restart: unless-stopped
 
+networks:
+  app-net:
+    driver: bridge
+  db-net:
+    driver: bridge
+
 volumes:
   jfw_uploads:
     external: true
     # Must already exist with your real uploaded files in it -- see
-    # pre-flight step 2. `external: true` stops compose from silently
-    # creating a new empty volume with this name.
+    # pre-flight step 3. `external: true` stops compose from silently
+    # creating a new empty volume with this name. This is separate from the
+    # Postgres data migration above -- files and database rows are unrelated.
+  pgdata:
+  redisdata:
