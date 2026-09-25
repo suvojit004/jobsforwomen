@@ -232,7 +232,6 @@ services:
     container_name: jobsforwomen-web
     networks:
       - app-net
-      - traefik-net
     ports:
       # Bound to loopback only -- portal.nginx.conf proxies everything not
       # matched by an API path here. Left in place alongside the Traefik
