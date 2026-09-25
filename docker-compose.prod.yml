@@ -203,24 +203,35 @@ services:
       - app-net
       - db-net
     # No host port mapping -- this VPS already has other apps holding
-    # 5000/8080/etc. on the host, and none is needed: Traefik reaches this
-    # container directly over `traefik-net` by its internal port (5000),
-    # via the labels below. portal.nginx.conf is NOT used on this server --
-    # Traefik already owns :80/:443 host-wide, so nginx can't bind them here.
+    # 5000/8080/etc. on the host, and none is needed: Traefik runs with
+    # network_mode: host (confirmed via `docker inspect`), so it can already
+    # reach any container's bridge-network IP directly without sharing a
+    # network -- the routing happens purely through the labels below.
+    # portal.nginx.conf is NOT used on this server -- Traefik already owns
+    # :80/:443 host-wide, so nginx can't bind them here.
     volumes:
       - jfw_uploads:/app/uploads
     labels:
-    
+      traefik.enable: "true"
+      # Router/service names are prefixed "jobsforwomen-portal-" rather than
+      # the generic "jfw" -- a router literally named "jfw" already exists
+      # from another container on this host, and Traefik refuses to run
+      # EITHER config when two containers claim the same router name
+      # ("HTTP router defined multiple times with different configurations"
+      # in `docker logs traefik`), which is what caused the plain-text
+      # Traefik 404 on /api/v1/login. Router names must be unique across
+      # the whole Traefik instance, not just within this compose file.
+      #
       # Higher priority than web's Host-only rule below, so /api, /socket.io,
       # /files and the health probes go to this container and everything
       # else falls through to `web`. (/live /ready /health /version are
       # mounted at the app root, not under /api/v1 -- see backend/src/app.ts.)
-      traefik.http.routers.jfw-api.rule: "Host(`portal.jobsforwomen.info`) && (PathPrefix(`/api`) || PathPrefix(`/socket.io`) || PathPrefix(`/files`) || Path(`/live`) || Path(`/ready`) || Path(`/health`) || Path(`/version`))"
-      traefik.http.routers.jfw-api.entrypoints: "websecure"
-      traefik.http.routers.jfw-api.tls: "true"
-      traefik.http.routers.jfw-api.tls.certresolver: "letsencrypt"
-      traefik.http.routers.jfw-api.priority: "10"
-      traefik.http.services.jfw-api.loadbalancer.server.port: "5000"
+      traefik.http.routers.jobsforwomen-portal-api.rule: "Host(`portal.jobsforwomen.info`) && (PathPrefix(`/api`) || PathPrefix(`/socket.io`) || PathPrefix(`/files`) || Path(`/live`) || Path(`/ready`) || Path(`/health`) || Path(`/version`))"
+      traefik.http.routers.jobsforwomen-portal-api.entrypoints: "websecure"
+      traefik.http.routers.jobsforwomen-portal-api.tls: "true"
+      traefik.http.routers.jobsforwomen-portal-api.tls.certresolver: "letsencrypt"
+      traefik.http.routers.jobsforwomen-portal-api.priority: "10"
+      traefik.http.services.jobsforwomen-portal-api.loadbalancer.server.port: "5000"
     depends_on:
       db:
         condition: service_healthy
@@ -247,21 +258,24 @@ services:
     container_name: jobsforwomen-web
     networks:
       - app-net
-      
+    # No host port mapping -- same reasoning as `api` above: Traefik runs in
+    # network_mode: host and reaches this container's bridge IP directly.
     depends_on:
       - api
     restart: unless-stopped
     labels:
       traefik.enable: "true"
-      # Catch-all: lower priority than jfw-api's rule on the `api` service,
+      # Catch-all: lower priority than jobsforwomen-portal-api's rule above,
       # so /api, /socket.io, /files and the health probes go there first and
-      # everything else (the SPA) lands here.
-      traefik.http.routers.jfw.rule: "Host(`portal.jobsforwomen.info`)"
-      traefik.http.routers.jfw.entrypoints: "websecure"
-      traefik.http.routers.jfw.tls: "true"
-      traefik.http.routers.jfw.tls.certresolver: "letsencrypt"
-      traefik.http.routers.jfw.priority: "1"
-      traefik.http.services.jfw.loadbalancer.server.port: "8080"
+      # everything else (the SPA) lands here. Named "jobsforwomen-portal-web"
+      # rather than "jfw" -- see the comment on `api`'s labels for why a
+      # bare "jfw" router name collided with another container on this host.
+      traefik.http.routers.jobsforwomen-portal-web.rule: "Host(`portal.jobsforwomen.info`)"
+      traefik.http.routers.jobsforwomen-portal-web.entrypoints: "websecure"
+      traefik.http.routers.jobsforwomen-portal-web.tls: "true"
+      traefik.http.routers.jobsforwomen-portal-web.tls.certresolver: "letsencrypt"
+      traefik.http.routers.jobsforwomen-portal-web.priority: "1"
+      traefik.http.services.jobsforwomen-portal-web.loadbalancer.server.port: "8080"
 
 networks:
   app-net:

@@ -65,10 +65,12 @@ export function initSocket(server: HttpServer) {
   // in-memory adapter only reaches sockets connected to this specific
   // process, so a multi-instance deployment would silently drop broadcasts
   // between users on different instances. Uses the existing ioredis client
-  // (shared/utils/redis.ts) -- Upstash's `rediss://` endpoint speaks the
-  // standard Redis wire protocol, so PUBLISH/SUBSCRIBE works as expected.
-  // Skipped in test mode since Jest runs a bare in-process server with no
-  // real Redis connection.
+  // (shared/utils/redis.ts), whichever Redis REDIS_URL points at -- the
+  // self-hosted containerized instance in production, Upstash previously,
+  // or a local dev instance -- PUBLISH/SUBSCRIBE works the same over any of
+  // them since it's standard Redis wire protocol either way. Skipped in test
+  // mode since Jest runs a bare in-process server with no real Redis
+  // connection.
   if (env.NODE_ENV !== "test") {
     if (redis) {
       try {
@@ -89,7 +91,7 @@ export function initSocket(server: HttpServer) {
         io.adapter(createAdapter(pubClient, subClient))
         socketAdapterStatus = "redis"
         logger.info(
-          "[SocketIO] Redis adapter attached -- events now fan out across all server instances via Upstash Redis pub/sub."
+          "[SocketIO] Redis adapter attached -- events now fan out across all server instances via Redis pub/sub."
         )
       } catch (err: any) {
         socketAdapterStatus = "error"
