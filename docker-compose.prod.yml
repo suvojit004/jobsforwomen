@@ -202,7 +202,6 @@ services:
     networks:
       - app-net
       - db-net
-      - traefik-net
     # No host port mapping -- this VPS already has other apps holding
     # 5000/8080/etc. on the host, and none is needed: Traefik reaches this
     # container directly over `traefik-net` by its internal port (5000),
@@ -211,7 +210,7 @@ services:
     volumes:
       - jfw_uploads:/app/uploads
     labels:
-      traefik.enable: "true"
+    
       # Higher priority than web's Host-only rule below, so /api, /socket.io,
       # /files and the health probes go to this container and everything
       # else falls through to `web`. (/live /ready /health /version are
