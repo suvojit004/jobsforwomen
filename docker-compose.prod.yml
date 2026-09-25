@@ -202,14 +202,26 @@ services:
     networks:
       - app-net
       - db-net
-    ports:
-      # Bound to loopback only. Single-domain setup: portal.jobsforwomen.info
-      # is both the frontend and backend origin -- portal.nginx.conf routes
-      # by PATH (/api/*, /socket.io/*, /files/*, health probes) to this port,
-      # everything else to `web` on :8080.
-      - "127.0.0.1:5000:5000"
+      - traefik-net
+    # No host port mapping -- this VPS already has other apps holding
+    # 5000/8080/etc. on the host, and none is needed: Traefik reaches this
+    # container directly over `traefik-net` by its internal port (5000),
+    # via the labels below. portal.nginx.conf is NOT used on this server --
+    # Traefik already owns :80/:443 host-wide, so nginx can't bind them here.
     volumes:
       - jfw_uploads:/app/uploads
+    labels:
+      traefik.enable: "true"
+      # Higher priority than web's Host-only rule below, so /api, /socket.io,
+      # /files and the health probes go to this container and everything
+      # else falls through to `web`. (/live /ready /health /version are
+      # mounted at the app root, not under /api/v1 -- see backend/src/app.ts.)
+      traefik.http.routers.jfw-api.rule: "Host(`portal.jobsforwomen.info`) && (PathPrefix(`/api`) || PathPrefix(`/socket.io`) || PathPrefix(`/files`) || Path(`/live`) || Path(`/ready`) || Path(`/health`) || Path(`/version`))"
+      traefik.http.routers.jfw-api.entrypoints: "websecure"
+      traefik.http.routers.jfw-api.tls: "true"
+      traefik.http.routers.jfw-api.tls.certresolver: "letsencrypt"
+      traefik.http.routers.jfw-api.priority: "10"
+      traefik.http.services.jfw-api.loadbalancer.server.port: "5000"
     depends_on:
       db:
         condition: service_healthy
@@ -236,24 +248,20 @@ services:
     container_name: jobsforwomen-web
     networks:
       - app-net
-    ports:
-      # Bound to loopback only -- portal.nginx.conf proxies everything not
-      # matched by an API path here. Left in place alongside the Traefik
-      # labels below; Traefik reaches this container over `traefik-net`
-      # regardless of this port mapping, so the two don't conflict. If
-      # Traefik is meant to take over routing entirely, remove this port
-      # mapping and retire portal.nginx.conf separately -- this file alone
-      # doesn't do that.
-      - "127.0.0.1:8080:8080"
+      
     depends_on:
       - api
     restart: unless-stopped
     labels:
       traefik.enable: "true"
+      # Catch-all: lower priority than jfw-api's rule on the `api` service,
+      # so /api, /socket.io, /files and the health probes go there first and
+      # everything else (the SPA) lands here.
       traefik.http.routers.jfw.rule: "Host(`portal.jobsforwomen.info`)"
       traefik.http.routers.jfw.entrypoints: "websecure"
       traefik.http.routers.jfw.tls: "true"
       traefik.http.routers.jfw.tls.certresolver: "letsencrypt"
+      traefik.http.routers.jfw.priority: "1"
       traefik.http.services.jfw.loadbalancer.server.port: "8080"
 
 networks:
