@@ -109,9 +109,16 @@ services:
     image: postgres:15-alpine
     container_name: jobsforwomen-db
     restart: unless-stopped
+    # env_file (not `environment: ${POSTGRES_PASSWORD}`) so POSTGRES_PASSWORD
+    # comes straight from backend/.env into the container. The old
+    # `${POSTGRES_PASSWORD}` form is a COMPOSE-level substitution -- resolved
+    # by Compose itself at parse time from the shell env or a `.env` file
+    # next to this compose file (repo root), NOT from env_file: entries.
+    # With no root .env, that substitution silently resolved to blank.
+    env_file:
+      - backend/.env
     environment:
       - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=jobsforwomen
     volumes:
       - pgdata:/var/lib/postgresql/data
@@ -225,26 +232,43 @@ services:
     container_name: jobsforwomen-web
     networks:
       - app-net
+      - traefik-net
     ports:
       # Bound to loopback only -- portal.nginx.conf proxies everything not
-      # matched by an API path here.
+      # matched by an API path here. Left in place alongside the Traefik
+      # labels below; Traefik reaches this container over `traefik-net`
+      # regardless of this port mapping, so the two don't conflict. If
+      # Traefik is meant to take over routing entirely, remove this port
+      # mapping and retire portal.nginx.conf separately -- this file alone
+      # doesn't do that.
       - "127.0.0.1:8080:8080"
     depends_on:
       - api
     restart: unless-stopped
+    labels:
+      traefik.enable: "true"
+      traefik.http.routers.jfw.rule: "Host(`portal.jobsforwomen.info`)"
+      traefik.http.routers.jfw.entrypoints: "websecure"
+      traefik.http.routers.jfw.tls: "true"
+      traefik.http.routers.jfw.tls.certresolver: "letsencrypt"
+      traefik.http.services.jfw.loadbalancer.server.port: "8080"
 
 networks:
   app-net:
     driver: bridge
   db-net:
     driver: bridge
+  # Your existing Traefik instance's network -- Traefik must already be
+  # attached to a network by this name for it to discover `web` via the
+  # labels above. Replace "traefik-net" with whatever that network is
+  # actually named on your VPS (commonly "traefik", "proxy", or
+  # "traefik-public") and confirm it's `external: true` there, i.e. NOT
+  # created by Traefik's own compose file with a driver -- both sides need
+  # to reference the same pre-existing network.
+  traefik-net:
+    external: true
 
 volumes:
   jfw_uploads:
-    external: true
-    # Must already exist with your real uploaded files in it -- see
-    # pre-flight step 3. `external: true` stops compose from silently
-    # creating a new empty volume with this name. This is separate from the
-    # Postgres data migration above -- files and database rows are unrelated.
   pgdata:
   redisdata:
