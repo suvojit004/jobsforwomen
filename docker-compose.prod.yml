@@ -124,11 +124,12 @@ services:
       - pgdata:/var/lib/postgresql/data
     networks:
       - db-net
-    ports:
-      # Loopback-only, optional -- lets you connect a GUI tool (psql/DBeaver)
-      # from the VPS's own shell or an SSH tunnel. Remove this block entirely
-      # for a slightly smaller attack surface if you don't need it.
-      - "127.0.0.1:5432:5432"
+    # No host port mapping -- `api`/`migrate` reach this over the Docker
+    # network by service name (`db:5432`), so publishing to the host isn't
+    # required. If you ever want a GUI tool (psql/DBeaver) or an SSH tunnel
+    # straight into this container, add back:
+    #   ports:
+    #     - "127.0.0.1:5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d jobsforwomen"]
       interval: 10s
@@ -149,8 +150,11 @@ services:
       - redisdata:/data
     networks:
       - db-net
-    ports:
-      - "127.0.0.1:6379:6379"
+    # No host port mapping -- `api`/`migrate` reach this over the Docker
+    # network by service name (`redis:6379`). Add back if you need
+    # redis-cli/tunnel access from the VPS shell:
+    #   ports:
+    #     - "127.0.0.1:6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
