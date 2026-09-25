@@ -258,15 +258,6 @@ networks:
     driver: bridge
   db-net:
     driver: bridge
-  # Your existing Traefik instance's network -- Traefik must already be
-  # attached to a network by this name for it to discover `web` via the
-  # labels above. Replace "traefik-net" with whatever that network is
-  # actually named on your VPS (commonly "traefik", "proxy", or
-  # "traefik-public") and confirm it's `external: true` there, i.e. NOT
-  # created by Traefik's own compose file with a driver -- both sides need
-  # to reference the same pre-existing network.
-  traefik-net:
-    external: true
 
 volumes:
   jfw_uploads:
