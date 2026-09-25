@@ -64,9 +64,11 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
 
 CMD ["nginx", "-g", "daemon off;"]
 
-LABEL "traefik.enable"="true" \
-      "traefik.http.routers.jfw.rule"="Host(`portal.jobsforwomen.info`)" \
-      "traefik.http.routers.jfw.entrypoints"="websecure" \
-      "traefik.http.routers.jfw.tls"="true" \
-      "traefik.http.routers.jfw.tls.certresolver"="letsencrypt" \
-      "traefik.http.services.jfw.loadbalancer.server.port"="8080"
+# Traefik routing labels live in docker-compose.prod.yml's `web` service, NOT
+# here. A LABEL instruction here bakes deploy-specific config (domain, cert
+# resolver) permanently into this image -- every container run from it would
+# carry stale/wrong routing no matter what the compose file says, and this
+# image is meant to be environment-portable. (This is exactly what caused
+# Traefik's "Router ... cannot be linked automatically with multiple
+# Services" error in production: an old "jfw"-named LABEL baked in here
+# collided with the compose file's real "jobsforwomen-portal-web" router.)
